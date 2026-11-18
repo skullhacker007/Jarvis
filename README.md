@@ -27,6 +27,15 @@ Full Voice AI Assistant for Windows with 100% native uncompressed Iron Man artwo
 
 ---
 
+## 🛠️ Build
+
+To compile and produce the executable directly in this folder:
+```bash
+pnpm run build:exe
+```
+
+---
+
 ## 🚀 How to Launch
 
 Double-click to open:

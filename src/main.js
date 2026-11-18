@@ -698,19 +698,6 @@ function setSystemState(state) {
   }
 }
 
-// Click Arc Reactor for Interactive Energy Surge
-const arcReactorEl = document.getElementById("stark-arc-reactor");
-if (arcReactorEl) {
-  arcReactorEl.addEventListener("click", () => {
-    arcReactorEl.classList.add("overdrive");
-    setTimeout(() => {
-      if (currentState !== "thinking" && currentState !== "speaking") {
-        arcReactorEl.classList.remove("overdrive");
-      }
-    }, 1500);
-  });
-}
-
 // -------------------------------------------------------------
 // SPEECH SYNTHESIS & VOICE OUTPUT
 // -------------------------------------------------------------
