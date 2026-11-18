@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>J.A.R.V.I.S. // STARK AI SYSTEM CONTROLLER</title>
+    <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800;900&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div class="full-screen-stage">
+      <!-- Full-fit 4K uncompressed master image -->
+      <img src="assets/ironman_center_main.png" alt="Iron Man" class="ironman-master-img" />
+
+      <!-- TOP-LEFT: Intelligent Modern Holographic Date & Time HUD -->
+      <div class="tech-time-hud">
+        <div class="time-readout-row">
+          <span class="time-digits" id="tech-clock">12:35:00</span>
+          <span class="time-ampm" id="tech-ampm">PM</span>
+          <span class="time-sync-dot" title="Time Core Synced"></span>
+        </div>
+        <div class="date-telemetry-row">
+          <span class="hud-pill-day" id="tech-day">WEDNESDAY</span>
+          <span class="hud-slash">//</span>
+          <span class="hud-date" id="tech-date">18 NOV 2026</span>
+          <span class="hud-slash">//</span>
+          <span class="hud-tz" id="tech-tz">UTC+05:30</span>
+        </div>
+        <div class="time-seconds-track">
+          <div class="time-seconds-fill" id="tech-sec-fill"></div>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- LEFT BOTTOM: PROCESSOR, MEMORY AND NETWORK GROUPED        -->
+      <!-- ========================================================= -->
+      <div class="left-system-deck">
+        <!-- 1. PROCESSOR (CPU) LIVE GADGET -->
+        <div class="gadget-panel">
+          <div class="gadget-top">
+            <span class="gadget-title">PROCESSOR</span>
+            <span class="gadget-val cyan" id="cpu-percent-label">--%</span>
+          </div>
+          <div class="gadget-sub" id="cpu-sub-label">INTEL CORE i7-8700B // 12 THREADS</div>
+          <div class="canvas-box">
+            <canvas id="cpu-graph-canvas" class="telemetry-spark-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- 2. SYSTEM MEMORY (RAM) LIVE GADGET (64 GB REAL) -->
+        <div class="gadget-panel">
+          <div class="gadget-top">
+            <span class="gadget-title">MEMORY</span>
+            <span class="gadget-val cyan" id="ram-usage-label">-- / -- GB</span>
+          </div>
+          <div class="ram-meter-bar">
+            <div class="ram-meter-fill" id="ram-meter-fill" style="width: 25%;"></div>
+          </div>
+          <div class="canvas-box">
+            <canvas id="ram-graph-canvas" class="telemetry-spark-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- 3. NETWORK I/O LIVE GADGET -->
+        <div class="gadget-panel">
+          <div class="gadget-top">
+            <span class="gadget-title">NETWORK I/O</span>
+            <span class="gadget-val emerald" id="net-io-label">↓ -- KB/s  ↑ -- KB/s</span>
+          </div>
+          <div class="canvas-box">
+            <canvas id="net-graph-canvas" class="telemetry-spark-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- RIGHT SIDE: NEURAL (TOP), TOKEN ACTIVITY (CENTER), APPS (BOT) -->
+      <!-- ========================================================= -->
+      <div class="right-system-deck">
+        <!-- 1. NEURAL NETWORK CANVAS (TOP RIGHT - EXPANDED FULL BLOCK) -->
+        <div class="gadget-panel neural-panel">
+          <div class="gadget-top">
+            <div class="neural-header-title">
+              <span class="neural-beacon"></span>
+              <span class="gadget-title">NEURAL NETWORK</span>
+            </div>
+            <span class="gadget-val purple" id="model-name-label">QWEN 3.5 2B</span>
+          </div>
+
+          <!-- Important AI Telemetry & Architecture Grid -->
+          <div class="neural-telemetry-row">
+            <div class="neural-metric-cell">
+              <span class="neural-metric-tag">PARAMS</span>
+              <span class="neural-metric-val cyan" id="nn-params">1.9B</span>
+            </div>
+            <div class="neural-metric-cell">
+              <span class="neural-metric-tag">QUANT</span>
+              <span class="neural-metric-val purple" id="nn-quant">Q8_0</span>
+            </div>
+            <div class="neural-metric-cell">
+              <span class="neural-metric-tag">CTX WINDOW</span>
+              <span class="neural-metric-val emerald" id="nn-ctx">4096</span>
+            </div>
+            <div class="neural-metric-cell">
+              <span class="neural-metric-tag">LATENCY</span>
+              <span class="neural-metric-val yellow" id="nn-latency">18ms</span>
+            </div>
+          </div>
+
+          <div class="canvas-box neural-box">
+            <canvas id="neural-canvas" class="neural-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- 2. TOKEN ACTIVITY PANEL (RIGHT CENTER BELOW NEURAL MATRIX) -->
+        <div class="ref-token-card" id="ref-token-card">
+          <!-- Token Header -->
+          <div class="ref-token-header">
+            <div class="ref-token-title-group">
+              <span class="ref-token-title">Token activity</span>
+              <span class="ref-token-pill" id="ref-token-badge">23 TOKENS</span>
+            </div>
+            <div class="ref-token-tabs">
+              <span class="ref-tab">Daily</span>
+              <span class="ref-tab">Weekly</span>
+              <span class="ref-tab active">Cumulative</span>
+            </div>
+          </div>
+
+          <!-- 2D Token Slot Grid Matrix (8 Rows x 32 Cols) -->
+          <div class="ref-token-grid-wrapper">
+            <div class="ref-token-matrix" id="ref-token-matrix">
+              <!-- Dynamically populated 256 slots with real lighting -->
+            </div>
+          </div>
+
+          <!-- Token Hint & Dynamic Counters Bar -->
+          <div class="ref-token-hint-bar">
+            <span class="ref-hint-text" id="ref-hint-text">Hover or click any slot above to inspect token subwords, vocabulary IDs, and softmax probabilities.</span>
+            <span class="ref-hint-counters">
+              Input: <b id="tok-inp">13</b> &nbsp; Generated: <b id="tok-gen">10</b> &nbsp; Cached: <b id="tok-cached">23</b> &nbsp; Speed: <b id="tok-spd">12.0</b> tok/s
+            </span>
+          </div>
+
+          <!-- 4-Column KV & Decoding Telemetry Quad -->
+          <div class="ref-telemetry-quad">
+            <div class="ref-quad-cell">
+              <span class="ref-cell-tag">ACTIVE KV CACHE SLOTS</span>
+              <span class="ref-cell-val cyan" id="kv-cache-slots">23 slots</span>
+            </div>
+            <div class="ref-quad-cell">
+              <span class="ref-cell-tag">KV RAM FOOTPRINT</span>
+              <span class="ref-cell-val cyan" id="kv-vram-footprint">2.26 GB</span>
+            </div>
+            <div class="ref-quad-cell">
+              <span class="ref-cell-tag">DECODING SPEED</span>
+              <span class="ref-cell-val cyan" id="decoding-speed">12.0 tok/s</span>
+            </div>
+            <div class="ref-quad-cell">
+              <span class="ref-cell-tag">STOP CONDITION</span>
+              <span class="ref-cell-val yellow" id="stop-condition">Standby</span>
+            </div>
+          </div>
+
+          <!-- Zone 10 Tool Execution & MCP Dispatch Bar -->
+          <div class="ref-zone-strip">
+            <div class="zone-left">
+              <span class="zone-badge">ZONE 10</span>
+              <span class="zone-label">TOOL EXECUTION &amp; MCP DISPATCH</span>
+            </div>
+            <div class="zone-right">
+              <span class="zone-status">Bypassed in Direct Stream ▲</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. ACTIVE RUNNING SYSTEM APPS (BOTTOM RIGHT AS PREVIOUS) -->
+        <div class="gadget-panel apps-panel">
+          <div class="gadget-top">
+            <span class="gadget-title">ACTIVE RUNNING APPS</span>
+            <span class="gadget-sub-pill" id="app-count-pill">SYSTEM LIVE</span>
+          </div>
+          <div class="apps-list" id="apps-list">
+            <!-- Populated dynamically from Rust sysinfo -->
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- BOTTOM: BORDERLESS APP LAUNCHERS DOCK                     -->
+      <!-- ========================================================= -->
+      <div class="bottom-dock-container">
+        <!-- Completely Borderless Floating App Icons Dock -->
+        <div class="app-icons-dock">
+          <!-- 1. PHONE (Direct to Call / Phone Link) -->
+          <button class="dock-app-item" id="btn-dock-call" title="Call (Phone Link)">
+            <div class="dock-icon-box">
+              <svg class="dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+            </div>
+          </button>
+
+          <!-- 2. MAIL (Direct to Outlook) -->
+          <button class="dock-app-item" id="btn-dock-mail" title="Outlook">
+            <div class="dock-icon-box">
+              <svg class="dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+              </svg>
+            </div>
+          </button>
+
+          <!-- 3. MESSAGE (Official WhatsApp Icon) -->
+          <button class="dock-app-item" id="btn-dock-whatsapp" title="WhatsApp">
+            <div class="dock-icon-box">
+              <svg class="dock-svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91c0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23c-1.48 0-2.93-.39-4.19-1.15l-.3-.17l-3.12.82l.83-3.04l-.2-.32a8.188 8.188 0 0 1-1.26-4.38c.01-4.54 3.7-8.24 8.25-8.24m-2.52 3.68c-.17 0-.44.06-.67.31c-.23.25-.86.84-.86 2.05c0 1.21.89 2.38 1.01 2.54c.12.17 1.73 2.65 4.19 3.71c.59.25 1.04.4 1.4.52c.59.19 1.13.16 1.56.1c.48-.07 1.47-.6 1.68-1.19c.21-.59.21-1.1.14-1.2c-.06-.11-.23-.17-.49-.3c-.26-.13-1.53-.76-1.77-.84c-.23-.09-.4-.13-.57.12c-.17.25-.65.83-.8 1c-.14.17-.28.19-.54.06c-.26-.13-1.08-.4-2.06-1.27c-.76-.68-1.28-1.52-1.42-1.77c-.15-.26-.02-.39.11-.52c.12-.12.27-.31.4-.46c.13-.15.18-.26.26-.43c.09-.17.04-.31-.02-.44c-.07-.13-.57-1.35-.78-1.86c-.2-.49-.4-.43-.56-.43c-.14-.01-.31-.01-.48-.01z"/>
+              </svg>
+            </div>
+          </button>
+
+          <!-- 4. MUSIC (Musical Note 🎵 for Spotify) -->
+          <button class="dock-app-item" id="btn-dock-music" title="Spotify Music">
+            <div class="dock-icon-box">
+              <svg class="dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 18V5l12-2v13"/>
+                <circle cx="6" cy="18" r="3" fill="currentColor"/>
+                <circle cx="18" cy="16" r="3" fill="currentColor"/>
+              </svg>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
