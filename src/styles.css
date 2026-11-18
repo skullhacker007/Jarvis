@@ -60,54 +60,498 @@ body {
 }
 
 /* ========================================================= */
-/* STARK CHEST ARC REACTOR (RADIATOR) // REFERENCE DESIGN    */
+/* STARK CHEST ARC REACTOR (RADIATOR) // 100% PURE CSS ENGINE */
 /* ========================================================= */
 .stark-arc-reactor {
   position: absolute;
   left: 50.42%;
   top: 72.0%;
   transform: translate(-50%, -50%);
-  width: 9.375%;
-  height: 16.6667%;
+  width: 7.03125%;
+  height: 12.5%;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  pointer-events: auto;
-  cursor: pointer;
+  pointer-events: none;
   z-index: 5;
-  box-shadow: 0 0 10px #00f2fe, 0 0 20px rgba(0, 242, 254, 0.65), inset 0 0 8px rgba(0, 242, 254, 0.45);
+  box-shadow:
+    0 0 16px rgba(0, 242, 254, 0.9),
+    0 0 32px rgba(0, 210, 255, 0.7),
+    0 0 55px rgba(0, 160, 255, 0.45),
+    inset 0 0 10px rgba(0, 242, 254, 0.6);
   animation: reactor-rim-pulse 3s ease-in-out infinite alternate;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
 }
 
-.stark-arc-reactor:hover {
-  transform: translate(-50%, -50%) scale(1.04);
-  box-shadow: 0 0 16px #00f2fe, 0 0 30px rgba(0, 242, 254, 0.85), inset 0 0 12px rgba(0, 242, 254, 0.65);
-}
-
-.arc-reactor-svg {
+.css-arc-reactor {
+  position: relative;
   width: 100%;
   height: 100%;
-  display: block;
   border-radius: 50%;
+  background: radial-gradient(circle, #020812 0%, #01050a 75%, #031624 100%);
+  overflow: visible;
+  user-select: none;
   pointer-events: none;
-  filter: drop-shadow(0 0 3px rgba(0, 242, 254, 0.7));
+}
+
+/* 1. Base Housing Disc */
+.reactor-base-housing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid #00f2fe;
+  box-shadow: inset 0 0 8px rgba(0, 242, 254, 0.6), 0 0 8px rgba(0, 242, 254, 0.7);
+}
+
+/* 2. Outer Radiator Ring: Alternating Copper Coils & Radiant Emitters (Image 2 Design + Image 1 Glow) */
+.radiator-outer-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+/* Copper Wire Coils (10 Spokes at 0°, 36°, 72°, ...) */
+.coil-spoke {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.coil-spoke.c-0   { transform: rotate(0deg); }
+.coil-spoke.c-36  { transform: rotate(36deg); }
+.coil-spoke.c-72  { transform: rotate(72deg); }
+.coil-spoke.c-108 { transform: rotate(108deg); }
+.coil-spoke.c-144 { transform: rotate(144deg); }
+.coil-spoke.c-180 { transform: rotate(180deg); }
+.coil-spoke.c-216 { transform: rotate(216deg); }
+.coil-spoke.c-252 { transform: rotate(252deg); }
+.coil-spoke.c-288 { transform: rotate(288deg); }
+.coil-spoke.c-324 { transform: rotate(324deg); }
+
+.copper-coil {
+  position: absolute;
+  top: 0.5%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14%;
+  height: 23%;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    to bottom,
+    #da6a30 0px,
+    #da6a30 1.5px,
+    #361104 1.5px,
+    #361104 3px
+  );
+  border: 1px solid #78280a;
+  box-shadow:
+    inset 0 0 3px #180400,
+    0 0 5px rgba(218, 106, 48, 0.45);
+  z-index: 3;
+}
+
+.copper-coil::before,
+.copper-coil::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #180602;
+  box-shadow: 0 0 1px #ff8c52;
+}
+.copper-coil::before { top: 1px; }
+.copper-coil::after { bottom: 1px; }
+
+/* Radiant Emitters (10 Spokes at 18°, 54°, 90°, ...) with Vibrant Image 1 Glow */
+.emitter-spoke {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.emitter-spoke.e-18  { transform: rotate(18deg); }
+.emitter-spoke.e-54  { transform: rotate(54deg); }
+.emitter-spoke.e-90  { transform: rotate(90deg); }
+.emitter-spoke.e-126 { transform: rotate(126deg); }
+.emitter-spoke.e-162 { transform: rotate(162deg); }
+.emitter-spoke.e-198 { transform: rotate(198deg); }
+.emitter-spoke.e-234 { transform: rotate(234deg); }
+.emitter-spoke.e-270 { transform: rotate(270deg); }
+.emitter-spoke.e-306 { transform: rotate(306deg); }
+.emitter-spoke.e-342 { transform: rotate(342deg); }
+
+.glow-emitter {
+  position: absolute;
+  top: 1.5%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14.5%;
+  height: 22%;
+  background: #ffffff;
+  clip-path: polygon(15% 0%, 85% 0%, 72% 100%, 28% 100%);
+  border-radius: 2px;
+  box-shadow:
+    0 0 8px #ffffff,
+    0 0 16px #00f2fe,
+    0 0 28px rgba(0, 242, 254, 0.95),
+    inset 0 0 4px #ffffff;
+  filter: drop-shadow(0 0 5px #ffffff) drop-shadow(0 0 12px #00f2fe);
+  animation: emitter-glow-pulse 2.8s ease-in-out infinite alternate;
+  z-index: 2;
+}
+
+/* 3. Internal Design: Retaining Chamber & Components (Image 2 Structure) */
+.reactor-internal-chamber {
+  position: absolute;
+  top: 21%;
+  left: 21%;
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  border: 2px solid #00f2fe;
+  box-shadow:
+    0 0 10px rgba(0, 242, 254, 0.9),
+    0 0 20px rgba(0, 210, 255, 0.5),
+    inset 0 0 8px rgba(0, 242, 254, 0.6);
+  background: #020812;
+  overflow: hidden;
+}
+
+/* 24 Radial Capsule Slots Track (3 groups of 8) */
+.capsule-slots-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.capsule-spoke {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+}
+
+/* 24 Capsule Rotation Angles */
+.capsule-spoke.c-15  { transform: rotate(15deg); }
+.capsule-spoke.c-28  { transform: rotate(28deg); }
+.capsule-spoke.c-41  { transform: rotate(41deg); }
+.capsule-spoke.c-54  { transform: rotate(54deg); }
+.capsule-spoke.c-66  { transform: rotate(66deg); }
+.capsule-spoke.c-79  { transform: rotate(79deg); }
+.capsule-spoke.c-92  { transform: rotate(92deg); }
+.capsule-spoke.c-105 { transform: rotate(105deg); }
+
+.capsule-spoke.c-135 { transform: rotate(135deg); }
+.capsule-spoke.c-148 { transform: rotate(148deg); }
+.capsule-spoke.c-161 { transform: rotate(161deg); }
+.capsule-spoke.c-174 { transform: rotate(174deg); }
+.capsule-spoke.c-186 { transform: rotate(186deg); }
+.capsule-spoke.c-199 { transform: rotate(199deg); }
+.capsule-spoke.c-212 { transform: rotate(212deg); }
+.capsule-spoke.c-225 { transform: rotate(225deg); }
+
+.capsule-spoke.c-255 { transform: rotate(255deg); }
+.capsule-spoke.c-268 { transform: rotate(268deg); }
+.capsule-spoke.c-281 { transform: rotate(281deg); }
+.capsule-spoke.c-294 { transform: rotate(294deg); }
+.capsule-spoke.c-306 { transform: rotate(306deg); }
+.capsule-spoke.c-319 { transform: rotate(319deg); }
+.capsule-spoke.c-332 { transform: rotate(332deg); }
+.capsule-spoke.c-345 { transform: rotate(345deg); }
+
+.capsule-pill {
+  position: absolute;
+  top: 2%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 7%;
+  height: 15%;
+  border-radius: 3px;
+  background: #010a14;
+  border: 1px solid #00f2fe;
+  box-shadow: 0 0 3px #00f2fe, inset 0 0 2px #00f2fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.capsule-pill::after {
+  content: '';
+  width: 50%;
+  height: 60%;
+  background: #ffffff;
+  border-radius: 1.5px;
+  box-shadow: 0 0 4px #ffffff, 0 0 7px #00f2fe;
+}
+
+/* Concentric Power Conduits */
+.concentric-power-conduits {
+  position: absolute;
+  top: 18%;
+  left: 18%;
+  width: 64%;
+  height: 64%;
+  border-radius: 50%;
+  background: #020a13;
+}
+
+.conduit-ring {
+  position: absolute;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+}
+
+.conduit-ring.cr-1 {
+  width: 94%;
+  height: 94%;
+  border: 1.6px solid #00f2fe;
+  box-shadow: 0 0 4px rgba(0, 242, 254, 0.7);
+}
+
+.conduit-ring.cr-2 {
+  width: 80%;
+  height: 80%;
+  border: 1.4px solid #00d4f5;
+  box-shadow: 0 0 3px rgba(0, 212, 245, 0.6);
+}
+
+.conduit-ring.cr-3 {
+  width: 66%;
+  height: 66%;
+  border: 1.6px solid #00f2fe;
+  box-shadow: 0 0 4px rgba(0, 242, 254, 0.7);
+}
+
+.conduit-ring.cr-4 {
+  width: 52%;
+  height: 52%;
+  border: 1.4px solid #00d4f5;
+  box-shadow: 0 0 3px rgba(0, 212, 245, 0.6);
+}
+
+.conduit-ring.cr-5 {
+  width: 38%;
+  height: 38%;
+  border: 1.6px solid #00f2fe;
+  box-shadow: 0 0 4px rgba(0, 242, 254, 0.8);
+}
+
+/* 3 Mounting Bracket Nodes */
+.bracket-spoke {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.bracket-spoke.b-0   { transform: rotate(0deg); }
+.bracket-spoke.b-120 { transform: rotate(120deg); }
+.bracket-spoke.b-240 { transform: rotate(240deg); }
+
+.bracket-mount {
+  position: absolute;
+  top: -1%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14%;
+  height: 38%;
+  background: linear-gradient(180deg, #092032 0%, #030f18 100%);
+  border: 1.2px solid #00f2fe;
+  border-radius: 2px;
+  box-shadow: 0 0 5px rgba(0, 242, 254, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3% 0;
+  box-sizing: border-box;
+}
+
+.bracket-bolt {
+  width: 72%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #1e4f72, #04121d 70%);
+  border: 1.2px solid #00f2fe;
+  box-shadow: 0 0 3px #00f2fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bolt-center {
+  width: 35%;
+  height: 35%;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 3px #ffffff, 0 0 5px #00f2fe;
+}
+
+.bracket-teeth {
+  display: flex;
+  gap: 2px;
+  width: 80%;
+  justify-content: center;
+}
+
+.bracket-teeth .tooth {
+  width: 22%;
+  height: 8px;
+  background: #00f2fe;
+  border-radius: 1px;
+  box-shadow: 0 0 3px #ffffff, 0 0 4px #00f2fe;
+}
+
+/* 4. Pure Concentric Center Core (NO '+' DESIGN) - Vibrant Image 1 Radiance */
+.reactor-center-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 26%;
+  height: 26%;
+  border-radius: 50%;
+  border: 2px solid #00f2fe;
+  background: radial-gradient(circle, #ffffff 0%, #c5f7ff 28%, #00f2fe 58%, #0077cc 85%, #021424 100%);
+  box-shadow:
+    0 0 10px #ffffff,
+    0 0 22px #00f2fe,
+    0 0 40px rgba(0, 242, 254, 0.95),
+    0 0 65px rgba(0, 180, 255, 0.5),
+    inset 0 0 8px #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  animation: core-glow-breathe 2.8s ease-in-out infinite alternate;
+}
+
+.core-outer-halo {
+  position: absolute;
+  inset: -30%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 242, 254, 0.5) 0%, rgba(0, 170, 255, 0.22) 50%, transparent 75%);
+  pointer-events: none;
+}
+
+.core-stepped-ring {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1.2px solid #00f2fe;
+  pointer-events: none;
+}
+
+.core-inner-plate {
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0%, #d4f8ff 60%, #00f2fe 100%);
+  box-shadow: 0 0 8px #ffffff, 0 0 16px #00f2fe;
+  border: 1.5px solid #a6f4ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.core-hotspot {
+  width: 45%;
+  height: 45%;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 6px #ffffff, 0 0 12px #a6f4ff;
+}
+
+/* Animations */
+@keyframes emitter-glow-pulse {
+  0% {
+    box-shadow:
+      0 0 6px #ffffff,
+      0 0 14px #00f2fe,
+      0 0 24px rgba(0, 242, 254, 0.85),
+      inset 0 0 3px #ffffff;
+    filter: drop-shadow(0 0 4px #ffffff) drop-shadow(0 0 10px #00f2fe);
+  }
+  100% {
+    box-shadow:
+      0 0 10px #ffffff,
+      0 0 22px #00f2fe,
+      0 0 36px rgba(0, 242, 254, 1),
+      inset 0 0 5px #ffffff;
+    filter: drop-shadow(0 0 7px #ffffff) drop-shadow(0 0 16px #00f2fe);
+  }
+}
+
+@keyframes core-glow-breathe {
+  0% {
+    transform: translate(-50%, -50%) scale(0.96);
+    box-shadow:
+      0 0 10px #ffffff,
+      0 0 20px #00f2fe,
+      0 0 36px rgba(0, 242, 254, 0.85),
+      inset 0 0 7px #ffffff;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.04);
+    box-shadow:
+      0 0 16px #ffffff,
+      0 0 30px #00f2fe,
+      0 0 55px rgba(0, 242, 254, 1),
+      inset 0 0 12px #ffffff;
+  }
+}
+
+@keyframes reactor-rim-pulse {
+  0% {
+    box-shadow:
+      0 0 12px rgba(0, 242, 254, 0.8),
+      0 0 26px rgba(0, 210, 255, 0.6),
+      0 0 45px rgba(0, 160, 255, 0.35),
+      inset 0 0 8px rgba(0, 242, 254, 0.5);
+  }
+  100% {
+    box-shadow:
+      0 0 20px rgba(0, 242, 254, 1),
+      0 0 38px rgba(0, 210, 255, 0.85),
+      0 0 65px rgba(0, 160, 255, 0.55),
+      inset 0 0 12px rgba(0, 242, 254, 0.7);
+  }
 }
 
 /* Overdrive state when Jarvis is calculating or responding */
 .stark-arc-reactor.overdrive {
-  box-shadow: 0 0 20px #00f2fe, 0 0 36px rgba(0, 242, 254, 0.95), inset 0 0 14px rgba(0, 242, 254, 0.8);
+  box-shadow:
+    0 0 25px #00f2fe,
+    0 0 50px rgba(0, 242, 254, 1),
+    0 0 85px rgba(0, 180, 255, 0.8),
+    inset 0 0 16px rgba(0, 242, 254, 0.9);
 }
 
-/* Animations */
-@keyframes reactor-rim-pulse {
-  0% {
-    box-shadow: 0 0 8px #00f2fe, 0 0 16px rgba(0, 242, 254, 0.5), inset 0 0 6px rgba(0, 242, 254, 0.4);
-  }
-  100% {
-    box-shadow: 0 0 14px #00f2fe, 0 0 26px rgba(0, 242, 254, 0.8), inset 0 0 10px rgba(0, 242, 254, 0.6);
-  }
+.stark-arc-reactor.overdrive .glow-emitter {
+  box-shadow:
+    0 0 12px #ffffff,
+    0 0 26px #00f2fe,
+    0 0 45px rgba(0, 242, 254, 1),
+    inset 0 0 6px #ffffff;
+  filter: drop-shadow(0 0 10px #ffffff) drop-shadow(0 0 20px #00f2fe);
+}
+
+.stark-arc-reactor.overdrive .reactor-center-core {
+  box-shadow:
+    0 0 18px #ffffff,
+    0 0 38px #00f2fe,
+    0 0 65px rgba(0, 242, 254, 1),
+    inset 0 0 12px #ffffff;
+}
+
+.stark-arc-reactor.overdrive .conduit-ring {
+  box-shadow: 0 0 8px #00f2fe;
 }
 
 /* ========================================================= */

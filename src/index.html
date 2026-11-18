@@ -17,9 +17,119 @@
         <!-- Full-fit 4K uncompressed master image -->
         <img src="assets/ironman_center.png" alt="Iron Man" class="ironman-master-img" />
 
-        <!-- STARK CHEST ARC REACTOR (RADIATOR) // REFERENCE DESIGN -->
-        <div class="stark-arc-reactor" id="stark-arc-reactor" title="Stark Arc Reactor // Online">
-          <img src="assets/arc_reactor.svg" class="arc-reactor-svg" alt="Stark Arc Reactor" />
+        <!-- STARK CHEST ARC REACTOR (RADIATOR) // 100% PURE CSS IMPLEMENTATION -->
+        <div class="stark-arc-reactor" id="stark-arc-reactor">
+          <div class="css-arc-reactor">
+            <!-- 1. Base Housing Disc -->
+            <div class="reactor-base-housing"></div>
+
+            <!-- 2. Outer Radiator Ring: 10 Alternating Copper Coils & 10 Glowing Emitters -->
+            <div class="radiator-outer-ring">
+              <!-- 10 Copper Wire Coils at 0°, 36°, 72°, ... -->
+              <div class="coil-spoke c-0"><div class="copper-coil"></div></div>
+              <div class="coil-spoke c-36"><div class="copper-coil"></div></div>
+              <div class="coil-spoke c-72"><div class="copper-coil"></div></div>
+              <div class="coil-spoke c-108"><div class="copper-coil"></div></div>
+              <div class="coil-spoke c-144"><div class="copper-coil"></div></div>
+              <div class="coil-spoke c-180"><div class="copper-coil"></div></div>
+              <div class="coil-spoke c-216"><div class="copper-coil"></div></div>
+              <div class="coil-spoke c-252"><div class="copper-coil"></div></div>
+              <div class="coil-spoke c-288"><div class="copper-coil"></div></div>
+              <div class="coil-spoke c-324"><div class="copper-coil"></div></div>
+
+              <!-- 10 Radiant Emitters at 18°, 54°, 90°, ... (Vibrant Glow from Image 1) -->
+              <div class="emitter-spoke e-18"><div class="glow-emitter"></div></div>
+              <div class="emitter-spoke e-54"><div class="glow-emitter"></div></div>
+              <div class="emitter-spoke e-90"><div class="glow-emitter"></div></div>
+              <div class="emitter-spoke e-126"><div class="glow-emitter"></div></div>
+              <div class="emitter-spoke e-162"><div class="glow-emitter"></div></div>
+              <div class="emitter-spoke e-198"><div class="glow-emitter"></div></div>
+              <div class="emitter-spoke e-234"><div class="glow-emitter"></div></div>
+              <div class="emitter-spoke e-270"><div class="glow-emitter"></div></div>
+              <div class="emitter-spoke e-306"><div class="glow-emitter"></div></div>
+              <div class="emitter-spoke e-342"><div class="glow-emitter"></div></div>
+            </div>
+
+            <!-- 3. Internal Design: Retaining Chamber, Capsule Track & Power Conduits -->
+            <div class="reactor-internal-chamber">
+              <!-- 24 Radial Capsule Slots in 3 Groups of 8 -->
+              <div class="capsule-slots-track">
+                <!-- Group 1: 15° to 105° -->
+                <div class="capsule-spoke c-15"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-28"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-41"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-54"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-66"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-79"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-92"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-105"><div class="capsule-pill"></div></div>
+
+                <!-- Group 2: 135° to 225° -->
+                <div class="capsule-spoke c-135"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-148"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-161"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-174"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-186"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-199"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-212"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-225"><div class="capsule-pill"></div></div>
+
+                <!-- Group 3: 255° to 345° -->
+                <div class="capsule-spoke c-255"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-268"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-281"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-294"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-306"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-319"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-332"><div class="capsule-pill"></div></div>
+                <div class="capsule-spoke c-345"><div class="capsule-pill"></div></div>
+              </div>
+
+              <!-- Concentric Circular Power Conduits -->
+              <div class="concentric-power-conduits">
+                <div class="conduit-ring cr-1"></div>
+                <div class="conduit-ring cr-2"></div>
+                <div class="conduit-ring cr-3"></div>
+                <div class="conduit-ring cr-4"></div>
+                <div class="conduit-ring cr-5"></div>
+              </div>
+
+              <!-- 3 Mounting Bracket Nodes at 0°, 120°, 240° -->
+              <div class="bracket-spoke b-0">
+                <div class="bracket-mount">
+                  <div class="bracket-bolt"><div class="bolt-center"></div></div>
+                  <div class="bracket-teeth">
+                    <span class="tooth"></span><span class="tooth"></span><span class="tooth"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="bracket-spoke b-120">
+                <div class="bracket-mount">
+                  <div class="bracket-bolt"><div class="bolt-center"></div></div>
+                  <div class="bracket-teeth">
+                    <span class="tooth"></span><span class="tooth"></span><span class="tooth"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="bracket-spoke b-240">
+                <div class="bracket-mount">
+                  <div class="bracket-bolt"><div class="bolt-center"></div></div>
+                  <div class="bracket-teeth">
+                    <span class="tooth"></span><span class="tooth"></span><span class="tooth"></span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. Pure Concentric Center Core (NO '+' DESIGN) -->
+              <div class="reactor-center-core">
+                <div class="core-outer-halo"></div>
+                <div class="core-stepped-ring"></div>
+                <div class="core-inner-plate">
+                  <div class="core-hotspot"></div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
