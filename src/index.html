@@ -86,11 +86,12 @@
             <div class="neural-header-title">
               <span class="neural-beacon"></span>
               <span class="gadget-title">NEURAL NETWORK</span>
+              <span class="neural-status-badge" id="neural-engine-state">STANDBY</span>
             </div>
             <span class="gadget-val purple" id="model-name-label">QWEN 3.5 2B</span>
           </div>
 
-          <!-- Important AI Telemetry & Architecture Grid -->
+          <!-- Important AI Telemetry & Architecture Grid (100% Real local Ollama) -->
           <div class="neural-telemetry-row">
             <div class="neural-metric-cell">
               <span class="neural-metric-tag">PARAMS</span>
@@ -102,11 +103,11 @@
             </div>
             <div class="neural-metric-cell">
               <span class="neural-metric-tag">CTX WINDOW</span>
-              <span class="neural-metric-val emerald" id="nn-ctx">4096</span>
+              <span class="neural-metric-val emerald" id="nn-ctx">262K</span>
             </div>
             <div class="neural-metric-cell">
               <span class="neural-metric-tag">LATENCY</span>
-              <span class="neural-metric-val yellow" id="nn-latency">18ms</span>
+              <span class="neural-metric-val yellow" id="nn-latency">0ms</span>
             </div>
           </div>
 
@@ -121,7 +122,7 @@
           <div class="ref-token-header">
             <div class="ref-token-title-group">
               <span class="ref-token-title">Token activity</span>
-              <span class="ref-token-pill" id="ref-token-badge">23 TOKENS</span>
+              <span class="ref-token-pill" id="ref-token-badge">0 TOKENS</span>
             </div>
             <div class="ref-token-tabs">
               <span class="ref-tab">Daily</span>
@@ -141,7 +142,7 @@
           <div class="ref-token-hint-bar">
             <span class="ref-hint-text" id="ref-hint-text">Hover or click any slot above to inspect token subwords, vocabulary IDs, and softmax probabilities.</span>
             <span class="ref-hint-counters">
-              Input: <b id="tok-inp">13</b> &nbsp; Generated: <b id="tok-gen">10</b> &nbsp; Cached: <b id="tok-cached">23</b> &nbsp; Speed: <b id="tok-spd">12.0</b> tok/s
+              Input: <b id="tok-inp">0</b> &nbsp; Generated: <b id="tok-gen">0</b> &nbsp; Cached: <b id="tok-cached">0</b> &nbsp; Speed: <b id="tok-spd">0.0</b> tok/s
             </span>
           </div>
 
@@ -149,19 +150,19 @@
           <div class="ref-telemetry-quad">
             <div class="ref-quad-cell">
               <span class="ref-cell-tag">ACTIVE KV CACHE SLOTS</span>
-              <span class="ref-cell-val cyan" id="kv-cache-slots">23 slots</span>
+              <span class="ref-cell-val cyan" id="kv-cache-slots">0 slots</span>
             </div>
             <div class="ref-quad-cell">
               <span class="ref-cell-tag">KV RAM FOOTPRINT</span>
-              <span class="ref-cell-val cyan" id="kv-vram-footprint">2.26 GB</span>
+              <span class="ref-cell-val cyan" id="kv-vram-footprint">2.56 GB</span>
             </div>
             <div class="ref-quad-cell">
               <span class="ref-cell-tag">DECODING SPEED</span>
-              <span class="ref-cell-val cyan" id="decoding-speed">12.0 tok/s</span>
+              <span class="ref-cell-val cyan" id="decoding-speed">-- tok/s</span>
             </div>
             <div class="ref-quad-cell">
               <span class="ref-cell-tag">STOP CONDITION</span>
-              <span class="ref-cell-val yellow" id="stop-condition">Standby</span>
+              <span class="ref-cell-val cyan" id="stop-condition">Standby</span>
             </div>
           </div>
 

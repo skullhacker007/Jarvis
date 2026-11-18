@@ -132,13 +132,13 @@ impl Default for ModelMetrics {
             name: "qwen3.5:2b".to_string(),
             parameter_size: "1.9B".to_string(),
             quantization: "Q8_0".to_string(),
-            context_length: 4096,
-            memory_mb: 2260.0,
-            eval_tokens_per_sec: 12.0,
-            last_eval_count: 10,
-            last_prompt_eval_count: 13,
-            last_latency_ms: 830,
-            is_loaded: true,
+            context_length: 262144,
+            memory_mb: 2559.08,
+            eval_tokens_per_sec: 0.0,
+            last_eval_count: 0,
+            last_prompt_eval_count: 0,
+            last_latency_ms: 0,
+            is_loaded: false,
         }
     }
 }
@@ -174,6 +174,9 @@ pub struct ProcessItem {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SystemTelemetry {
     pub cpu_usage: f32,
+    pub cpu_brand: String,
+    pub cpu_cores: usize,
+    pub cpu_threads: usize,
     pub ram_used_gb: f32,
     pub ram_total_gb: f32,
     pub ram_percent: f32,
@@ -587,13 +590,16 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>) -> Result
 
 #[tauri::command]
 async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<SystemTelemetry, String> {
-    let (cpu_usage, ram_used_gb, ram_total_gb, ram_percent, proc_list) = {
+    let (cpu_usage, cpu_brand, cpu_cores, cpu_threads, ram_used_gb, ram_total_gb, ram_percent, proc_list) = {
         let mut sys = state.sys.lock().map_err(|e| e.to_string())?;
         sys.refresh_cpu_all();
         sys.refresh_memory();
         sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
         let cpu = sys.global_cpu_usage();
+        let cpu_brand = sys.cpus().first().map(|c| c.brand().trim().to_string()).unwrap_or_else(|| "Intel Core i7-8700B".to_string());
+        let cpu_cores = sys.physical_core_count().unwrap_or(6);
+        let cpu_threads = sys.cpus().len();
         let total_bytes = sys.total_memory() as f32;
         let used_bytes = sys.used_memory() as f32;
 
@@ -683,7 +689,7 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         plist.sort_by(|a, b| b.memory_mb.partial_cmp(&a.memory_mb).unwrap_or(std::cmp::Ordering::Equal));
         plist.truncate(6);
 
-        (cpu, ram_used, ram_total, ram_pct, plist)
+        (cpu, cpu_brand, cpu_cores, cpu_threads, ram_used, ram_total, ram_pct, plist)
     };
 
     let (net_rx_kb, net_tx_kb) = {
@@ -698,17 +704,18 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         (rx, tx)
     };
 
-    // Query Ollama /api/ps for real loaded model information
+    // Query Ollama for real model information (100% dynamic)
     let client = reqwest::Client::new();
-    if let Ok(res) = client.get(OLLAMA_PS_URL).timeout(Duration::from_millis(300)).send().await {
+    let mut model_found = false;
+    if let Ok(res) = client.get(OLLAMA_PS_URL).timeout(Duration::from_millis(350)).send().await {
         if let Ok(ps_json) = res.json::<serde_json::Value>().await {
             if let Some(models) = ps_json["models"].as_array() {
                 if let Some(first_model) = models.first() {
                     let name = first_model["name"].as_str().unwrap_or(MODEL_NAME).to_string();
                     let param_size = first_model["details"]["parameter_size"].as_str().unwrap_or("1.9B").to_string();
                     let quant = first_model["details"]["quantization_level"].as_str().unwrap_or("Q8_0").to_string();
-                    let ctx_len = first_model["context_length"].as_u64().unwrap_or(4096) as u32;
-                    let size_bytes = first_model["size"].as_f64().unwrap_or(2369666414.0);
+                    let ctx_len = first_model["context_length"].as_u64().unwrap_or(262144) as u32;
+                    let size_bytes = first_model["size"].as_f64().unwrap_or(2683396812.0);
                     let mem_mb = size_bytes / (1024.0 * 1024.0);
 
                     if let Ok(mut mm) = state.model_metrics.lock() {
@@ -718,6 +725,37 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
                         mm.context_length = ctx_len;
                         mm.memory_mb = mem_mb;
                         mm.is_loaded = true;
+                    }
+                    model_found = true;
+                }
+            }
+        }
+    }
+
+    // If model not yet loaded in active VRAM, query /api/tags for installed model specs
+    if !model_found {
+        if let Ok(res) = client.get("http://127.0.0.1:11434/api/tags").timeout(Duration::from_millis(350)).send().await {
+            if let Ok(tags_json) = res.json::<serde_json::Value>().await {
+                if let Some(models) = tags_json["models"].as_array() {
+                    let target_model = models.iter().find(|m| {
+                        m["name"].as_str().map(|n| n.contains("qwen3.5") || n.contains("sysbrain")).unwrap_or(false)
+                    }).or_else(|| models.first());
+
+                    if let Some(m) = target_model {
+                        let name = m["name"].as_str().unwrap_or(MODEL_NAME).to_string();
+                        let param_size = m["details"]["parameter_size"].as_str().unwrap_or("1.9B").to_string();
+                        let quant = m["details"]["quantization_level"].as_str().unwrap_or("Q8_0").to_string();
+                        let ctx_len = m["details"]["context_length"].as_u64().unwrap_or(262144) as u32;
+                        let size_bytes = m["size"].as_f64().unwrap_or(2683396812.0);
+                        let mem_mb = size_bytes / (1024.0 * 1024.0);
+
+                        if let Ok(mut mm) = state.model_metrics.lock() {
+                            mm.name = name;
+                            mm.parameter_size = param_size;
+                            mm.quantization = quant;
+                            mm.context_length = ctx_len;
+                            mm.memory_mb = mem_mb;
+                        }
                     }
                 }
             }
@@ -733,6 +771,9 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
 
     Ok(SystemTelemetry {
         cpu_usage,
+        cpu_brand,
+        cpu_cores,
+        cpu_threads,
         ram_used_gb,
         ram_total_gb,
         ram_percent,
