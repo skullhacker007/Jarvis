@@ -1,6 +1,267 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-<svg width="800px" height="800px" viewBox="0 0 76 76" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="full" enable-background="new 0 0 76.00 76.00" xml:space="preserve">
-	<path fill="#000000" fill-opacity="1" stroke-width="0.2" stroke-linejoin="round" d="M 38,23C 44.382,23 49.8331,26.9856 52,32.6036L 52,43.3964C 49.8331,49.0144 44.382,53 38,53C 36.9694,53 35.9631,52.8961 34.991,52.6981C 34.835,50.0773 32.6601,48 30,48C 29.0779,48 28.214,48.2496 27.4724,48.685C 25.9673,47.202 24.7741,45.4033 24,43.3964L 24,32.6036C 26.1669,26.9856 31.618,23 38,23 Z M 23,33.5L 23,42.5L 22.8835,43.2565C 23.792,45.8695 25.3589,48.1744 27.3856,49.9725C 28.0868,49.3665 29.0006,49 30,49C 32.2091,49 34,50.7909 34,53C 34,55.2091 32.2091,57 30,57C 27.7909,57 26,55.2091 26,53L 26.0084,52.7385C 23.508,50.7017 21.5357,48.0412 20.3287,44.9942C 19.0279,44.9062 18,43.8232 18,42.5L 18,33.5C 18,32.1769 19.0279,31.0938 20.3287,31.0058C 23.1144,23.9735 29.9764,19 38,19C 46.0236,19 52.8856,23.9735 55.6713,31.0058C 56.9721,31.0938 58,32.1769 58,33.5L 58,42.5C 58,43.8807 56.8807,45 55.5,45C 54.1193,45 53,43.8807 53,42.5L 53,33.5L 53.1165,32.7435C 50.9419,26.4891 44.9952,22 38,22C 31.0048,22 25.0581,26.4891 22.8835,32.7435L 23,33.5 Z "/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Radial Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#071322"/>
+      <stop offset="65%" stop-color="#020813"/>
+      <stop offset="100%" stop-color="#000307"/>
+    </radialGradient>
+
+    <!-- Outer Glow -->
+    <radialGradient id="outerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="50%" stop-color="#00f2fe" stop-opacity="0.25"/>
+      <stop offset="85%" stop-color="#0077ff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Center Reactor Plasma Glow -->
+    <radialGradient id="reactorGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="25%" stop-color="#5cfaff" stop-opacity="0.95"/>
+      <stop offset="55%" stop-color="#00d4ff" stop-opacity="0.7"/>
+      <stop offset="80%" stop-color="#0066ff" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#001533" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Core Center Glow -->
+    <radialGradient id="coreCenter" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="25%" stop-color="#d4faff"/>
+      <stop offset="60%" stop-color="#00f2fe"/>
+      <stop offset="100%" stop-color="#0072ff"/>
+    </radialGradient>
+
+    <!-- Neon Cyan Linear Gradient -->
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5cfaff"/>
+      <stop offset="50%" stop-color="#00f2fe"/>
+      <stop offset="100%" stop-color="#0072ff"/>
+    </linearGradient>
+
+    <!-- High-tech Metallic Cyan Gradient -->
+    <linearGradient id="metalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14344d"/>
+      <stop offset="50%" stop-color="#091e2e"/>
+      <stop offset="100%" stop-color="#040d14"/>
+    </linearGradient>
+
+    <!-- Copper / Gold Induction Coil Gradient -->
+    <linearGradient id="coilGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffd000"/>
+      <stop offset="50%" stop-color="#ff9100"/>
+      <stop offset="100%" stop-color="#d85200"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Base Dark Tech Shield -->
+  <circle cx="256" cy="256" r="252" fill="url(#bgGrad)"/>
+  <circle cx="256" cy="256" r="250" fill="url(#outerGlow)"/>
+  
+  <!-- Outer Bezel -->
+  <circle cx="256" cy="256" r="248" fill="none" stroke="url(#cyanGrad)" stroke-width="2.5" stroke-opacity="0.7"/>
+  <circle cx="256" cy="256" r="243" fill="none" stroke="#00f2fe" stroke-width="1" stroke-dasharray="8 6" stroke-opacity="0.6"/>
+
+  <line x1="493.00" y1="256.00" x2="483.00" y2="256.00" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="489.40" y1="297.15" x2="484.48" y2="296.29" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="478.71" y1="337.06" x2="474.01" y2="335.35" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="461.25" y1="374.50" x2="452.59" y2="369.50" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="437.55" y1="408.34" x2="433.72" y2="405.13" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="408.34" y1="437.55" x2="405.13" y2="433.72" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="374.50" y1="461.25" x2="369.50" y2="452.59" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="337.06" y1="478.71" x2="335.35" y2="474.01" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="297.15" y1="489.40" x2="296.29" y2="484.48" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="256.00" y1="493.00" x2="256.00" y2="483.00" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="214.85" y1="489.40" x2="215.71" y2="484.48" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="174.94" y1="478.71" x2="176.65" y2="474.01" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="137.50" y1="461.25" x2="142.50" y2="452.59" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="103.66" y1="437.55" x2="106.87" y2="433.72" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="74.45" y1="408.34" x2="78.28" y2="405.13" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="50.75" y1="374.50" x2="59.41" y2="369.50" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="33.29" y1="337.06" x2="37.99" y2="335.35" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="22.60" y1="297.15" x2="27.52" y2="296.29" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="19.00" y1="256.00" x2="29.00" y2="256.00" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="22.60" y1="214.85" x2="27.52" y2="215.71" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="33.29" y1="174.94" x2="37.99" y2="176.65" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="50.75" y1="137.50" x2="59.41" y2="142.50" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="74.45" y1="103.66" x2="78.28" y2="106.87" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="103.66" y1="74.45" x2="106.87" y2="78.28" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="137.50" y1="50.75" x2="142.50" y2="59.41" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="174.94" y1="33.29" x2="176.65" y2="37.99" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="214.85" y1="22.60" x2="215.71" y2="27.52" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="256.00" y1="19.00" x2="256.00" y2="29.00" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="297.15" y1="22.60" x2="296.29" y2="27.52" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="337.06" y1="33.29" x2="335.35" y2="37.99" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="374.50" y1="50.75" x2="369.50" y2="59.41" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="408.34" y1="74.45" x2="405.13" y2="78.28" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="437.55" y1="103.66" x2="433.72" y2="106.87" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="461.25" y1="137.50" x2="452.59" y2="142.50" stroke="#00f2fe" stroke-width="2.8" stroke-opacity="0.95"/>
+  <line x1="478.71" y1="174.94" x2="474.01" y2="176.65" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+  <line x1="489.40" y1="214.85" x2="484.48" y2="215.71" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.45"/>
+
+  <!-- Outer Tech Chassis Ring -->
+  <circle cx="256" cy="256" r="217" fill="none" stroke="url(#metalGrad)" stroke-width="16"/>
+  <circle cx="256" cy="256" r="225" fill="none" stroke="#00f2fe" stroke-width="1.6" stroke-opacity="0.8"/>
+  <circle cx="256" cy="256" r="209" fill="none" stroke="#00f2fe" stroke-width="1.6" stroke-opacity="0.8"/>
+
+  <g transform="rotate(0 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g transform="rotate(36 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g transform="rotate(72 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g transform="rotate(108 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g transform="rotate(144 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g transform="rotate(180 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g transform="rotate(216 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g transform="rotate(252 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g transform="rotate(288 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g transform="rotate(324 256 256)">
+    <!-- Coil Core -->
+    <rect x="245" y="44" width="22" height="34" rx="4" fill="url(#coilGrad)" stroke="#ffe066" stroke-width="1"/>
+    <!-- Wire Windings -->
+    <line x1="245" y1="51" x2="267" y2="51" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="58" x2="267" y2="58" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="65" x2="267" y2="65" stroke="#3d1800" stroke-width="1.6"/>
+    <line x1="245" y1="72" x2="267" y2="72" stroke="#3d1800" stroke-width="1.6"/>
+    <!-- Coil Glow Bar -->
+    <rect x="253" y="46" width="6" height="30" rx="2" fill="#ffffff" opacity="0.8"/>
+  </g>
+
+  <!-- Middle Reactor Chassis Ring -->
+  <circle cx="256" cy="256" r="162" fill="none" stroke="url(#metalGrad)" stroke-width="18"/>
+  <circle cx="256" cy="256" r="171" fill="none" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.8"/>
+  <circle cx="256" cy="256" r="153" fill="none" stroke="#00f2fe" stroke-width="1.4" stroke-opacity="0.8"/>
+  
+  <!-- Glowing Cyan Power Conduit Ring -->
+  <circle cx="256" cy="256" r="135" fill="none" stroke="#00f2fe" stroke-width="6.5" stroke-dasharray="32 10" stroke-linecap="round" opacity="0.95"/>
+  <circle cx="256" cy="256" r="135" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-dasharray="32 10" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- Inner Retaining Collar -->
+  <circle cx="256" cy="256" r="114" fill="#041220" stroke="url(#cyanGrad)" stroke-width="3.5"/>
+
+
+  <!-- Central Luminous Plasma Chamber -->
+  <circle cx="256" cy="256" r="95" fill="url(#reactorGlow)" opacity="0.9"/>
+
+  <!-- Stark Mark VI Arc Reactor Inverted Core Triangle -->
+  <polygon points="186.72,216.00 325.28,216.00 256.00,336.00" 
+           fill="#03101c" stroke="url(#cyanGrad)" stroke-width="7" stroke-linejoin="round"/>
+
+
+  <polygon points="202.31,225.00 309.69,225.00 256.00,318.00" 
+           fill="#00e5ff" fill-opacity="0.3" stroke="#00f2fe" stroke-width="3" stroke-linejoin="round"/>
+  <polygon points="202.31,225.00 309.69,225.00 256.00,318.00" 
+           fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round" opacity="0.9"/>
+
+
+  <!-- Central Energy Emitter Sphere -->
+  <circle cx="256" cy="256" r="28" fill="url(#coreCenter)"/>
+  <circle cx="256" cy="256" r="16" fill="#ffffff"/>
+  <circle cx="256" cy="256" r="7" fill="#cbf7ff"/>
+
+  <!-- Micro Targeting Crosshair in Center -->
+  <line x1="256" y1="234" x2="256" y2="278" stroke="#004477" stroke-width="1.8"/>
+  <line x1="234" y1="256" x2="278" y2="256" stroke="#004477" stroke-width="1.8"/>
+
+  <!-- 3 Reactor Node Lenses at Triangle Vertices -->
+
+  <circle cx="186.72" cy="216.00" r="8.5" fill="#020b14" stroke="#00f2fe" stroke-width="2.2"/>
+  <circle cx="186.72" cy="216.00" r="4" fill="#ffffff"/>
+  <circle cx="325.28" cy="216.00" r="8.5" fill="#020b14" stroke="#00f2fe" stroke-width="2.2"/>
+  <circle cx="325.28" cy="216.00" r="4" fill="#ffffff"/>
+  <circle cx="256.00" cy="336.00" r="8.5" fill="#020b14" stroke="#00f2fe" stroke-width="2.2"/>
+  <circle cx="256.00" cy="336.00" r="4" fill="#ffffff"/>
+
+  <!-- 4 Cardinal HUD Chevrons -->
+  <polygon points="256,12 250,22 262,22" fill="#00f2fe"/>
+  <polygon points="256,500 250,490 262,490" fill="#00f2fe"/>
+  <polygon points="12,256 22,250 22,262" fill="#00f2fe"/>
+  <polygon points="500,256 490,250 490,262" fill="#00f2fe"/>
 </svg>

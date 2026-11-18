@@ -12,8 +12,16 @@
   </head>
   <body>
     <div class="full-screen-stage">
-      <!-- Full-fit 4K uncompressed master image -->
-      <img src="assets/ironman_center_main.png" alt="Iron Man" class="ironman-master-img" />
+      <!-- Master 16:9 Stage Container for Iron Man & Arc Reactor HUD -->
+      <div class="ironman-stage-container">
+        <!-- Full-fit 4K uncompressed master image -->
+        <img src="assets/ironman_center.png" alt="Iron Man" class="ironman-master-img" />
+
+        <!-- STARK CHEST ARC REACTOR (RADIATOR) // REFERENCE DESIGN -->
+        <div class="stark-arc-reactor" id="stark-arc-reactor" title="Stark Arc Reactor // Online">
+          <img src="assets/arc_reactor.svg" class="arc-reactor-svg" alt="Stark Arc Reactor" />
+        </div>
+      </div>
 
       <!-- TOP-LEFT: Intelligent Modern Holographic Date & Time HUD -->
       <div class="tech-time-hud">

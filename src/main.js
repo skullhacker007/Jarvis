@@ -687,6 +687,28 @@ function setSystemState(state) {
       stopCondition.className = "ref-cell-val cyan";
     }
   }
+
+  const arcReactorEl = document.getElementById("stark-arc-reactor");
+  if (arcReactorEl) {
+    if (state === "thinking" || state === "speaking") {
+      arcReactorEl.classList.add("overdrive");
+    } else {
+      arcReactorEl.classList.remove("overdrive");
+    }
+  }
+}
+
+// Click Arc Reactor for Interactive Energy Surge
+const arcReactorEl = document.getElementById("stark-arc-reactor");
+if (arcReactorEl) {
+  arcReactorEl.addEventListener("click", () => {
+    arcReactorEl.classList.add("overdrive");
+    setTimeout(() => {
+      if (currentState !== "thinking" && currentState !== "speaking") {
+        arcReactorEl.classList.remove("overdrive");
+      }
+    }, 1500);
+  });
 }
 
 // -------------------------------------------------------------
