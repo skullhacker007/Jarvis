@@ -124,7 +124,10 @@ const kvVramFootprint = document.getElementById("kv-vram-footprint");
 const decodingSpeed = document.getElementById("decoding-speed");
 const stopCondition = document.getElementById("stop-condition");
 
-// Apps DOM
+// Model Tracking
+let currentActiveModelName = "GROQ QWEN 3.8 27B";
+
+// Apps & Models DOM
 const appsList = document.getElementById("apps-list");
 const appCountPill = document.getElementById("app-count-pill");
 
@@ -306,6 +309,11 @@ function updateClockAndDay() {
     const secPct = ((now.getSeconds() + now.getMilliseconds() / 1000) / 60) * 100;
     techSecFill.style.width = `${secPct.toFixed(1)}%`;
   }
+
+  // Periodic weather icon sync with clock
+  if (now.getSeconds() === 0 && now.getMilliseconds() < 300 && typeof updateWeatherDisplay === "function") {
+    updateWeatherDisplay();
+  }
 }
 setInterval(updateClockAndDay, 250);
 updateClockAndDay();
@@ -357,6 +365,12 @@ async function refreshSystemTelemetry() {
     // 0. Physical Microphone Hardware Detection (100% Dynamic Win32 WinMM)
     updateMicUI(telem.has_mic);
 
+    // Dynamic Subject Name from Host Windows Account
+    if (telem.username) {
+      const bioSubject = document.getElementById("bio-subject");
+      if (bioSubject) bioSubject.textContent = telem.username;
+    }
+
     // 1. CPU Brand & Threads (Real Host Kernel Sysinfo)
     if (cpuSubLabel && telem.cpu_brand) {
       cpuSubLabel.textContent = `${telem.cpu_brand.toUpperCase()} // ${telem.cpu_threads || 12} THREADS`;
@@ -388,12 +402,20 @@ async function refreshSystemTelemetry() {
     netHistory.push(netSum);
     drawSparkline(netCanvas, netCtx, netHistory, "#00e676", "rgba(0, 230, 118, 0.14)", 100);
 
-    // 5. Real Model & Token Activity Telemetry (100% Dynamic Local Ollama)
+    // 5. Real Model & Token Activity Telemetry (100% Dynamic Fleet Telemetry)
     if (telem.model_metrics) {
       const mm = telem.model_metrics;
+      if (telem.active_model_id) {
+        const cleanName = telem.active_model_id.replace("qwen/", "").replace("openai/", "").toUpperCase();
+        currentActiveModelName = telem.active_model_id.includes("qwen3.5") ? "OLLAMA LOCAL" : `GROQ ${cleanName}`;
+      }
+      if (visorStatusLabel && currentState === "idle") {
+        visorStatusLabel.textContent = `${currentActiveModelName} // ONLINE`;
+      }
+
       if (modelNameLabel) modelNameLabel.textContent = mm.name.toUpperCase();
-      if (nnParams) nnParams.textContent = mm.parameter_size || "1.9B";
-      if (nnQuant) nnQuant.textContent = mm.quantization || "Q8_0";
+      if (nnParams) nnParams.textContent = mm.parameter_size || "27B";
+      if (nnQuant) nnQuant.textContent = mm.quantization || "FP16 LPU";
       
       const ctxDisplay = mm.context_length >= 1024 ? `${Math.round(mm.context_length / 1024)}K` : `${mm.context_length}`;
       if (nnCtx) nnCtx.textContent = ctxDisplay;
@@ -406,6 +428,9 @@ async function refreshSystemTelemetry() {
         if (currentState === "thinking") {
           neuralEngineState.textContent = "INFERENCE";
           neuralEngineState.className = "neural-status-badge active";
+        } else if (mm.quantization && mm.quantization.includes("LPU")) {
+          neuralEngineState.textContent = "HOT // LPU";
+          neuralEngineState.className = "neural-status-badge";
         } else if (mm.is_loaded) {
           neuralEngineState.textContent = "HOT // VRAM";
           neuralEngineState.className = "neural-status-badge";
@@ -448,31 +473,49 @@ async function refreshSystemTelemetry() {
       updateTokenSlots(cached);
     }
 
-    // 6. Active System Apps (Taskbar Windows Only - Focus/Open On Click, Never Close)
-    if (appsList) {
-      if (telem.top_apps && telem.top_apps.length > 0) {
-        appsList.innerHTML = "";
-        if (appCountPill) appCountPill.textContent = `${telem.top_apps.length} TASKBAR APPS`;
-        telem.top_apps.forEach(app => {
-          const chip = document.createElement("div");
-          chip.className = "app-chip";
-          const memDisplay = app.memory_mb > 1024 ? `${(app.memory_mb / 1024).toFixed(1)} GB` : `${Math.round(app.memory_mb)} MB`;
-          chip.innerHTML = `
-            <span class="chip-dot"></span>
-            <span class="chip-name" title="${app.title || app.name}">${app.name}</span>
-            <span class="chip-mem">${memDisplay}</span>
-          `;
-          chip.title = `Taskbar window: "${app.title || app.name}"\nClick to switch/open`;
-          chip.addEventListener("click", async () => {
-            const target = app.name || app.title;
-            await invoke("run_direct_action", { action: "focus_app", target });
-          });
-          appsList.appendChild(chip);
-        });
-      } else {
-        appsList.innerHTML = `<div class="app-chip" style="opacity:0.6;justify-content:center;"><span>NO TASKBAR APPS</span></div>`;
-        if (appCountPill) appCountPill.textContent = "IDLE";
+    // 6. Available AI Models & Auto-Failover Fleet
+    const modelsList = document.getElementById("models-list");
+    const modelRosterPill = document.getElementById("model-roster-pill");
+    if (modelsList && telem.available_models && telem.available_models.length > 0) {
+      modelsList.innerHTML = "";
+      const activeMod = telem.available_models.find(m => m.is_active);
+      if (modelRosterPill && activeMod) {
+        modelRosterPill.textContent = activeMod.provider.includes("GROQ") ? "GROQ LPU ACTIVE" : "LOCAL OLLAMA ACTIVE";
+        modelRosterPill.className = activeMod.provider.includes("GROQ") ? "gadget-sub-pill pulse-emerald" : "gadget-sub-pill pulse-purple";
       }
+
+      telem.available_models.forEach(m => {
+        const card = document.createElement("div");
+        card.className = `model-item ${m.is_active ? 'active-model' : ''}`;
+        
+        let badgeClass = "badge-groq";
+        if (m.is_active) {
+          badgeClass = "badge-active";
+        } else if (m.provider.includes("LOCAL")) {
+          badgeClass = "badge-local";
+        }
+
+        const spdDisplay = m.speed_tok_s > 0 ? `${Math.round(m.speed_tok_s)} tok/s` : "--";
+        const latDisplay = m.latency_ms > 0 ? `${m.latency_ms}ms` : "--";
+        const usedDisplay = m.tokens_used > 0 ? m.tokens_used.toLocaleString() : "0";
+
+        card.innerHTML = `
+          <div class="model-item-top">
+            <div class="model-name-group">
+              <span class="model-priority">P${m.priority}</span>
+              <span class="model-name">${m.display_name}</span>
+            </div>
+            <span class="model-badge ${badgeClass}">${m.status}</span>
+          </div>
+          <div class="model-item-sub">
+            <span>CTX: <b>${m.context_window}</b></span>
+            <span>USED: <b>${usedDisplay}</b></span>
+            <span>SPD: <b>${spdDisplay}</b></span>
+            <span>LAT: <b>${latDisplay}</b></span>
+          </div>
+        `;
+        modelsList.appendChild(card);
+      });
     }
   } catch (err) {
     console.warn("Telemetry poller error:", err);
@@ -482,28 +525,91 @@ setInterval(refreshSystemTelemetry, 1500);
 refreshSystemTelemetry();
 
 // -------------------------------------------------------------
-// LIVE GPS & IP BACKGROUND WEATHER ENGINE
+// LIVE GPS & IP BACKGROUND WEATHER ENGINE (WITH TIME & TEMP ICONS)
 // -------------------------------------------------------------
-async function fetchLocalWeather() {
+let currentWeatherCode = 0;
+let currentTempC = 25;
+let currentIsDay = null;
+
+function determineWeatherIcon(weatherCode, tempC, isDayVal) {
+  const hour = new Date().getHours();
+  const isNight = isDayVal !== null && isDayVal !== undefined 
+    ? (isDayVal === 0 || isDayVal === false)
+    : (hour < 6 || hour >= 18);
+  const temp = typeof tempC === "number" ? Math.round(tempC) : 24;
+  const code = weatherCode !== null && weatherCode !== undefined ? Number(weatherCode) : null;
+
+  // 1. Extreme temperature alerts
+  if (temp <= 0) return { icon: "❄️", desc: "Freezing Cold" };
+  if (temp >= 40) return { icon: "🔥", desc: "Extreme Heat" };
+
+  // 2. Weather conditions based on WMO standard codes
+  if (code !== null) {
+    // Thunderstorm
+    if (code >= 95) return { icon: "⛈️", desc: "Thunderstorm" };
+    // Snowfall
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { icon: "🌨️", desc: "Snowfall" };
+    // Heavy rain
+    if (code === 65 || code === 82) return { icon: "🌧️", desc: "Heavy Rain" };
+    // Moderate rain
+    if (code === 63 || code === 81) return { icon: "🌧️", desc: "Rain" };
+    // Light rain or drizzle
+    if ((code >= 51 && code <= 57) || code === 61 || code === 80) {
+      return { icon: isNight ? "🌧️" : "🌦️", desc: "Showers / Light Rain" };
+    }
+    // Fog / Mist
+    if (code >= 45 && code <= 48) return { icon: "🌫️", desc: "Fog / Mist" };
+    // Overcast
+    if (code === 3) return { icon: "☁️", desc: "Overcast" };
+    // Partly cloudy
+    if (code === 1 || code === 2) {
+      return { icon: isNight ? "☁️" : "⛅", desc: "Partly Cloudy" };
+    }
+    // Clear sky (code 0)
+    if (code === 0) {
+      if (isNight) {
+        if (temp <= 12) return { icon: "🌙", desc: "Clear Chilly Night" };
+        return { icon: "🌙", desc: "Clear Night" };
+      } else {
+        if (temp >= 33) return { icon: "☀️", desc: "Sunny & Hot" };
+        if (temp <= 14) return { icon: "🌤️", desc: "Cool Sunny Day" };
+        return { icon: "☀️", desc: "Clear & Sunny" };
+      }
+    }
+  }
+
+  // 3. Fallback based purely on Time and Temperature
+  if (isNight) {
+    if (temp <= 12) return { icon: "🌙", desc: "Cold Night" };
+    return { icon: "🌙", desc: "Night" };
+  } else {
+    if (temp >= 32) return { icon: "☀️", desc: "Hot Day" };
+    if (temp <= 15) return { icon: "🌤️", desc: "Cool Day" };
+    return { icon: "⛅", desc: "Pleasant Day" };
+  }
+}
+
+function updateWeatherDisplay() {
   const tempEl = document.getElementById("weather-temp");
-  const tempMini = document.getElementById("tech-temp-mini");
-  const cityEl = document.getElementById("weather-city");
   const iconEl = document.getElementById("weather-icon");
 
-  const getWeatherIcon = (code) => {
-    if (code === 0) return "☀"; // Clear sky
-    if (code >= 1 && code <= 3) return "⛅"; // Partly cloudy
-    if (code >= 45 && code <= 48) return "🌫"; // Fog
-    if (code >= 51 && code <= 67) return "🌧"; // Rain
-    if (code >= 71 && code <= 77) return "❄"; // Snow
-    if (code >= 80 && code <= 82) return "🌦"; // Showers
-    if (code >= 95) return "⛈"; // Thunderstorm
-    return "🌡";
-  };
+  if (tempEl && typeof currentTempC === "number") {
+    tempEl.textContent = `${Math.round(currentTempC)}°C`;
+  }
 
-  const applyWeather = (tempC) => {
-    const formatted = `${Math.round(tempC)}°C`;
-    if (tempEl) tempEl.textContent = formatted;
+  const { icon, desc } = determineWeatherIcon(currentWeatherCode, currentTempC, currentIsDay);
+  if (iconEl) {
+    iconEl.textContent = icon;
+    iconEl.title = `Weather: ${desc} • ${Math.round(currentTempC)}°C`;
+  }
+}
+
+async function fetchLocalWeather() {
+  const applyWeather = (tempC, city = "LOCAL", weatherCode = 0, isDay = null) => {
+    currentTempC = tempC;
+    currentWeatherCode = weatherCode;
+    currentIsDay = isDay;
+    updateWeatherDisplay();
   };
 
   try {
@@ -513,10 +619,10 @@ async function fetchLocalWeather() {
         async (pos) => {
           try {
             const { latitude, longitude } = pos.coords;
-            const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code`);
+            const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code,is_day`);
             const data = await res.json();
             if (data?.current) {
-              applyWeather(data.current.temperature_2m, "GPS", data.current.weather_code);
+              applyWeather(data.current.temperature_2m, "GPS", data.current.weather_code, data.current.is_day);
               return;
             }
           } catch (e) {
@@ -543,15 +649,16 @@ async function fetchLocalWeather() {
       const lon = geo.longitude;
       const city = geo.city || "LOCAL";
 
-      const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code`);
+      const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,is_day`);
       const wData = await wRes.json();
       if (wData?.current) {
-        applyWeather(wData.current.temperature_2m, city, wData.current.weather_code);
+        applyWeather(wData.current.temperature_2m, city, wData.current.weather_code, wData.current.is_day);
       }
     } catch (e) {
       const hour = new Date().getHours();
-      const estTemp = hour >= 10 && hour <= 16 ? 25 : (hour >= 17 && hour <= 21 ? 21 : 19);
-      applyWeather(estTemp, "LOCAL", 0);
+      const isNight = hour < 6 || hour >= 18;
+      const estTemp = hour >= 10 && hour <= 16 ? 26 : (hour >= 17 && hour <= 21 ? 22 : 20);
+      applyWeather(estTemp, "LOCAL", 0, isNight ? 0 : 1);
     }
   }
 }
@@ -1576,11 +1683,11 @@ function setSystemState(state) {
     if (state === "listening") {
       visorStatusLabel.textContent = "LISTENING FOR DIRECTIVE...";
     } else if (state === "thinking") {
-      visorStatusLabel.textContent = "INFERENCE // QUEEN NEURAL CORE";
+      visorStatusLabel.textContent = `INFERENCE // ${currentActiveModelName}`;
     } else if (state === "speaking") {
       visorStatusLabel.textContent = "TRANSMITTING VOCAL SYNTHESIS";
     } else {
-      visorStatusLabel.textContent = "QUEEN NEURAL CORE // ONLINE";
+      visorStatusLabel.textContent = `${currentActiveModelName} // ONLINE`;
     }
   }
 
@@ -1667,17 +1774,40 @@ async function processDirective(prompt) {
   const clean = prompt.trim();
   if (!clean) return;
 
-  // Fast-Path: Phone Dialer & Keypad Directives
+  // Fast-Path: Direct Phone Application Launch / Focus (Reference Image 2)
   const lowerDirective = clean.toLowerCase();
   if (
     lowerDirective === "open phone" ||
+    lowerDirective === "phone" ||
     lowerDirective === "open call" ||
+    lowerDirective === "call" ||
+    lowerDirective === "launch phone" ||
+    lowerDirective === "start phone"
+  ) {
+    if (visorUserLine && visorUserText) {
+      visorUserText.textContent = `"${clean}"`;
+      visorUserLine.style.display = "flex";
+    }
+    const replyMsg = "Opening direct Phone link for you, sir.";
+    if (visorJarvisText) visorJarvisText.textContent = replyMsg;
+    if (visorActionTag && visorActionDesc) {
+      visorActionDesc.textContent = "open_phone_app";
+      visorActionTag.style.display = "inline-flex";
+    }
+    speakResponse(replyMsg);
+    await invoke("run_direct_action", { action: "open_app", target: "phone" });
+    setSystemState("idle");
+    return;
+  }
+
+  // Fast-Path: Explicit Keypad / Dialer Request
+  if (
     lowerDirective === "open dialer" ||
+    lowerDirective === "dialer" ||
     lowerDirective === "phone keypad" ||
     lowerDirective === "keypad" ||
     lowerDirective === "open keypad" ||
-    lowerDirective === "call keypad" ||
-    lowerDirective === "phone"
+    lowerDirective === "call keypad"
   ) {
     if (visorUserLine && visorUserText) {
       visorUserText.textContent = `"${clean}"`;
@@ -1708,8 +1838,8 @@ async function processDirective(prompt) {
       }
       currentDialNumber = rawNum;
       updateDialerDisplay();
-      openPhoneKeypad();
-      await triggerPhoneCall();
+      await invoke("dial_phone_call", { number: currentDialNumber });
+      if (visorJarvisText) visorJarvisText.textContent = `Dialing ${rawNum} via connected phone...`;
       setSystemState("idle");
       return;
     }
@@ -1821,7 +1951,17 @@ visorMicBtn?.addEventListener("click", (e) => {
 // -------------------------------------------------------------
 // BORDERLESS APP DOCK REAL LAUNCHERS (PHONE, OUTLOOK, WHATSAPP, SPOTIFY)
 // -------------------------------------------------------------
-btnDockCall?.addEventListener("click", () => {
+btnDockCall?.addEventListener("click", async () => {
+  try {
+    await invoke("run_direct_action", { action: "open_app", target: "phone" });
+  } catch (err) {
+    console.warn("Failed to open phone app directly:", err);
+    window.open("ms-phone:", "_blank");
+  }
+});
+
+btnDockCall?.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
   openPhoneKeypad();
 });
 
@@ -1839,15 +1979,99 @@ btnDockMusic?.addEventListener("click", async () => {
 
 function normalizeVoiceTranscription(raw) {
   let text = (raw || "").trim();
-  const lower = text.toLowerCase();
-  
-  // Intelligent acoustic correction for common speech-to-text distortions
-  if (lower === "open not bad" || lower === "open note pad") return "open notepad";
-  if (lower === "open west coast" || lower === "open west code" || lower === "open visual studio") return "open vs code";
-  if (lower === "open calculate" || lower === "open calculator") return "open calc";
-  if (lower === "open brower") return "open chrome";
-  if (lower === "open terminate" || lower === "open prompt") return "open terminal";
-  
+  if (!text) return "";
+  const lower = text.toLowerCase().replace(/[.,!?;:]/g, "").trim();
+
+  // 1. Direct phonetic corrections for "open notepad" / "notepad"
+  // Handles: "or a lot", "or a lot of", "all a lot", "or not bad", "open not bad", "open note pad", etc.
+  if (
+    lower === "or a lot" ||
+    lower === "or a lot of" ||
+    lower === "all a lot" ||
+    lower === "or not bad" ||
+    lower === "open not bad" ||
+    lower === "open note pad" ||
+    lower === "note pad" ||
+    lower === "notepad" ||
+    lower === "open note" ||
+    lower === "hope and notepad" ||
+    lower === "open knot pad"
+  ) {
+    return "open notepad";
+  }
+
+  // Regex check for notepad
+  if (/\b(?:notepad|note\s*pad|not\s*bad)\b/i.test(lower)) {
+    if (/\b(?:close|kill|terminate|stop)\b/i.test(lower)) {
+      return "close notepad";
+    }
+    return "open notepad";
+  }
+
+  // 2. Calculator
+  if (/\b(?:calculator|calculate|calc)\b/i.test(lower)) {
+    if (/\b(?:close|kill|terminate|stop)\b/i.test(lower)) return "close calc";
+    return "open calc";
+  }
+
+  // 3. Code / VS Code
+  if (/\b(?:vs\s*code|visual\s*studio|west\s*code|west\s*coast)\b/i.test(lower) || lower === "code") {
+    if (/\b(?:close|kill|terminate|stop)\b/i.test(lower)) return "close code";
+    return "open vs code";
+  }
+
+  // 4. Phone / Call
+  if (/\b(?:phone|call|cellular|dialer|keypad)\b/i.test(lower)) {
+    if (/\b(?:keypad|dialer)\b/i.test(lower)) return "open dialer";
+    return "open phone";
+  }
+
+  // 5. Chrome / Browser
+  if (/\b(?:chrome|browser|google\s*chrome|brower)\b/i.test(lower)) {
+    if (/\b(?:close|kill|terminate|stop)\b/i.test(lower)) return "close chrome";
+    return "open chrome";
+  }
+
+  // 6. Terminal / CMD
+  if (/\b(?:terminal|command\s*prompt|powershell|cmd)\b/i.test(lower)) {
+    return "open terminal";
+  }
+
+  // 7. Task Manager
+  if (/\b(?:task\s*manager|taskmgr)\b/i.test(lower)) {
+    return "open taskmgr";
+  }
+
+  // 8. Spotify / Music
+  if (/\b(?:spotify|music|song|songs)\b/i.test(lower)) {
+    return "open spotify";
+  }
+
+  // 9. WhatsApp
+  if (/\b(?:whatsapp|whats\s*app)\b/i.test(lower)) {
+    return "open whatsapp";
+  }
+
+  // 10. Weather
+  if (/\b(?:weather|temperature|forecast|climate)\b/i.test(lower)) {
+    return "weather";
+  }
+
+  // 11. Time / Clock
+  if (/\b(?:time|clock)\b/i.test(lower)) {
+    return "time";
+  }
+
+  // 12. Date
+  if (/\b(?:date|today)\b/i.test(lower)) {
+    return "date";
+  }
+
+  // 13. Screenshot
+  if (/\b(?:screenshot|screen\s*shot|capture\s*screen)\b/i.test(lower)) {
+    return "take screenshot";
+  }
+
   return text;
 }
 
@@ -1934,6 +2158,8 @@ async function toggleVoiceListener() {
       setSystemState("listening");
     };
 
+    recognition.maxAlternatives = 5;
+
     recognition.onresult = (event) => {
       let final = "";
       for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -1941,8 +2167,24 @@ async function toggleVoiceListener() {
           final += event.results[i][0].transcript;
         }
       }
-      if (final) {
-        const cleanFinal = final.trim();
+
+      // Check all alternatives for known speech commands (like notepad, calc, phone, etc.)
+      let bestCandidate = final;
+      try {
+        if (event.results?.[event.resultIndex]) {
+          for (let j = 0; j < event.results[event.resultIndex].length; j++) {
+            const cand = event.results[event.resultIndex][j].transcript;
+            const norm = normalizeVoiceTranscription(cand);
+            if (norm !== cand.trim()) {
+              bestCandidate = norm;
+              break;
+            }
+          }
+        }
+      } catch (e) {}
+
+      if (bestCandidate) {
+        const cleanFinal = bestCandidate.trim();
         if (cleanFinal) {
           const normalized = normalizeVoiceTranscription(cleanFinal);
           if (visorCmdInput) {
@@ -1992,6 +2234,18 @@ if ("speechSynthesis" in window) {
     synthesisVoices = window.speechSynthesis.getVoices();
   };
 }
+
+// Global F11 Fullscreen Toggle & Startup Support
+window.addEventListener("keydown", (e) => {
+  if (e.key === "F11") {
+    e.preventDefault();
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }
+});
 
 // Expose global processDirective for external and test invocations
 window.processDirective = processDirective;

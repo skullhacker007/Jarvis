@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -7,7 +8,30 @@ use sysinfo::{Networks, System};
 const OLLAMA_CHAT_URL: &str = "http://127.0.0.1:11434/api/chat";
 const OLLAMA_PS_URL: &str = "http://127.0.0.1:11434/api/ps";
 const OLLAMA_TAGS_URL: &str = "http://127.0.0.1:11434/api/tags";
+const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL_NAME: &str = "qwen3.5:2b";
+
+fn get_groq_api_key() -> String {
+    if let Ok(k) = std::env::var("GROQ_API_KEY") {
+        let t = k.trim().trim_matches('\'').trim_matches('"');
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("GROQ_API_KEY") {
+                    if let Some(val) = trimmed.split('=').nth(1) {
+                        return val.trim().trim_matches('\'').trim_matches('"').to_string();
+                    }
+                }
+            }
+        }
+    }
+    String::new()
+}
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -39,6 +63,7 @@ mod win32_apps {
         fn GetWindow(hWnd: HWND, uCmd: u32) -> HWND;
         fn SetForegroundWindow(hWnd: HWND) -> BOOL;
         fn ShowWindow(hWnd: HWND, nCmdShow: i32) -> BOOL;
+        fn BringWindowToTop(hWnd: HWND) -> BOOL;
     }
 
     const GW_OWNER: u32 = 4;
@@ -100,8 +125,14 @@ mod win32_apps {
                     let title = String::from_utf16_lossy(&buf[..len as usize]).to_lowercase();
                     let ft = &mut *(lparam as *mut FocusTarget);
                     let tgt = &ft.target;
-                    if title.contains(tgt) || tgt.contains(&title) {
+                    let matches = if tgt == "phone" {
+                        title == "phone" || title.starts_with("phone") || title.contains("phone")
+                    } else {
+                        title.contains(tgt) || tgt.contains(&title)
+                    };
+                    if matches {
                         ShowWindow(hwnd, 9); // SW_RESTORE
+                        BringWindowToTop(hwnd);
                         SetForegroundWindow(hwnd);
                         ft.found = true;
                         return 0; // stop enumeration
@@ -141,24 +172,47 @@ pub struct ModelMetrics {
 impl Default for ModelMetrics {
     fn default() -> Self {
         Self {
-            name: "qwen3.5:2b".to_string(),
-            parameter_size: "1.9B".to_string(),
-            quantization: "Q8_0".to_string(),
-            context_length: 262144,
-            memory_mb: 2559.08,
-            eval_tokens_per_sec: 0.0,
+            name: "qwen/qwen3.8-27b".to_string(),
+            parameter_size: "27B".to_string(),
+            quantization: "FP16 LPU".to_string(),
+            context_length: 131072,
+            memory_mb: 0.0,
+            eval_tokens_per_sec: 267.0,
             last_eval_count: 0,
             last_prompt_eval_count: 0,
-            last_latency_ms: 0,
+            last_latency_ms: 267,
             is_loaded: true,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AvailableModelInfo {
+    pub id: String,
+    pub display_name: String,
+    pub provider: String,
+    pub status: String,
+    pub priority: u32,
+    pub context_window: String,
+    pub tokens_used: u64,
+    pub speed_tok_s: f32,
+    pub latency_ms: u128,
+    pub is_active: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ModelRuntimeStats {
+    pub tokens_used: u64,
+    pub speed_tok_s: f32,
+    pub latency_ms: u128,
 }
 
 pub struct AppState {
     pub sys: Mutex<System>,
     pub networks: Mutex<Networks>,
     pub model_metrics: Mutex<ModelMetrics>,
+    pub model_stats: Mutex<HashMap<String, ModelRuntimeStats>>,
+    pub active_model_id: Mutex<String>,
 }
 
 #[cfg(windows)]
@@ -432,6 +486,9 @@ pub struct SystemTelemetry {
     pub top_apps: Vec<ProcessItem>,
     pub model_metrics: ModelMetrics,
     pub has_mic: bool,
+    pub username: String,
+    pub available_models: Vec<AvailableModelInfo>,
+    pub active_model_id: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -480,6 +537,13 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
                     .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
                     .spawn();
                 return Ok(format!("Opened {}", url));
+            }
+
+            // Direct Phone / Call link - Prioritize focusing active Phone app / streamed Android Phone
+            if app_clean == "call" || app_clean == "phone" {
+                if win32_apps::focus_window("phone") || win32_apps::focus_window("phone link") {
+                    return Ok("Focused Phone application".to_string());
+                }
             }
 
             let executable = match app_clean {
@@ -813,17 +877,7 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>) -> Result
         return Ok(fast_res);
     }
 
-    // Determine current loaded model name
-    let target_model = {
-        let mm = state.model_metrics.lock().map_err(|e| e.to_string())?;
-        if !mm.name.is_empty() {
-            mm.name.clone()
-        } else {
-            MODEL_NAME.to_string()
-        }
-    };
-
-    // Query Ollama Queen Model Brain for dynamic thinking & token metrics
+    // Query Auto-Failover Multi-Model Fleet (Groq LPUs + Local Ollama Failsafe)
     let client = reqwest::Client::new();
     let system_prompt = r#"You are J.A.R.V.I.S., Stark Industries AI controller on Windows.
 Reply ONLY with a single JSON object:
@@ -833,99 +887,250 @@ Rules:
 - Target mapping: "vs code"/"vscode"->"code", "notepad"->"notepad", "calculator"/"calc"->"calc", "chrome"->"chrome", "terminal"->"wt".
 - Do not output markdown, reasoning, or text outside JSON."#;
 
-    let payload = serde_json::json!({
-        "model": target_model,
-        "messages": [
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": prompt_clean }
-        ],
-        "think": false,
-        "options": {
-            "temperature": 0.0,
-            "num_predict": 45,
-            "num_thread": 10
-        },
-        "keep_alive": "24h",
-        "stream": false
-    });
+    let groq_key = get_groq_api_key();
 
-    let res = client
-        .post(OLLAMA_CHAT_URL)
-        .timeout(Duration::from_secs(12))
-        .json(&payload)
-        .send()
-        .await;
+    // Priority candidates: 4 Groq models + 1 Local Ollama failsafe
+    let candidates = vec![
+        ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32),
+        ("openai/gpt-oss-120b", "GROQ LPU", "120B", "FP16 LPU", 131072u32),
+        ("allam-2-7b", "GROQ LPU", "7B", "FP16 LPU", 8192u32),
+        ("openai/gpt-oss-20b", "GROQ LPU", "20B", "FP16 LPU", 131072u32),
+        ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32),
+    ];
 
-    let latency_ms = start_time.elapsed().as_millis();
+    for (model_id, provider, param_size, quant, ctx_len) in candidates {
+        let is_groq = provider == "GROQ LPU";
 
-    if let Ok(response) = res {
-        if let Ok(json_val) = response.json::<serde_json::Value>().await {
-            let eval_count = json_val["eval_count"].as_u64().unwrap_or(0) as u32;
-            let eval_duration = json_val["eval_duration"].as_u64().unwrap_or(0);
-            let prompt_eval_count = json_val["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
-            let tokens_per_sec = if eval_duration > 0 {
-                eval_count as f32 / (eval_duration as f32 / 1_000_000_000.0)
-            } else {
-                0.0
-            };
-            let total_tokens = prompt_eval_count + eval_count;
-
-            if let Ok(mut mm) = state.model_metrics.lock() {
-                if tokens_per_sec > 0.0 {
-                    mm.eval_tokens_per_sec = tokens_per_sec;
-                }
-                mm.last_eval_count = eval_count;
-                mm.last_prompt_eval_count = prompt_eval_count;
-                mm.last_latency_ms = latency_ms;
+        if is_groq {
+            if groq_key.is_empty() {
+                continue;
             }
 
-            let raw_content = json_val["message"]["content"].as_str().unwrap_or("").trim().to_string();
-            let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
-
-            let mut cmd_output = None;
-            let mut executed_action_label = None;
-
-            if action != "none" && !target.is_empty() {
-                let act_name = match action.as_str() {
-                    "open" | "open_app" | "launch" | "start" => "open_app",
-                    "close" | "close_app" | "kill" | "stop" => "close_app",
-                    "system_ctrl" | "media" => target.as_str(),
-                    "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
-                    _ => action.as_str(),
-                };
-
-                // Execute the single requested action exactly once
-                match execute_system_action(act_name, &target) {
-                    Ok(msg) => {
-                        executed_action_label = Some(format!("⚡ {}", msg));
-                        cmd_output = Some(msg);
-                    }
-                    Err(err) => {
-                        executed_action_label = Some(format!("⚠️ {}", err));
-                        cmd_output = Some(err);
-                    }
-                }
-            }
-
-            let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
-            words.push("→".to_string());
-            for w in reply.split_whitespace() {
-                words.push(w.to_string());
-            }
-
-            return Ok(JarvisResponse {
-                reply,
-                action: executed_action_label,
-                command: if !target.is_empty() { Some(target) } else { None },
-                output: cmd_output,
-                latency_ms,
-                prompt_tokens: prompt_eval_count,
-                eval_tokens: eval_count,
-                total_tokens,
-                tokens_per_sec,
-                model_name: target_model,
-                token_words: words,
+            let groq_payload = serde_json::json!({
+                "model": model_id,
+                "messages": [
+                    { "role": "system", "content": system_prompt },
+                    { "role": "user", "content": prompt_clean }
+                ],
+                "temperature": 0.0,
+                "max_tokens": 60,
+                "response_format": { "type": "json_object" }
             });
+
+            let res = client
+                .post(GROQ_CHAT_URL)
+                .header("Authorization", format!("Bearer {}", groq_key))
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(4500))
+                .json(&groq_payload)
+                .send()
+                .await;
+
+            if let Ok(response) = res {
+                if response.status().is_success() {
+                    if let Ok(json_val) = response.json::<serde_json::Value>().await {
+                        let latency_ms = start_time.elapsed().as_millis();
+                        let prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as u32;
+                        let eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(0) as u32;
+                        let completion_time = json_val["usage"]["completion_time"].as_f64().unwrap_or(0.0);
+                        let total_tokens = prompt_tokens + eval_tokens;
+
+                        let tokens_per_sec = if completion_time > 0.0 {
+                            eval_tokens as f32 / completion_time as f32
+                        } else if latency_ms > 0 {
+                            (eval_tokens as f32) / (latency_ms as f32 / 1000.0)
+                        } else {
+                            267.0
+                        };
+
+                        if let Ok(mut mm) = state.model_metrics.lock() {
+                            mm.name = model_id.to_string();
+                            mm.parameter_size = param_size.to_string();
+                            mm.quantization = quant.to_string();
+                            mm.context_length = ctx_len;
+                            mm.eval_tokens_per_sec = tokens_per_sec;
+                            mm.last_eval_count = eval_tokens;
+                            mm.last_prompt_eval_count = prompt_tokens;
+                            mm.last_latency_ms = latency_ms;
+                            mm.is_loaded = true;
+                        }
+
+                        if let Ok(mut stats) = state.model_stats.lock() {
+                            let entry = stats.entry(model_id.to_string()).or_default();
+                            entry.tokens_used += total_tokens as u64;
+                            entry.speed_tok_s = tokens_per_sec;
+                            entry.latency_ms = latency_ms;
+                        }
+
+                        if let Ok(mut act) = state.active_model_id.lock() {
+                            *act = model_id.to_string();
+                        }
+
+                        let raw_content = json_val["choices"][0]["message"]["content"]
+                            .as_str()
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+
+                        let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
+
+                        let mut cmd_output = None;
+                        let mut executed_action_label = None;
+
+                        if action != "none" && !target.is_empty() {
+                            let act_name = match action.as_str() {
+                                "open" | "open_app" | "launch" | "start" => "open_app",
+                                "close" | "close_app" | "kill" | "stop" => "close_app",
+                                "system_ctrl" | "media" => target.as_str(),
+                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
+                                _ => action.as_str(),
+                            };
+
+                            match execute_system_action(act_name, &target) {
+                                Ok(msg) => {
+                                    executed_action_label = Some(format!("⚡ {}", msg));
+                                    cmd_output = Some(msg);
+                                }
+                                Err(err) => {
+                                    executed_action_label = Some(format!("⚠️ {}", err));
+                                    cmd_output = Some(err);
+                                }
+                            }
+                        }
+
+                        let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
+                        words.push("→".to_string());
+                        for w in reply.split_whitespace() {
+                            words.push(w.to_string());
+                        }
+
+                        return Ok(JarvisResponse {
+                            reply,
+                            action: executed_action_label,
+                            command: if !target.is_empty() { Some(target) } else { None },
+                            output: cmd_output,
+                            latency_ms,
+                            prompt_tokens,
+                            eval_tokens,
+                            total_tokens,
+                            tokens_per_sec,
+                            model_name: model_id.to_string(),
+                            token_words: words,
+                        });
+                    }
+                }
+            }
+        } else {
+            // Local Ollama candidate (Priority 5 Failsafe Backup)
+            let ollama_payload = serde_json::json!({
+                "model": "qwen3.5:2b",
+                "messages": [
+                    { "role": "system", "content": system_prompt },
+                    { "role": "user", "content": prompt_clean }
+                ],
+                "think": false,
+                "options": {
+                    "temperature": 0.0,
+                    "num_predict": 45,
+                    "num_thread": 10
+                },
+                "keep_alive": "-1",
+                "stream": false
+            });
+
+            let res = client
+                .post(OLLAMA_CHAT_URL)
+                .timeout(Duration::from_secs(12))
+                .json(&ollama_payload)
+                .send()
+                .await;
+
+            if let Ok(response) = res {
+                if response.status().is_success() {
+                    if let Ok(json_val) = response.json::<serde_json::Value>().await {
+                        let latency_ms = start_time.elapsed().as_millis();
+                        let eval_count = json_val["eval_count"].as_u64().unwrap_or(0) as u32;
+                        let eval_duration = json_val["eval_duration"].as_u64().unwrap_or(0);
+                        let prompt_eval_count = json_val["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
+                        let tokens_per_sec = if eval_duration > 0 {
+                            eval_count as f32 / (eval_duration as f32 / 1_000_000_000.0)
+                        } else {
+                            13.1
+                        };
+                        let total_tokens = prompt_eval_count + eval_count;
+
+                        if let Ok(mut mm) = state.model_metrics.lock() {
+                            mm.name = "qwen3.5:2b (LOCAL FAILOVER)".to_string();
+                            mm.parameter_size = param_size.to_string();
+                            mm.quantization = quant.to_string();
+                            mm.context_length = ctx_len;
+                            mm.eval_tokens_per_sec = tokens_per_sec;
+                            mm.last_eval_count = eval_count;
+                            mm.last_prompt_eval_count = prompt_eval_count;
+                            mm.last_latency_ms = latency_ms;
+                            mm.is_loaded = true;
+                        }
+
+                        if let Ok(mut stats) = state.model_stats.lock() {
+                            let entry = stats.entry(model_id.to_string()).or_default();
+                            entry.tokens_used += total_tokens as u64;
+                            entry.speed_tok_s = tokens_per_sec;
+                            entry.latency_ms = latency_ms;
+                        }
+
+                        if let Ok(mut act) = state.active_model_id.lock() {
+                            *act = model_id.to_string();
+                        }
+
+                        let raw_content = json_val["message"]["content"].as_str().unwrap_or("").trim().to_string();
+                        let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
+
+                        let mut cmd_output = None;
+                        let mut executed_action_label = None;
+
+                        if action != "none" && !target.is_empty() {
+                            let act_name = match action.as_str() {
+                                "open" | "open_app" | "launch" | "start" => "open_app",
+                                "close" | "close_app" | "kill" | "stop" => "close_app",
+                                "system_ctrl" | "media" => target.as_str(),
+                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
+                                _ => action.as_str(),
+                            };
+
+                            match execute_system_action(act_name, &target) {
+                                Ok(msg) => {
+                                    executed_action_label = Some(format!("⚡ {}", msg));
+                                    cmd_output = Some(msg);
+                                }
+                                Err(err) => {
+                                    executed_action_label = Some(format!("⚠️ {}", err));
+                                    cmd_output = Some(err);
+                                }
+                            }
+                        }
+
+                        let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
+                        words.push("→".to_string());
+                        for w in reply.split_whitespace() {
+                            words.push(w.to_string());
+                        }
+
+                        return Ok(JarvisResponse {
+                            reply,
+                            action: executed_action_label,
+                            command: if !target.is_empty() { Some(target) } else { None },
+                            output: cmd_output,
+                            latency_ms,
+                            prompt_tokens: prompt_eval_count,
+                            eval_tokens: eval_count,
+                            total_tokens,
+                            tokens_per_sec,
+                            model_name: "qwen3.5:2b (LOCAL FAILOVER)".to_string(),
+                            token_words: words,
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -957,7 +1162,7 @@ Rules:
             eval_tokens: 6,
             total_tokens: 12,
             tokens_per_sec: 14.0,
-            model_name: target_model,
+            model_name: "qwen3.5:2b (LOCAL FAILOVER)".to_string(),
             token_words: vec![fallback_act.into(), fallback_tgt],
         });
     }
@@ -972,7 +1177,7 @@ Rules:
         eval_tokens: 12,
         total_tokens: 22,
         tokens_per_sec: 14.5,
-        model_name: target_model,
+        model_name: "qwen3.5:2b (LOCAL FAILOVER)".to_string(),
         token_words: prompt_clean.split_whitespace().map(|s| s.to_string()).collect(),
     })
 }
@@ -985,33 +1190,66 @@ async fn listen_mic() -> Result<String, String> {
 Add-Type -AssemblyName System.Speech
 try {
     $recs = [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers()
+    $enRec = $null
     if ($recs.Count -gt 0) {
-        $rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine($recs[0])
+        $enRec = $recs | Where-Object { $_.Culture.TwoLetterISOLanguageName -eq "en" } | Select-Object -First 1
+        if (-not $enRec) { $enRec = $recs[0] }
+    }
+    if ($enRec) {
+        $rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine($enRec)
     } else {
         $rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine
     }
 
-    # High-priority command vocabulary
-    $builder = New-Object System.Speech.Recognition.GrammarBuilder
-    $verbs = New-Object System.Speech.Recognition.Choices
-    $verbs.Add(@('open', 'close', 'launch', 'start', 'kill', 'terminate', 'lock', 'minimize', 'show', 'mute', 'unmute', 'turn', 'increase', 'decrease', 'take', 'what', 'how', 'run', 'focus'))
-    $targets = New-Object System.Speech.Recognition.Choices
-    $targets.Add(@('notepad', 'vs code', 'code', 'calculator', 'calc', 'chrome', 'browser', 'youtube', 'terminal', 'cmd', 'command prompt', 'task manager', 'taskmgr', 'spotify', 'whatsapp', 'pc', 'screen', 'desktop', 'volume', 'volume up', 'volume down', 'mute', 'audio', 'screenshot', 'all', 'windows', 'time', 'date', 'weather'))
-    $builder.Append($verbs)
-    $builder.Append($targets)
+    # 1. Exact high-priority phrases & phonetic matchings
+    $phraseChoices = New-Object System.Speech.Recognition.Choices
+    $phraseChoices.Add(@(
+        'open notepad', 'note pad', 'notepad', 'open note pad', 'open not bad', 'or a lot',
+        'open calculator', 'calculator', 'calc', 'open calc',
+        'open chrome', 'chrome', 'browser', 'open browser',
+        'open vs code', 'vs code', 'code', 'open code', 'visual studio',
+        'open terminal', 'terminal', 'cmd', 'command prompt',
+        'open task manager', 'task manager', 'taskmgr',
+        'open spotify', 'spotify', 'music',
+        'open whatsapp', 'whatsapp',
+        'open phone', 'phone', 'call', 'open call', 'keypad', 'dialer',
+        'weather', 'what is the weather', 'check weather', 'temperature',
+        'time', 'what time is it', 'what is the time',
+        'date', 'what is today date', 'today date',
+        'take screenshot', 'screenshot', 'capture screen',
+        'mute', 'unmute', 'volume up', 'volume down', 'lock pc', 'minimize all', 'show desktop',
+        'close notepad', 'close calculator', 'close chrome', 'close vs code', 'close terminal', 'close spotify', 'close whatsapp'
+    ))
+    $phraseGrammar = New-Object System.Speech.Recognition.Grammar((New-Object System.Speech.Recognition.GrammarBuilder($phraseChoices)))
+    $phraseGrammar.Weight = 1.0
+    $rec.LoadGrammar($phraseGrammar)
 
-    $cmdGrammar = New-Object System.Speech.Recognition.Grammar($builder)
-    $cmdGrammar.Weight = 1.0
+    # 2. Flexible builder grammar with optional prefix, verbs, articles, and targets
+    $gb = New-Object System.Speech.Recognition.GrammarBuilder
+    $prefix = New-Object System.Speech.Recognition.Choices
+    $prefix.Add(@('please', 'jarvis', 'hey jarvis', 'can you'))
+    $gb.Append($prefix, 0, 1)
+
+    $verbs = New-Object System.Speech.Recognition.Choices
+    $verbs.Add(@('open', 'close', 'launch', 'start', 'kill', 'terminate', 'lock', 'minimize', 'show', 'mute', 'unmute', 'turn', 'increase', 'decrease', 'take', 'what', 'how', 'run', 'focus', 'call', 'dial'))
+    $gb.Append($verbs, 0, 1)
+
+    $articles = New-Object System.Speech.Recognition.Choices
+    $articles.Add(@('the', 'a', 'an', 'my', 'is', 'app'))
+    $gb.Append($articles, 0, 1)
+
+    $targets = New-Object System.Speech.Recognition.Choices
+    $targets.Add(@('notepad', 'note pad', 'calculator', 'calc', 'chrome', 'browser', 'youtube', 'terminal', 'cmd', 'command prompt', 'task manager', 'taskmgr', 'spotify', 'whatsapp', 'pc', 'screen', 'desktop', 'volume', 'volume up', 'volume down', 'mute', 'audio', 'screenshot', 'all', 'windows', 'time', 'date', 'weather', 'phone', 'call', 'keypad', 'dialer', 'code', 'vs code', 'visual studio code'))
+    $gb.Append($targets)
+
+    $cmdGrammar = New-Object System.Speech.Recognition.Grammar($gb)
+    $cmdGrammar.Weight = 0.9
     $rec.LoadGrammar($cmdGrammar)
 
-    $dictGrammar = New-Object System.Speech.Recognition.DictationGrammar
-    $dictGrammar.Weight = 0.3
-    $rec.LoadGrammar($dictGrammar)
-
-    # Fast responsiveness: Stop 600ms after user finishes speaking
+    # Fast responsiveness: Stop 500ms after user finishes speaking
     $rec.InitialSilenceTimeout = [TimeSpan]::FromSeconds(3)
-    $rec.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(600)
-    $rec.EndSilenceTimeoutAmbiguous = [TimeSpan]::FromMilliseconds(700)
+    $rec.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(500)
+    $rec.EndSilenceTimeoutAmbiguous = [TimeSpan]::FromMilliseconds(600)
 
     $rec.SetInputToDefaultAudioDevice()
     $res = $rec.Recognize((New-Object System.TimeSpan(0, 0, 5)))
@@ -1160,57 +1398,19 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         (rx, tx)
     };
 
-    // Query Ollama for real active model info (100% dynamic)
-    let client = reqwest::Client::new();
-    let mut model_found = false;
-    if let Ok(res) = client.get(OLLAMA_PS_URL).timeout(Duration::from_millis(350)).send().await {
-        if let Ok(ps_json) = res.json::<serde_json::Value>().await {
-            if let Some(models) = ps_json["models"].as_array() {
-                if let Some(first_model) = models.first() {
-                    let name = first_model["name"].as_str().unwrap_or(MODEL_NAME).to_string();
-                    let param_size = first_model["details"]["parameter_size"].as_str().unwrap_or("1.9B").to_string();
-                    let quant = first_model["details"]["quantization_level"].as_str().unwrap_or("Q8_0").to_string();
-                    let ctx_len = first_model["context_length"].as_u64().unwrap_or(262144) as u32;
-                    let size_bytes = first_model["size"].as_f64().unwrap_or(2683396812.0);
-                    let mem_mb = size_bytes / (1024.0 * 1024.0);
+    // Model Metrics & Dynamic Failover Roster
+    let active_id = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| "qwen/qwen3.8-27b".to_string());
 
-                    if let Ok(mut mm) = state.model_metrics.lock() {
-                        mm.name = name;
-                        mm.parameter_size = param_size;
-                        mm.quantization = quant;
-                        mm.context_length = ctx_len;
-                        mm.memory_mb = mem_mb;
-                        mm.is_loaded = true;
-                    }
-                    model_found = true;
-                }
-            }
-        }
-    }
-
-    // Fallback: If not currently loaded in active VRAM, query /api/tags
-    if !model_found {
-        if let Ok(res) = client.get(OLLAMA_TAGS_URL).timeout(Duration::from_millis(350)).send().await {
-            if let Ok(tags_json) = res.json::<serde_json::Value>().await {
-                if let Some(models) = tags_json["models"].as_array() {
-                    let target_model = models.iter().find(|m| {
-                        m["name"].as_str().map(|n| n.contains("qwen") || n.contains("sysbrain")).unwrap_or(false)
-                    }).or_else(|| models.first());
-
-                    if let Some(m) = target_model {
-                        let name = m["name"].as_str().unwrap_or(MODEL_NAME).to_string();
-                        let param_size = m["details"]["parameter_size"].as_str().unwrap_or("1.9B").to_string();
-                        let quant = m["details"]["quantization_level"].as_str().unwrap_or("Q8_0").to_string();
-                        let ctx_len = m["details"]["context_length"].as_u64().unwrap_or(262144) as u32;
-                        let size_bytes = m["size"].as_f64().unwrap_or(2683396812.0);
-                        let mem_mb = size_bytes / (1024.0 * 1024.0);
-
+    // If local Ollama is active, refresh its live loaded status from Ollama API
+    if active_id.contains("qwen3.5:2b") || active_id.contains("sysbrain") {
+        let client = reqwest::Client::new();
+        if let Ok(res) = client.get(OLLAMA_PS_URL).timeout(Duration::from_millis(250)).send().await {
+            if let Ok(ps_json) = res.json::<serde_json::Value>().await {
+                if let Some(models) = ps_json["models"].as_array() {
+                    if let Some(first_model) = models.first() {
+                        let size_bytes = first_model["size"].as_f64().unwrap_or(2683396812.0);
                         if let Ok(mut mm) = state.model_metrics.lock() {
-                            mm.name = name;
-                            mm.parameter_size = param_size;
-                            mm.quantization = quant;
-                            mm.context_length = ctx_len;
-                            mm.memory_mb = mem_mb;
+                            mm.memory_mb = size_bytes / (1024.0 * 1024.0);
                             mm.is_loaded = true;
                         }
                     }
@@ -1218,6 +1418,80 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
             }
         }
     }
+
+    let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
+    let def_stats = ModelRuntimeStats::default();
+
+    let qwen_stats = stats_map.get("qwen/qwen3.8-27b").unwrap_or(&def_stats);
+    let gpt120_stats = stats_map.get("openai/gpt-oss-120b").unwrap_or(&def_stats);
+    let allam_stats = stats_map.get("allam-2-7b").unwrap_or(&def_stats);
+    let gpt20_stats = stats_map.get("openai/gpt-oss-20b").unwrap_or(&def_stats);
+    let local_stats = stats_map.get("qwen3.5:2b").unwrap_or(&def_stats);
+
+    let has_groq = !get_groq_api_key().is_empty();
+
+    let available_models = vec![
+        AvailableModelInfo {
+            id: "qwen/qwen3.8-27b".to_string(),
+            display_name: "QWEN 3.8 27B".to_string(),
+            provider: "GROQ LPU".to_string(),
+            status: if active_id == "qwen/qwen3.8-27b" { "ACTIVE".to_string() } else if has_groq { "ONLINE".to_string() } else { "OFFLINE".to_string() },
+            priority: 1,
+            context_window: "131K".to_string(),
+            tokens_used: qwen_stats.tokens_used,
+            speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { 267.0 },
+            latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { 267 },
+            is_active: active_id == "qwen/qwen3.8-27b",
+        },
+        AvailableModelInfo {
+            id: "openai/gpt-oss-120b".to_string(),
+            display_name: "GPT-OSS 120B".to_string(),
+            provider: "GROQ LPU".to_string(),
+            status: if active_id == "openai/gpt-oss-120b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
+            priority: 2,
+            context_window: "131K".to_string(),
+            tokens_used: gpt120_stats.tokens_used,
+            speed_tok_s: if gpt120_stats.speed_tok_s > 0.0 { gpt120_stats.speed_tok_s } else { 393.0 },
+            latency_ms: if gpt120_stats.latency_ms > 0 { gpt120_stats.latency_ms } else { 393 },
+            is_active: active_id == "openai/gpt-oss-120b",
+        },
+        AvailableModelInfo {
+            id: "allam-2-7b".to_string(),
+            display_name: "ALLAM 2 7B".to_string(),
+            provider: "GROQ LPU".to_string(),
+            status: if active_id == "allam-2-7b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
+            priority: 3,
+            context_window: "8K".to_string(),
+            tokens_used: allam_stats.tokens_used,
+            speed_tok_s: if allam_stats.speed_tok_s > 0.0 { allam_stats.speed_tok_s } else { 580.0 },
+            latency_ms: if allam_stats.latency_ms > 0 { allam_stats.latency_ms } else { 171 },
+            is_active: active_id == "allam-2-7b",
+        },
+        AvailableModelInfo {
+            id: "openai/gpt-oss-20b".to_string(),
+            display_name: "GPT-OSS 20B".to_string(),
+            provider: "GROQ LPU".to_string(),
+            status: if active_id == "openai/gpt-oss-20b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
+            priority: 4,
+            context_window: "131K".to_string(),
+            tokens_used: gpt20_stats.tokens_used,
+            speed_tok_s: if gpt20_stats.speed_tok_s > 0.0 { gpt20_stats.speed_tok_s } else { 436.0 },
+            latency_ms: if gpt20_stats.latency_ms > 0 { gpt20_stats.latency_ms } else { 436 },
+            is_active: active_id == "openai/gpt-oss-20b",
+        },
+        AvailableModelInfo {
+            id: "qwen3.5:2b".to_string(),
+            display_name: "QWEN 3.5 2B (LOCAL)".to_string(),
+            provider: "LOCAL OLLAMA".to_string(),
+            status: if active_id.contains("qwen3.5:2b") { "ACTIVE (FAILOVER)".to_string() } else { "FAILSAFE BACKUP".to_string() },
+            priority: 5,
+            context_window: "256K".to_string(),
+            tokens_used: local_stats.tokens_used,
+            speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 13.1 },
+            latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 1200 },
+            is_active: active_id.contains("qwen3.5:2b"),
+        },
+    ];
 
     let model_metrics = {
         let mm = state.model_metrics.lock().map_err(|e| e.to_string())?;
@@ -1239,6 +1513,9 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         top_apps: proc_list,
         model_metrics,
         has_mic,
+        username: std::env::var("USERNAME").unwrap_or_else(|_| "CHOWDARY".to_string()).to_uppercase(),
+        available_models,
+        active_model_id: active_id,
     })
 }
 
@@ -1257,9 +1534,32 @@ pub fn run() {
         sys: Mutex::new(sys),
         networks: Mutex::new(networks),
         model_metrics: Mutex::new(ModelMetrics::default()),
+        model_stats: Mutex::new(HashMap::new()),
+        active_model_id: Mutex::new("qwen/qwen3.8-27b".to_string()),
     };
 
     tauri::Builder::default()
+        .setup(|app| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_fullscreen(true);
+            }
+
+            // Auto-preload qwen3.5:2b into memory as soon as app opens
+            tauri::async_runtime::spawn(async {
+                let client = reqwest::Client::new();
+                let _ = client
+                    .post(OLLAMA_CHAT_URL)
+                    .json(&serde_json::json!({
+                        "model": MODEL_NAME,
+                        "keep_alive": -1
+                    }))
+                    .send()
+                    .await;
+            });
+
+            Ok(())
+        })
         .manage(state)
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![

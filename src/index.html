@@ -45,7 +45,10 @@
         <div class="time-readout-row">
           <span class="time-digits" id="tech-clock">12:35:00</span>
           <span class="time-ampm" id="tech-ampm">PM</span>
-          <span class="hud-temp-display" id="weather-temp">--°C</span>
+          <div class="hud-temp-group" id="hud-temp-group">
+            <span class="weather-icon" id="weather-icon" title="Local Weather Conditions">☀️</span>
+            <span class="hud-temp-display" id="weather-temp">--°C</span>
+          </div>
         </div>
         <div class="date-telemetry-row">
           <span class="hud-pill-day" id="tech-day">THURSDAY</span>
@@ -106,7 +109,7 @@
         <div class="bp-profile-bar">
           <div class="bp-profile-cell">
             <span class="bp-prof-label">SUBJECT</span>
-            <span class="bp-prof-val cyan">NAVEEN</span>
+            <span class="bp-prof-val cyan" id="bio-subject">CHOWDARY</span>
           </div>
           <div class="bp-profile-cell">
             <span class="bp-prof-label">DOB</span>
@@ -350,14 +353,14 @@
           </div>
         </div>
 
-        <!-- 3. ACTIVE RUNNING SYSTEM APPS (BOTTOM RIGHT AS PREVIOUS) -->
-        <div class="gadget-panel apps-panel">
+        <!-- 3. AVAILABLE AI MODELS & AUTO-FAILOVER ROSTER (BOTTOM RIGHT) -->
+        <div class="gadget-panel models-roster-panel">
           <div class="gadget-top">
-            <span class="gadget-title">ACTIVE RUNNING APPS</span>
-            <span class="gadget-sub-pill" id="app-count-pill">SYSTEM LIVE</span>
+            <span class="gadget-title">AVAILABLE AI MODELS</span>
+            <span class="gadget-sub-pill pulse-emerald" id="model-roster-pill">AUTO FAILOVER</span>
           </div>
-          <div class="apps-list" id="apps-list">
-            <!-- Populated dynamically from Rust sysinfo -->
+          <div class="models-list" id="models-list">
+            <!-- Populated dynamically with live metrics & priority -->
           </div>
         </div>
       </div>
