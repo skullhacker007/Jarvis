@@ -1,4 +1,5 @@
 :root {
+  --deck-width-left: clamp(280px, 21vw, 340px);
   --bg-black: #000000;
   --cyan-neon: #00f2fe;
   --cyan-glow: rgba(0, 242, 254, 0.65);
@@ -246,6 +247,7 @@ body {
   position: absolute;
   top: 16px;
   left: 24px;
+  width: var(--deck-width-left);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -257,12 +259,14 @@ body {
   backdrop-filter: blur(6px);
   box-shadow: 0 0 14px rgba(0, 242, 254, 0.1);
   z-index: 10;
+  box-sizing: border-box;
   pointer-events: none;
 }
 
 .time-readout-row {
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
   gap: 6px;
 }
 
@@ -283,23 +287,23 @@ body {
   letter-spacing: 1px;
 }
 
-.time-sync-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--emerald-voice);
-  box-shadow: 0 0 6px var(--emerald-voice);
+.hud-temp-display {
   margin-left: auto;
-  align-self: center;
-  animation: pulse-beacon 1.5s infinite ease-in-out;
+  font-family: var(--font-hero);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 0 8px var(--cyan-glow);
+  letter-spacing: 1px;
 }
 
 .date-telemetry-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 4px;
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.70rem;
   letter-spacing: 0.5px;
 }
 
@@ -309,7 +313,9 @@ body {
 }
 
 .hud-slash {
-  color: rgba(0, 242, 254, 0.35);
+  color: rgba(0, 242, 254, 0.5);
+  font-weight: 600;
+  letter-spacing: -0.5px;
 }
 
 .hud-date {
@@ -335,6 +341,487 @@ body {
   background: linear-gradient(90deg, var(--cyan-neon), #38bdf8);
   box-shadow: 0 0 6px var(--cyan-glow);
   transition: width 0.3s ease;
+}
+
+/* ========================================================= */
+/* LEFT MIDDLE: NAVEEN BIOMETRICS & HEALTH BLUEPRINT HUD      */
+/* ========================================================= */
+.humanoid-blueprint-panel {
+  position: absolute;
+  top: calc(50vh - 114px);
+  transform: translateY(-50%);
+  left: 24px;
+  width: var(--deck-width-left);
+  background: rgba(1, 14, 28, 0.82);
+  border: 1px solid rgba(0, 242, 254, 0.32);
+  border-left: 2.5px solid var(--cyan-neon);
+  border-radius: 4px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 16px rgba(0, 242, 254, 0.12), inset 0 0 12px rgba(0, 242, 254, 0.04);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10;
+  box-sizing: border-box;
+}
+
+.blueprint-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bp-paired-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bp-paired-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--emerald-voice);
+  text-shadow: 0 0 8px rgba(0, 230, 118, 0.5);
+  letter-spacing: 0.8px;
+}
+
+.bp-sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--emerald-voice);
+  box-shadow: 0 0 8px var(--emerald-voice);
+}
+
+.bp-title-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.bp-beacon {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cyan-neon);
+  box-shadow: 0 0 8px var(--cyan-neon);
+  animation: pulse-beacon 1.8s infinite;
+}
+
+.bp-title {
+  font-family: var(--font-orbitron);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #f1f5f9;
+  text-shadow: 0 0 8px rgba(0, 242, 254, 0.35);
+}
+
+.bp-badge {
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  font-weight: 600;
+  background: rgba(0, 242, 254, 0.12);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  color: var(--cyan-neon);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.4px;
+}
+
+.bp-ver {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: #00e676;
+  text-shadow: 0 0 6px rgba(0, 230, 118, 0.4);
+  letter-spacing: 0.4px;
+}
+
+/* 3D Blueprint Canvas Box with Blueprint Grid */
+.blueprint-canvas-box {
+  position: relative;
+  width: 100%;
+  height: clamp(140px, 20vh, 195px);
+  border-radius: 3px;
+  background-color: #000000;
+  background-image: 
+    linear-gradient(rgba(0, 242, 254, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 242, 254, 0.06) 1px, transparent 1px);
+  background-size: 14px 14px;
+  border: 1px solid rgba(0, 242, 254, 0.22);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.blueprint-body-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+  filter: contrast(1.1) brightness(1.05);
+}
+
+.blueprint-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+/* CAD Corner Crosshairs */
+.bp-cad-corners {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bp-corner {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1;
+  color: rgba(0, 242, 254, 0.55);
+}
+
+.bp-corner.top-left { top: 3px; left: 4px; }
+.bp-corner.top-right { top: 3px; right: 4px; }
+.bp-corner.bottom-left { bottom: 3px; left: 4px; }
+.bp-corner.bottom-right { bottom: 3px; right: 4px; }
+
+/* Dynamic Blueprint Callout Tags */
+.bp-callouts-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bp-callout {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.48rem;
+  color: #38bdf8;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  background: rgba(0, 10, 20, 0.6);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.bp-callout-head {
+  top: 10px;
+  right: 6px;
+}
+
+.bp-callout-core {
+  top: 48px;
+  left: 6px;
+}
+
+.bp-callout-wrist {
+  bottom: 16px;
+  left: 6px;
+}
+
+.bp-line {
+  display: inline-block;
+  width: 8px;
+  height: 1px;
+  background: rgba(0, 242, 254, 0.6);
+  box-shadow: 0 0 4px var(--cyan-neon);
+}
+
+/* Profile Bar: DOB & Age */
+.bp-profile-bar {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr 0.9fr 0.95fr;
+  gap: 4px;
+  padding: 4px 7px;
+  background: rgba(0, 242, 254, 0.05);
+  border: 1px solid rgba(0, 242, 254, 0.22);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+}
+
+.bp-profile-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.bp-prof-label {
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+}
+
+.bp-prof-val {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.bp-prof-val.cyan { color: var(--cyan-neon); text-shadow: 0 0 6px var(--cyan-glow); }
+.bp-prof-val.emerald { color: #00e676; text-shadow: 0 0 6px rgba(0, 230, 118, 0.5); }
+
+/* Live Vitals Grid: Heart Rate, Pulse SpO2, Blood Pressure */
+.bp-vitals-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.bp-vital-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 6px;
+  background: rgba(2, 12, 24, 0.72);
+  border: 1px solid rgba(0, 242, 254, 0.22);
+  border-radius: 3px;
+  box-shadow: inset 0 0 8px rgba(0, 242, 254, 0.04);
+}
+
+.vital-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vital-label {
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  color: #7dd3fc;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.vital-icon {
+  font-size: 0.68rem;
+  color: #94a3b8;
+}
+
+.vital-heart-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.vital-heart-svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  filter: drop-shadow(0 0 5px rgba(255, 42, 95, 0.75));
+  animation: heart-beat 1.15s infinite ease-in-out;
+  transform-origin: center center;
+}
+
+@keyframes heart-beat {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(255, 42, 95, 0.6));
+  }
+  14% {
+    transform: scale(1.32);
+    filter: drop-shadow(0 0 9px rgba(255, 42, 95, 0.95)) drop-shadow(0 0 3px rgba(255, 255, 255, 0.6));
+  }
+  26% {
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 5px rgba(255, 42, 95, 0.7));
+  }
+  38% {
+    transform: scale(1.22);
+    filter: drop-shadow(0 0 8px rgba(255, 42, 95, 0.85));
+  }
+  52% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(255, 42, 95, 0.6));
+  }
+}
+
+.vital-val-row {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.vital-num {
+  font-family: var(--font-hero);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.vital-num.cyan { color: var(--cyan-neon); text-shadow: 0 0 8px var(--cyan-glow); }
+.vital-num.emerald { color: #00e676; text-shadow: 0 0 8px rgba(0, 230, 118, 0.5); }
+.vital-num.purple { color: #c084fc; text-shadow: 0 0 8px rgba(192, 132, 252, 0.5); }
+
+.vital-unit {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+/* Total Steps & Activity Progress Deck (Noise / Fitbit) */
+.bp-activity-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 8px;
+  background: rgba(2, 12, 24, 0.72);
+  border: 1px solid rgba(0, 242, 254, 0.22);
+  border-radius: 3px;
+}
+
+.bp-activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.act-title-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.act-icon {
+  font-size: 0.72rem;
+}
+
+.act-title {
+  font-family: var(--font-orbitron);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #f1f5f9;
+}
+
+.act-nums {
+  font-family: var(--font-mono);
+  font-size: 0.70rem;
+}
+
+.act-cur {
+  font-weight: 700;
+  font-size: 0.80rem;
+  color: var(--cyan-neon);
+}
+
+.act-goal {
+  color: #94a3b8;
+  font-size: 0.62rem;
+}
+
+.bp-step-meter {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.bp-step-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00f2fe, #38bdf8);
+  box-shadow: 0 0 6px var(--cyan-glow);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.act-sub-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.60rem;
+  color: #cbd5e1;
+}
+
+.act-sub-metrics strong {
+  color: #ffffff;
+  font-size: 0.68rem;
+}
+
+.act-dot {
+  color: rgba(0, 242, 254, 0.4);
+}
+
+/* Real-Time Neural ECG Waveform Strip */
+.blueprint-ecg-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 3px;
+  border-top: 1px solid rgba(0, 242, 254, 0.16);
+}
+
+.ecg-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+}
+
+.ecg-label {
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+
+.ecg-bpm {
+  color: #00e676;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(0, 230, 118, 0.5);
+}
+
+.ecg-canvas-box {
+  width: 100%;
+  height: 54px;
+  border-radius: 3px;
+  background-color: rgba(2, 12, 24, 0.75);
+  background-image: 
+    linear-gradient(rgba(0, 242, 254, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 242, 254, 0.07) 1px, transparent 1px);
+  background-size: 16px 16px;
+  border: 1px solid rgba(0, 242, 254, 0.22);
+  overflow: hidden;
+  box-shadow: inset 0 0 10px rgba(0, 242, 254, 0.05);
+  position: relative;
+}
+
+.ecg-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@media (max-height: 800px) {
+  .humanoid-blueprint-panel {
+    top: 80px;
+    padding: 5px 8px;
+    gap: 4px;
+  }
+  .blueprint-canvas-box {
+    height: 125px;
+  }
 }
 
 /* ========================================================= */
@@ -429,7 +916,8 @@ body {
   position: absolute;
   left: 24px;
   bottom: 24px;
-  width: clamp(260px, 20vw, 320px);
+  width: var(--deck-width-left);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -484,16 +972,18 @@ body {
 
 .gadget-title {
   font-family: var(--font-hero);
-  font-size: 0.68rem;
-  letter-spacing: 1.2px;
-  color: #e2e8f0;
+  font-size: 0.74rem;
+  letter-spacing: 1px;
+  color: #f1f5f9;
+  white-space: nowrap;
 }
 
 .gadget-val {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
 }
 
 .gadget-val.cyan {
@@ -513,7 +1003,7 @@ body {
 
 .gadget-sub {
   font-family: var(--font-mono);
-  font-size: 0.55rem;
+  font-size: 0.64rem;
   color: var(--text-muted);
   letter-spacing: 0.5px;
 }

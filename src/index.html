@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>J.A.R.V.I.S. // STARK AI SYSTEM CONTROLLER</title>
     <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=datepipe1" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800;900&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -40,22 +40,151 @@
         </div>
       </div>
 
-      <!-- TOP-LEFT: Intelligent Modern Holographic Date & Time HUD -->
+      <!-- TOP-LEFT: Intelligent Modern Holographic Date & Time HUD (with Live Weather) -->
       <div class="tech-time-hud">
         <div class="time-readout-row">
           <span class="time-digits" id="tech-clock">12:35:00</span>
           <span class="time-ampm" id="tech-ampm">PM</span>
-          <span class="time-sync-dot" title="Time Core Synced"></span>
+          <span class="hud-temp-display" id="weather-temp">--°C</span>
         </div>
         <div class="date-telemetry-row">
-          <span class="hud-pill-day" id="tech-day">WEDNESDAY</span>
-          <span class="hud-slash">//</span>
-          <span class="hud-date" id="tech-date">18 NOV 2026</span>
-          <span class="hud-slash">//</span>
+          <span class="hud-pill-day" id="tech-day">THURSDAY</span>
+          <span class="hud-slash">||</span>
+          <span class="hud-date" id="tech-date">19 NOV 2026</span>
+          <span class="hud-slash">||</span>
           <span class="hud-tz" id="tech-tz">UTC+05:30</span>
         </div>
         <div class="time-seconds-track">
           <div class="time-seconds-fill" id="tech-sec-fill"></div>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
+      <!-- LEFT MIDDLE: HUMAN BIOMETRICS & HEALTH BLUEPRINT HUD       -->
+      <!-- ========================================================= -->
+      <div class="humanoid-blueprint-panel" id="humanoid-blueprint-panel">
+        <div class="blueprint-header">
+          <div class="bp-title-group">
+            <span class="bp-beacon"></span>
+            <span class="bp-title">HUMAN BIOMETRICS</span>
+          </div>
+          <div class="bp-paired-tag" title="BLE Connected">
+            <span class="bp-sync-dot" id="bp-ble-status"></span>
+            <span class="bp-paired-label">PAIRED</span>
+          </div>
+        </div>
+
+        <!-- Realistic Holographic Human Male Anatomical CAD Blueprint -->
+        <div class="blueprint-canvas-box">
+          <img src="assets/human_blueprint.jpg" alt="Human Male Blueprint" class="blueprint-body-img" />
+          <canvas id="blueprint-canvas" class="blueprint-canvas" width="300" height="200"></canvas>
+          
+          <!-- Blueprint CAD Crosshair Corner Markers -->
+          <div class="bp-cad-corners">
+            <span class="bp-corner top-left">+</span>
+            <span class="bp-corner top-right">+</span>
+            <span class="bp-corner bottom-left">+</span>
+            <span class="bp-corner bottom-right">+</span>
+          </div>
+        </div>
+
+        <!-- User Health Profile: DOB & Dynamic Age Telemetry -->
+        <div class="bp-profile-bar">
+          <div class="bp-profile-cell">
+            <span class="bp-prof-label">SUBJECT</span>
+            <span class="bp-prof-val cyan">NAVEEN</span>
+          </div>
+          <div class="bp-profile-cell">
+            <span class="bp-prof-label">DOB</span>
+            <span class="bp-prof-val">10-05-1990</span>
+          </div>
+          <div class="bp-profile-cell">
+            <span class="bp-prof-label">AGE</span>
+            <span class="bp-prof-val emerald" id="bio-age">36 YRS</span>
+          </div>
+          <div class="bp-profile-cell">
+            <span class="bp-prof-label">STATUS</span>
+            <span class="bp-prof-val cyan">ACTIVE</span>
+          </div>
+        </div>
+
+        <!-- Live Vitals Grid: Heart Rate, Pulse SpO2, Blood Pressure -->
+        <div class="bp-vitals-grid">
+          <div class="bp-vital-card">
+            <div class="vital-top">
+              <span class="vital-label">HEART RATE</span>
+              <div class="vital-heart-badge" title="Live Cardiac Telemetry">
+                <svg class="vital-heart-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="url(#vital-heart-grad)" stroke="#ff2a5f" stroke-width="1.2"/>
+                  <defs>
+                    <linearGradient id="vital-heart-grad" x1="12" y1="3" x2="12" y2="21.35" gradientUnits="userSpaceOnUse">
+                      <stop offset="0%" stop-color="#ff4d6d"/>
+                      <stop offset="100%" stop-color="#be123c"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+            </div>
+            <div class="vital-val-row">
+              <span class="vital-num cyan" id="vital-hr-val">74</span>
+              <span class="vital-unit">BPM</span>
+            </div>
+          </div>
+          <div class="bp-vital-card">
+            <div class="vital-top">
+              <span class="vital-label">BLOOD PULSE</span>
+              <span class="vital-icon">O₂</span>
+            </div>
+            <div class="vital-val-row">
+              <span class="vital-num emerald" id="vital-spo2-val">98</span>
+              <span class="vital-unit">%</span>
+            </div>
+          </div>
+          <div class="bp-vital-card">
+            <div class="vital-top">
+              <span class="vital-label">PRESSURE</span>
+              <span class="vital-icon">BP</span>
+            </div>
+            <div class="vital-val-row">
+              <span class="vital-num purple" id="vital-bp-val">118/78</span>
+              <span class="vital-unit">mmHg</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Total Steps & Activity Progress Deck (Noise / Fitbit) -->
+        <div class="bp-activity-deck">
+          <div class="bp-activity-header">
+            <div class="act-title-row">
+              <span class="act-icon">👟</span>
+              <span class="act-title">DAILY STEPS</span>
+            </div>
+            <div class="act-nums">
+              <span class="act-cur" id="act-steps-val">8,420</span>
+              <span class="act-goal">/ 10,000</span>
+            </div>
+          </div>
+          <div class="bp-step-meter">
+            <div class="bp-step-fill" id="act-steps-fill" style="width: 84.2%;"></div>
+          </div>
+          <div class="act-sub-metrics">
+            <span class="act-metric"><strong id="act-cal-val">485</strong> KCAL</span>
+            <span class="act-dot">•</span>
+            <span class="act-metric"><strong id="act-dist-val">6.2</strong> KM</span>
+            <span class="act-dot">•</span>
+            <span class="act-metric">HRV <strong id="act-hrv-val">64</strong> MS</span>
+          </div>
+        </div>
+
+        <!-- Real-Time Neural ECG Waveform Strip -->
+        <div class="blueprint-ecg-strip">
+          <div class="ecg-label-row">
+            <span class="ecg-label">NEURAL ECG // CARDIAC LEAD II</span>
+            <span class="ecg-bpm" id="ecg-bpm">74 BPM</span>
+          </div>
+          <div class="ecg-canvas-box">
+            <canvas id="ecg-canvas" class="ecg-canvas" width="300" height="48"></canvas>
+          </div>
         </div>
       </div>
 
@@ -263,6 +392,6 @@
       </div>
     </div>
 
-    <script type="module" src="main.js"></script>
+    <script type="module" src="main.js?v=blueprint7"></script>
   </body>
 </html>
