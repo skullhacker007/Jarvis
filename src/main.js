@@ -1,5 +1,5 @@
 // J.A.R.V.I.S. AI System Controller
-// 100% Dynamic Hardware Telemetry (CPU, 64GB RAM, Network, Active Apps)
+// 100% Dynamic Hardware Telemetry (CPU, 64GB RAM, I7 CPU, Network, Active Apps)
 // Real Token Activity (Reference Matrix & Metrics) + Borderless App Dock (Phone, Outlook, WhatsApp, Spotify)
 
 const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.tauri?.invoke || (async (cmd, args) => {
