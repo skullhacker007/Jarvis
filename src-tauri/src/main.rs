@@ -2,5 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("Panic: {:?}", info);
+        let _ = std::fs::write("panic.txt", msg);
+    }));
     jarvis_lib::run()
 }

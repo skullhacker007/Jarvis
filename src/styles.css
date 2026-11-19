@@ -24,6 +24,11 @@
   user-select: none;
 }
 
+input, textarea {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
 body {
   background: var(--bg-black);
   color: var(--text-pure);
@@ -1431,3 +1436,302 @@ body {
   0%, 100% { opacity: 0.4; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1.2); }
 }
+
+/* ========================================================= */
+/* CENTER LOWER: HOLOGRAPHIC SUBTITLE VISOR & DIRECTIVE HUD */
+/* ========================================================= */
+.holographic-visor-container {
+  position: absolute;
+  bottom: 66px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: clamp(380px, 36vw, 530px);
+  background: rgba(0, 10, 22, 0.88);
+  border: 1.5px solid rgba(0, 242, 254, 0.45);
+  border-radius: 5px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 24px rgba(0, 242, 254, 0.2), inset 0 0 14px rgba(0, 242, 254, 0.08);
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  gap: 5px;
+  z-index: 50;
+  box-sizing: border-box;
+  pointer-events: auto !important;
+}
+
+/* Visor Top Bar */
+.visor-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(0, 242, 254, 0.15);
+  padding-bottom: 3px;
+}
+
+.visor-status-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.visor-beacon-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--emerald-voice);
+  box-shadow: 0 0 6px var(--emerald-voice);
+  animation: pulse-beacon 1.8s infinite;
+}
+
+.visor-beacon-dot.thinking {
+  background: var(--purple-ai);
+  box-shadow: 0 0 8px var(--purple-ai);
+  animation: pulse-beacon 0.6s infinite;
+}
+
+.visor-beacon-dot.speaking {
+  background: var(--cyan-neon);
+  box-shadow: 0 0 8px var(--cyan-neon);
+}
+
+.visor-status-label {
+  font-family: var(--font-hero);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--cyan-neon);
+  text-shadow: 0 0 6px var(--cyan-glow);
+}
+
+.visor-mode-badge {
+  font-family: var(--font-mono);
+  font-size: 0.54rem;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 2px;
+  padding: 1px 4px;
+  letter-spacing: 0.5px;
+}
+
+.visor-mic-indicator {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mic-wave-bar {
+  width: 2.5px;
+  height: 6px;
+  background: var(--emerald-voice);
+  border-radius: 1px;
+  transition: height 0.15s ease;
+}
+
+.visor-mic-indicator.active .mic-wave-bar:nth-child(1) { animation: wave-anim 0.6s infinite 0.1s; }
+.visor-mic-indicator.active .mic-wave-bar:nth-child(2) { animation: wave-anim 0.6s infinite 0.25s; }
+.visor-mic-indicator.active .mic-wave-bar:nth-child(3) { animation: wave-anim 0.6s infinite 0.4s; }
+.visor-mic-indicator.active .mic-wave-bar:nth-child(4) { animation: wave-anim 0.6s infinite 0.15s; }
+
+@keyframes wave-anim {
+  0%, 100% { height: 4px; }
+  50% { height: 12px; }
+}
+
+.visor-mic-text {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: var(--emerald-voice);
+  margin-left: 3px;
+  letter-spacing: 0.5px;
+}
+
+/* Visor Screen */
+.visor-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 28px;
+  max-height: 52px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.visor-screen::-webkit-scrollbar {
+  display: none;
+}
+
+.visor-line {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 0.76rem;
+  line-height: 1.25;
+}
+
+.visor-actor {
+  font-family: var(--font-hero);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #ffab00;
+}
+
+.visor-actor.jarvis-actor {
+  color: var(--cyan-neon);
+}
+
+.visor-arrow {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.7rem;
+}
+
+.visor-text {
+  color: #f1f5f9;
+  font-family: var(--font-tech);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
+
+.jarvis-line .visor-text {
+  color: #e0f2fe;
+}
+
+.visor-action-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  background: rgba(0, 230, 118, 0.12);
+  border: 1px solid rgba(0, 230, 118, 0.45);
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-top: 1px;
+}
+
+.action-icon {
+  font-size: 0.6rem;
+  color: var(--emerald-voice);
+}
+
+.action-desc {
+  font-family: var(--font-mono);
+  font-size: 0.60rem;
+  font-weight: 700;
+  color: #a7f3d0;
+  letter-spacing: 0.5px;
+}
+
+/* Visor Command & Voice Form */
+.visor-command-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 16, 28, 0.65);
+  border: 1px solid rgba(0, 242, 254, 0.25);
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+
+.visor-mic-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  border-radius: 3px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--cyan-neon);
+  transition: all 0.2s ease;
+  padding: 0;
+  outline: none;
+}
+
+.visor-mic-btn:hover {
+  background: rgba(0, 242, 254, 0.15);
+  border-color: var(--cyan-neon);
+  box-shadow: 0 0 8px var(--cyan-glow);
+}
+
+.visor-mic-btn.listening {
+  background: rgba(0, 230, 118, 0.2);
+  border-color: var(--emerald-voice);
+  color: var(--emerald-voice);
+  box-shadow: 0 0 10px rgba(0, 230, 118, 0.4);
+  animation: pulse-beacon 1s infinite;
+}
+
+.visor-mic-svg {
+  width: 13px;
+  height: 13px;
+}
+
+.visor-input-box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.visor-prompt-prefix {
+  font-family: var(--font-hero);
+  font-size: 0.72rem;
+  color: var(--cyan-neon);
+  opacity: 0.8;
+}
+
+.visor-cmd-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-family: var(--font-tech);
+  font-size: 0.84rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  pointer-events: auto !important;
+  cursor: text !important;
+}
+
+.visor-cmd-input::placeholder {
+  color: rgba(148, 163, 184, 0.55);
+  font-size: 0.74rem;
+}
+
+.visor-exec-btn {
+  background: rgba(0, 242, 254, 0.12);
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  border-radius: 3px;
+  padding: 2px 7px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  color: var(--cyan-neon);
+  font-family: var(--font-hero);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.visor-exec-btn:hover {
+  background: var(--cyan-neon);
+  color: #000000;
+  box-shadow: 0 0 12px var(--cyan-glow);
+}
+
+.exec-svg {
+  width: 9px;
+  height: 9px;
+}
+

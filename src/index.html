@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>J.A.R.V.I.S. // STARK AI SYSTEM CONTROLLER</title>
     <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
-    <link rel="stylesheet" href="styles.css?v=datepipe1" />
+    <link rel="stylesheet" href="styles.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800;900&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -345,6 +345,76 @@
       </div>
 
       <!-- ========================================================= -->
+      <!-- CENTER LOWER: HOLOGRAPHIC SUBTITLE VISOR & DIRECTIVE HUD -->
+      <!-- ========================================================= -->
+      <div class="holographic-visor-container" id="holographic-visor-container">
+        <!-- Visor Header Bar -->
+        <div class="visor-top-bar">
+          <div class="visor-status-group">
+            <span class="visor-beacon-dot" id="visor-beacon-dot"></span>
+            <span class="visor-status-label" id="visor-status-label">QUEEN NEURAL CORE // ONLINE</span>
+            <span class="visor-mode-badge" id="visor-mode-badge">ADMIN ACCESS</span>
+          </div>
+          <div class="visor-mic-indicator" id="visor-mic-indicator">
+            <span class="mic-wave-bar"></span>
+            <span class="mic-wave-bar"></span>
+            <span class="mic-wave-bar"></span>
+            <span class="mic-wave-bar"></span>
+            <span class="visor-mic-text" id="visor-mic-text">VOICE READY</span>
+          </div>
+        </div>
+
+        <!-- Visor Dialogue Screen -->
+        <div class="visor-screen" id="visor-screen">
+          <!-- User Dialogue Line -->
+          <div class="visor-line user-line" id="visor-user-line" style="display: none;">
+            <span class="visor-actor">USER</span>
+            <span class="visor-arrow">›</span>
+            <span class="visor-text" id="visor-user-text">--</span>
+          </div>
+
+          <!-- Jarvis Dialogue Line -->
+          <div class="visor-line jarvis-line" id="visor-jarvis-line">
+            <span class="visor-actor jarvis-actor">JARVIS</span>
+            <span class="visor-arrow">›</span>
+            <span class="visor-text" id="visor-jarvis-text">Standing by for your directive, sir. Queen neural core active with administrator privileges.</span>
+          </div>
+
+          <!-- Dynamic Action Execution Badge -->
+          <div class="visor-action-tag" id="visor-action-tag" style="display: none;">
+            <span class="action-icon">⚡</span>
+            <span class="action-desc" id="visor-action-desc">READY</span>
+          </div>
+        </div>
+
+        <!-- Visor Interactive Command & Voice Bar -->
+        <form class="visor-command-form" id="visor-command-form" autocomplete="off">
+          <!-- Voice Mic Toggle Button -->
+          <button type="button" class="visor-mic-btn" id="visor-mic-btn" title="Click to toggle Voice Recognition">
+            <svg class="visor-mic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" x2="12" y1="19" y2="22"/>
+            </svg>
+          </button>
+
+          <!-- Directive Text Input -->
+          <div class="visor-input-box">
+            <span class="visor-prompt-prefix">›</span>
+            <input type="text" id="visor-cmd-input" class="visor-cmd-input" placeholder="Give an instruction (e.g. 'open notepad', 'open chrome', 'lock pc')..." spellcheck="false" />
+          </div>
+
+          <!-- Execute Button -->
+          <button type="submit" class="visor-exec-btn" id="visor-exec-btn" title="Execute Directive">
+            <span>EXEC</span>
+            <svg class="exec-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+          </button>
+        </form>
+      </div>
+
+      <!-- ========================================================= -->
       <!-- BOTTOM: BORDERLESS APP LAUNCHERS DOCK                     -->
       <!-- ========================================================= -->
       <div class="bottom-dock-container">
@@ -392,6 +462,6 @@
       </div>
     </div>
 
-    <script type="module" src="main.js?v=blueprint7"></script>
+    <script type="module" src="main.js"></script>
   </body>
 </html>
