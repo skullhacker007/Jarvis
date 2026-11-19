@@ -176,6 +176,241 @@ fn check_has_mic() -> bool {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WatchDevice {
+    pub name: String,
+    pub is_connected: bool,
+    pub is_paired: bool,
+    pub class_of_device: u32,
+    pub is_watch_device: bool,
+    pub is_phone_device: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WatchStatusResult {
+    pub has_connected_watch: bool,
+    pub connected_watch_name: Option<String>,
+    pub has_connected_phone: bool,
+    pub connected_phone_name: Option<String>,
+    pub devices: Vec<WatchDevice>,
+}
+
+#[cfg(windows)]
+fn query_windows_bluetooth_devices() -> WatchStatusResult {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct BLUETOOTH_DEVICE_SEARCH_PARAMS {
+        dw_size: u32,
+        f_return_authenticated: i32,
+        f_return_remembered: i32,
+        f_return_unknown: i32,
+        f_return_connected: i32,
+        f_issue_inquiry: i32,
+        c_timeout_multiplier: u8,
+        h_radio: *mut c_void,
+    }
+
+    #[repr(C)]
+    #[derive(Copy, Clone)]
+    struct SYSTEMTIME {
+        w_year: u16,
+        w_month: u16,
+        w_day_of_week: u16,
+        w_day: u16,
+        w_hour: u16,
+        w_minute: u16,
+        w_second: u16,
+        w_milliseconds: u16,
+    }
+
+    #[repr(C)]
+    struct BLUETOOTH_DEVICE_INFO {
+        dw_size: u32,
+        address: u64,
+        ul_class_of_device: u32,
+        f_connected: i32,
+        f_remembered: i32,
+        f_authenticated: i32,
+        st_last_seen: SYSTEMTIME,
+        st_last_used: SYSTEMTIME,
+        sz_name: [u16; 248],
+    }
+
+    unsafe extern "system" {
+        fn LoadLibraryA(lpLibFileName: *const u8) -> *mut c_void;
+        fn GetProcAddress(hModule: *mut c_void, lpProcName: *const u8) -> *mut c_void;
+        fn FreeLibrary(hLibModule: *mut c_void) -> i32;
+    }
+
+    type BluetoothFindFirstDeviceFn = unsafe extern "system" fn(
+        *const BLUETOOTH_DEVICE_SEARCH_PARAMS,
+        *mut BLUETOOTH_DEVICE_INFO,
+    ) -> *mut c_void;
+
+    type BluetoothFindNextDeviceFn = unsafe extern "system" fn(
+        *mut c_void,
+        *mut BLUETOOTH_DEVICE_INFO,
+    ) -> i32;
+
+    type BluetoothFindDeviceCloseFn = unsafe extern "system" fn(*mut c_void) -> i32;
+
+    let mut result = WatchStatusResult {
+        has_connected_watch: false,
+        connected_watch_name: None,
+        has_connected_phone: false,
+        connected_phone_name: None,
+        devices: Vec::new(),
+    };
+
+    unsafe {
+        let h_mod = LoadLibraryA(b"bthprops.cpl\0".as_ptr());
+        if !h_mod.is_null() {
+            let p_first = GetProcAddress(h_mod, b"BluetoothFindFirstDevice\0".as_ptr());
+            let p_next = GetProcAddress(h_mod, b"BluetoothFindNextDevice\0".as_ptr());
+            let p_close = GetProcAddress(h_mod, b"BluetoothFindDeviceClose\0".as_ptr());
+
+            if !p_first.is_null() && !p_next.is_null() && !p_close.is_null() {
+                let find_first: BluetoothFindFirstDeviceFn = std::mem::transmute(p_first);
+                let find_next: BluetoothFindNextDeviceFn = std::mem::transmute(p_next);
+                let find_close: BluetoothFindDeviceCloseFn = std::mem::transmute(p_close);
+
+                let params = BLUETOOTH_DEVICE_SEARCH_PARAMS {
+                    dw_size: std::mem::size_of::<BLUETOOTH_DEVICE_SEARCH_PARAMS>() as u32,
+                    f_return_authenticated: 1,
+                    f_return_remembered: 1,
+                    f_return_unknown: 1,
+                    f_return_connected: 1,
+                    f_issue_inquiry: 0,
+                    c_timeout_multiplier: 0,
+                    h_radio: std::ptr::null_mut(),
+                };
+
+                let mut info: BLUETOOTH_DEVICE_INFO = std::mem::zeroed();
+                info.dw_size = std::mem::size_of::<BLUETOOTH_DEVICE_INFO>() as u32;
+
+                let h_find = find_first(&params, &mut info);
+                if !h_find.is_null() {
+                    loop {
+                        let end = info.sz_name.iter().position(|&c| c == 0).unwrap_or(info.sz_name.len());
+                        let name = String::from_utf16_lossy(&info.sz_name[..end]);
+                        let name_lower = name.to_lowercase();
+                        let major_class = info.ul_class_of_device & 0x1F00;
+
+                        // Precise Device Classification
+                        // 0x0200 = Major Class Phone
+                        // 0x0700 = Major Class Wearable (Smartwatch)
+                        let is_phone = (major_class == 0x0200)
+                            || name_lower.contains("phone")
+                            || name_lower.contains("iphone")
+                            || name_lower.contains("galaxy s")
+                            || name_lower.contains("galaxy a")
+                            || name_lower.contains("galaxy note")
+                            || name_lower.contains("galaxy z")
+                            || name_lower.contains("pixel")
+                            || name_lower.contains("redmi")
+                            || name_lower.contains("realme")
+                            || name_lower.contains("oneplus")
+                            || name_lower.contains("motorola")
+                            || name_lower == "navi blue";
+
+                        let is_watch = !is_phone && (
+                            (major_class == 0x0700)
+                            || name_lower.contains("watch")
+                            || name_lower.contains("fitbit")
+                            || name_lower.contains("garmin")
+                            || name_lower.contains("amazfit")
+                            || name_lower.contains("smartband")
+                            || name_lower.contains("coros")
+                            || name_lower.contains("suunto")
+                            || name_lower.contains("polar")
+                            || name_lower.contains("fire-boltt")
+                            || name_lower.contains("noise colorfit")
+                            || name_lower.contains("fastrack")
+                            || name_lower.contains("titan")
+                        );
+
+                        let is_connected = info.f_connected != 0;
+                        let is_paired = info.f_remembered != 0 || info.f_authenticated != 0;
+
+                        if is_watch && is_connected {
+                            result.has_connected_watch = true;
+                            if result.connected_watch_name.is_none() {
+                                result.connected_watch_name = Some(name.clone());
+                            }
+                        }
+
+                        if is_phone && is_connected {
+                            result.has_connected_phone = true;
+                            if result.connected_phone_name.is_none() {
+                                result.connected_phone_name = Some(name.clone());
+                            }
+                        }
+
+                        if !name.trim().is_empty() {
+                            result.devices.push(WatchDevice {
+                                name,
+                                is_connected,
+                                is_paired,
+                                class_of_device: info.ul_class_of_device,
+                                is_watch_device: is_watch,
+                                is_phone_device: is_phone,
+                            });
+                        }
+
+                        info = std::mem::zeroed();
+                        info.dw_size = std::mem::size_of::<BLUETOOTH_DEVICE_INFO>() as u32;
+                        if find_next(h_find, &mut info) == 0 {
+                            break;
+                        }
+                    }
+                    find_close(h_find);
+                }
+            }
+            FreeLibrary(h_mod);
+        }
+    }
+
+    result
+}
+
+#[cfg(not(windows))]
+fn query_windows_bluetooth_devices() -> WatchStatusResult {
+    WatchStatusResult {
+        has_connected_watch: false,
+        connected_watch_name: None,
+        has_connected_phone: false,
+        connected_phone_name: None,
+        devices: Vec::new(),
+    }
+}
+
+#[tauri::command]
+fn get_bluetooth_watch_status() -> Result<WatchStatusResult, String> {
+    Ok(query_windows_bluetooth_devices())
+}
+
+#[tauri::command]
+fn dial_phone_call(number: String) -> Result<String, String> {
+    let clean_num: String = number.chars().filter(|c| c.is_ascii_digit() || *c == '+' || *c == '*' || *c == '#').collect();
+    if clean_num.is_empty() {
+        return Err("Phone number is empty".to_string());
+    }
+
+    #[cfg(windows)]
+    {
+        let ps_script = format!(
+            "Start-Process 'tel:{}' -WindowStyle Normal -ErrorAction SilentlyContinue",
+            clean_num
+        );
+        let _ = silent_command("powershell")
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+            .spawn();
+    }
+
+    Ok(format!("Dialing {} via connected phone", clean_num))
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProcessItem {
     pub name: String,
     pub title: String,
@@ -1031,6 +1266,8 @@ pub fn run() {
             ask_jarvis,
             run_direct_action,
             get_system_telemetry,
+            get_bluetooth_watch_status,
+            dial_phone_call,
             listen_mic
         ])
         .run(tauri::generate_context!())
@@ -1095,5 +1332,116 @@ mod tests {
         let (action4, target4, _) = parse_model_output(r#"{"action":"open_app","target":"vs code","reply":"Opening Code."}"#, "open vs code");
         assert_eq!(action4, "open_app");
         assert_eq!(target4, "code");
+    }
+
+    #[test]
+    fn test_bluetooth_device_query() {
+        use std::ffi::c_void;
+
+        #[repr(C)]
+        struct BLUETOOTH_DEVICE_SEARCH_PARAMS {
+            dw_size: u32,
+            f_return_authenticated: i32,
+            f_return_remembered: i32,
+            f_return_unknown: i32,
+            f_return_connected: i32,
+            f_issue_inquiry: i32,
+            c_timeout_multiplier: u8,
+            h_radio: *mut c_void,
+        }
+
+        #[repr(C)]
+        #[derive(Copy, Clone)]
+        struct SYSTEMTIME {
+            w_year: u16,
+            w_month: u16,
+            w_day_of_week: u16,
+            w_day: u16,
+            w_hour: u16,
+            w_minute: u16,
+            w_second: u16,
+            w_milliseconds: u16,
+        }
+
+        #[repr(C)]
+        struct BLUETOOTH_DEVICE_INFO {
+            dw_size: u32,
+            address: u64,
+            ul_class_of_device: u32,
+            f_connected: i32,
+            f_remembered: i32,
+            f_authenticated: i32,
+            st_last_seen: SYSTEMTIME,
+            st_last_used: SYSTEMTIME,
+            sz_name: [u16; 248],
+        }
+
+        unsafe extern "system" {
+            fn LoadLibraryA(lpLibFileName: *const u8) -> *mut c_void;
+            fn GetProcAddress(hModule: *mut c_void, lpProcName: *const u8) -> *mut c_void;
+            fn FreeLibrary(hLibModule: *mut c_void) -> i32;
+        }
+
+        type BluetoothFindFirstDeviceFn = unsafe extern "system" fn(
+            *const BLUETOOTH_DEVICE_SEARCH_PARAMS,
+            *mut BLUETOOTH_DEVICE_INFO,
+        ) -> *mut c_void;
+
+        type BluetoothFindNextDeviceFn = unsafe extern "system" fn(
+            *mut c_void,
+            *mut BLUETOOTH_DEVICE_INFO,
+        ) -> i32;
+
+        type BluetoothFindDeviceCloseFn = unsafe extern "system" fn(*mut c_void) -> i32;
+
+        unsafe {
+            let h_mod = LoadLibraryA(b"bthprops.cpl\0".as_ptr());
+            println!("LoadLibrary bthprops.cpl: {:?}", h_mod);
+            if !h_mod.is_null() {
+                let p_first = GetProcAddress(h_mod, b"BluetoothFindFirstDevice\0".as_ptr());
+                let p_next = GetProcAddress(h_mod, b"BluetoothFindNextDevice\0".as_ptr());
+                let p_close = GetProcAddress(h_mod, b"BluetoothFindDeviceClose\0".as_ptr());
+                println!("p_first: {:?}, p_next: {:?}, p_close: {:?}", p_first, p_next, p_close);
+
+                if !p_first.is_null() && !p_next.is_null() && !p_close.is_null() {
+                    let find_first: BluetoothFindFirstDeviceFn = std::mem::transmute(p_first);
+                    let find_next: BluetoothFindNextDeviceFn = std::mem::transmute(p_next);
+                    let find_close: BluetoothFindDeviceCloseFn = std::mem::transmute(p_close);
+
+                    let params = BLUETOOTH_DEVICE_SEARCH_PARAMS {
+                        dw_size: std::mem::size_of::<BLUETOOTH_DEVICE_SEARCH_PARAMS>() as u32,
+                        f_return_authenticated: 1,
+                        f_return_remembered: 1,
+                        f_return_unknown: 1,
+                        f_return_connected: 1,
+                        f_issue_inquiry: 0,
+                        c_timeout_multiplier: 0,
+                        h_radio: std::ptr::null_mut(),
+                    };
+
+                    let mut info: BLUETOOTH_DEVICE_INFO = std::mem::zeroed();
+                    info.dw_size = std::mem::size_of::<BLUETOOTH_DEVICE_INFO>() as u32;
+
+                    let h_find = find_first(&params, &mut info);
+                    println!("h_find: {:?}", h_find);
+                    if !h_find.is_null() {
+                        loop {
+                            let end = info.sz_name.iter().position(|&c| c == 0).unwrap_or(info.sz_name.len());
+                            let name = String::from_utf16_lossy(&info.sz_name[..end]);
+                            println!("Found device: '{}', connected: {}, remembered: {}, class: 0x{:06X}", 
+                                name, info.f_connected, info.f_remembered, info.ul_class_of_device);
+
+                            info = std::mem::zeroed();
+                            info.dw_size = std::mem::size_of::<BLUETOOTH_DEVICE_INFO>() as u32;
+                            if find_next(h_find, &mut info) == 0 {
+                                break;
+                            }
+                        }
+                        find_close(h_find);
+                    }
+                }
+                FreeLibrary(h_mod);
+            }
+        }
     }
 }

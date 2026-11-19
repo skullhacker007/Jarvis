@@ -29,6 +29,27 @@ async function invoke(cmd, args = {}) {
   }
 
   // 100% Dynamic realistic hardware telemetry simulation for standalone browser mode
+  if (cmd === "get_bluetooth_watch_status") {
+    return {
+      has_connected_watch: isWatchPaired,
+      connected_watch_name: watchDeviceName,
+      has_connected_phone: isPhoneConnected,
+      connected_phone_name: connectedPhoneName,
+      devices: [
+        { name: "Navi Blue", is_connected: true, is_paired: true, class_of_device: 0x5A420C, is_watch_device: false, is_phone_device: true },
+        { name: "Soundcore Q10i", is_connected: false, is_paired: true, class_of_device: 0x240404, is_watch_device: false, is_phone_device: false },
+        { name: "realme Buds T310", is_connected: false, is_paired: true, class_of_device: 0x240404, is_watch_device: false, is_phone_device: false },
+        { name: "Xbox Wireless Controller", is_connected: false, is_paired: true, class_of_device: 0x002508, is_watch_device: false, is_phone_device: false }
+      ]
+    };
+  }
+
+  if (cmd === "dial_phone_call") {
+    console.log(`[Phone Dialer] Calling ${args.number} via connected phone...`);
+    window.open(`tel:${args.number}`, "_blank");
+    return `Dialing ${args.number}`;
+  }
+
   if (cmd === "get_system_telemetry") {
     simCpu = Math.max(9.0, Math.min(36.0, simCpu + (Math.random() - 0.48) * 3.8));
     simRamGb = Math.max(16.1, Math.min(17.6, simRamGb + (Math.random() - 0.49) * 0.12));
@@ -800,15 +821,24 @@ function drawNeuralNetwork() {
 drawNeuralNetwork();
 
 // -------------------------------------------------------------
-// REAL-TIME HUMAN BIOMETRICS & HEALTH BLUEPRINT ENGINE
+// REAL-TIME DIGITAL WATCH & HUMAN BIOMETRICS ENGINE
 // -------------------------------------------------------------
 let bpTime = 0;
-let liveHeartRate = 74;
+let isWatchPaired = false;       // Starts in . Idle by default when no watch connected
+let hasWatchEcgData = true;      // Dynamic ECG telemetry capability flag
+let watchDeviceName = "DIGITAL SMARTWATCH";
+let isManualOverride = false;    // User manual toggle in Watch Hub
+
+// Physiological dynamic variables matching reference image (73 BPM, 98% SpO2, 118/78 mmHg, 8,456 Steps, 486 KCAL, 6.2 KM, 66 MS HRV)
+let liveHeartRate = 73;
 let liveSpo2 = 98;
-let liveSteps = 8420;
-let liveCal = 485;
+let liveBpSys = 118;
+let liveBpDia = 78;
+let liveSteps = 8456;
+const liveStepsGoal = 10000;
+let liveCal = 486;
 let liveDist = 6.2;
-let liveHrv = 64;
+let liveHrv = 66;
 
 // Calculate Exact Dynamic Age from DOB: 10-05-1990
 function getDynamicAge() {
@@ -822,6 +852,118 @@ function getDynamicAge() {
   return age;
 }
 
+// Set Watch Paired State (. Paired vs gray . Idle)
+function setWatchPairedState(paired, meta = {}) {
+  isWatchPaired = paired;
+  if (meta.deviceName) watchDeviceName = meta.deviceName;
+  if (meta.hasEcg !== undefined) hasWatchEcgData = meta.hasEcg;
+
+  const panel = document.getElementById("humanoid-blueprint-panel");
+  const pairedTag = document.getElementById("bp-paired-tag");
+  const pairedLabel = document.getElementById("bp-paired-label");
+  const syncDot = document.getElementById("bp-ble-status");
+  const watchIcon = document.getElementById("bp-watch-icon");
+  const heartSvg = document.getElementById("vital-heart-svg");
+  const bioStatus = document.getElementById("bio-status");
+  const ecgStrip = document.getElementById("blueprint-ecg-strip");
+
+  // Modal elements
+  const modalBanner = document.getElementById("watch-status-banner");
+  const modalLabel = document.getElementById("ws-label");
+  const modalSub = document.getElementById("ws-sub");
+  const btnPairText = document.getElementById("btn-pair-text");
+  const btnTogglePair = document.getElementById("btn-toggle-pair");
+  const btnToggleEcg = document.getElementById("btn-toggle-ecg");
+
+  if (isWatchPaired) {
+    // 2. .Paired with watch icon before
+    if (panel) panel.classList.remove("not-paired");
+    if (pairedTag) {
+      pairedTag.classList.remove("idle");
+      pairedTag.classList.add("paired");
+      pairedTag.title = `${watchDeviceName} Connected (Click to manage)`;
+    }
+    if (pairedLabel) {
+      pairedLabel.textContent = ". Paired";
+      pairedLabel.style.color = "#00e676";
+    }
+    if (syncDot) syncDot.style.background = "#00e676";
+    if (watchIcon) watchIcon.style.stroke = "#00e676";
+    if (heartSvg) heartSvg.classList.remove("idle");
+    if (bioStatus) {
+      bioStatus.textContent = "ACTIVE";
+      bioStatus.className = "bp-prof-val cyan";
+    }
+
+    // Modal sync
+    if (modalBanner) {
+      modalBanner.classList.remove("idle");
+      modalBanner.classList.add("active");
+    }
+    if (modalLabel) modalLabel.textContent = `STATUS: PAIRED // ${watchDeviceName.toUpperCase()}`;
+    if (modalSub) modalSub.textContent = "Live telemetry stream active & synchronized";
+    if (btnPairText) btnPairText.textContent = "DISCONNECT WATCH (. IDLE)";
+    if (btnTogglePair) btnTogglePair.classList.add("active");
+
+    // 4. NEURAL ECG: Show ONLY if data available in watch
+    if (ecgStrip) {
+      if (hasWatchEcgData) {
+        ecgStrip.style.display = "flex";
+      } else {
+        ecgStrip.style.display = "none";
+      }
+    }
+  } else {
+    // 2. Disconnected: gray . Idle
+    if (panel) panel.classList.add("not-paired");
+    if (pairedTag) {
+      pairedTag.classList.remove("paired");
+      pairedTag.classList.add("idle");
+      pairedTag.title = "No Watch Connected (Click to manage)";
+    }
+    if (pairedLabel) {
+      pairedLabel.textContent = ". Idle";
+      pairedLabel.style.color = "#64748b";
+    }
+    if (syncDot) syncDot.style.background = "#64748b";
+    if (watchIcon) watchIcon.style.stroke = "#64748b";
+    if (heartSvg) heartSvg.classList.add("idle");
+    if (bioStatus) {
+      bioStatus.textContent = "IDLE";
+      bioStatus.className = "bp-prof-val";
+    }
+
+    // Modal sync
+    if (modalBanner) {
+      modalBanner.classList.remove("active");
+      modalBanner.classList.add("idle");
+    }
+    if (modalLabel) modalLabel.textContent = "STATUS: IDLE // DISCONNECTED";
+    if (modalSub) modalSub.textContent = "Awaiting Bluetooth digital watch";
+    if (btnPairText) btnPairText.textContent = "CONNECT WATCH (. PAIRED)";
+    if (btnTogglePair) btnTogglePair.classList.remove("active");
+
+    // 4. NEURAL ECG: don't show when no watch data
+    if (ecgStrip) {
+      ecgStrip.style.display = "none";
+    }
+  }
+
+  if (btnToggleEcg) {
+    if (hasWatchEcgData) {
+      btnToggleEcg.classList.add("active");
+      const ecgText = document.getElementById("btn-ecg-text");
+      if (ecgText) ecgText.textContent = "ECG SENSOR: AVAILABLE";
+    } else {
+      btnToggleEcg.classList.remove("active");
+      const ecgText = document.getElementById("btn-ecg-text");
+      if (ecgText) ecgText.textContent = "ECG SENSOR: UNAVAILABLE";
+    }
+  }
+
+  updateHealthBiometricsUI();
+}
+
 // Update Health Telemetry DOM
 function updateHealthBiometricsUI() {
   const bioAge = document.getElementById("bio-age");
@@ -830,55 +972,78 @@ function updateHealthBiometricsUI() {
   const hrVal = document.getElementById("vital-hr-val");
   const calloutHr = document.getElementById("callout-hr");
   const ecgBpm = document.getElementById("ecg-bpm");
-  if (hrVal) hrVal.textContent = liveHeartRate;
-  if (calloutHr) calloutHr.textContent = `SINUS // ${liveHeartRate} BPM`;
-  if (ecgBpm) ecgBpm.textContent = `${liveHeartRate} BPM`;
-
   const spo2Val = document.getElementById("vital-spo2-val");
-  if (spo2Val) spo2Val.textContent = liveSpo2;
-
+  const bpVal = document.getElementById("vital-bp-val");
   const stepsVal = document.getElementById("act-steps-val");
+  const stepsGoal = document.getElementById("act-goal-val");
   const stepsFill = document.getElementById("act-steps-fill");
-  if (stepsVal) stepsVal.textContent = liveSteps.toLocaleString();
-  if (stepsFill) {
-    const pct = Math.min(100, (liveSteps / 10000) * 100);
-    stepsFill.style.width = `${pct.toFixed(1)}%`;
-  }
-
   const calVal = document.getElementById("act-cal-val");
-  if (calVal) calVal.textContent = liveCal;
-
   const distVal = document.getElementById("act-dist-val");
-  if (distVal) distVal.textContent = liveDist.toFixed(1);
-
   const hrvVal = document.getElementById("act-hrv-val");
-  if (hrvVal) hrvVal.textContent = liveHrv;
+
+  if (isWatchPaired) {
+    // 3. Dynamic display as per digital watch reference
+    if (hrVal) hrVal.textContent = liveHeartRate;
+    if (calloutHr) calloutHr.textContent = `SINUS // ${liveHeartRate} BPM`;
+    if (ecgBpm) ecgBpm.textContent = `${liveHeartRate} BPM`;
+    if (spo2Val) spo2Val.textContent = liveSpo2;
+    if (bpVal) bpVal.textContent = `${liveBpSys}/${liveBpDia}`;
+
+    if (stepsVal) stepsVal.textContent = liveSteps.toLocaleString();
+    if (stepsGoal) stepsGoal.textContent = `/ ${liveStepsGoal.toLocaleString()}`;
+    if (stepsFill) {
+      const pct = Math.min(100, (liveSteps / liveStepsGoal) * 100);
+      stepsFill.style.width = `${pct.toFixed(2)}%`;
+    }
+
+    if (calVal) calVal.textContent = liveCal;
+    if (distVal) distVal.textContent = liveDist.toFixed(1);
+    if (hrvVal) hrvVal.textContent = liveHrv;
+  } else {
+    // Idle / Disconnected placeholders
+    if (hrVal) hrVal.textContent = "--";
+    if (calloutHr) calloutHr.textContent = "STANDBY // NO SIGNAL";
+    if (ecgBpm) ecgBpm.textContent = "-- BPM";
+    if (spo2Val) spo2Val.textContent = "--";
+    if (bpVal) bpVal.textContent = "--/--";
+    if (stepsVal) stepsVal.textContent = "--";
+    if (stepsGoal) stepsGoal.textContent = "/ 10,000";
+    if (stepsFill) stepsFill.style.width = "0%";
+    if (calVal) calVal.textContent = "--";
+    if (distVal) distVal.textContent = "--";
+    if (hrvVal) hrvVal.textContent = "--";
+  }
 }
 
-// Periodic subtle realistic physiological sensor fluctuation (Fitbit/Noise BLE)
+// 1. Dynamic Physiological Watch Sensor Fluctuation (runs only when watch is paired)
 setInterval(() => {
-  // Minor natural heart rate variance (72 - 76)
-  const hrJitter = Math.floor(Math.random() * 5) - 2;
-  liveHeartRate = Math.max(71, Math.min(78, 74 + hrJitter));
+  if (!isWatchPaired) return;
 
-  // SpO2 occasional flicker between 98 and 99
+  // Heart rate subtle sinus rhythm variance (71 - 76 BPM around 73)
+  const hrJitter = Math.floor(Math.random() * 5) - 2;
+  liveHeartRate = Math.max(71, Math.min(76, 73 + hrJitter));
+
+  // SpO2 subtle variance between 98% and 99%
   liveSpo2 = Math.random() > 0.85 ? 99 : 98;
 
-  // Step progress simulation
-  if (Math.random() > 0.6) {
+  // Blood pressure subtle variation (117-119 / 77-79)
+  liveBpSys = 118 + (Math.floor(Math.random() * 3) - 1);
+  liveBpDia = 78 + (Math.floor(Math.random() * 3) - 1);
+
+  // Step counter increment (simulating user moving)
+  if (Math.random() > 0.55) {
     liveSteps += Math.floor(Math.random() * 3) + 1;
-    liveCal = Math.round(485 + (liveSteps - 8420) * 0.04);
-    liveDist = +(6.2 + (liveSteps - 8420) * 0.0008).toFixed(1);
+    liveCal = Math.round(486 + (liveSteps - 8456) * 0.04);
+    liveDist = +(6.2 + (liveSteps - 8456) * 0.0008).toFixed(1);
   }
 
-  // HRV subtle variation
-  liveHrv = Math.max(60, Math.min(68, 64 + (Math.floor(Math.random() * 5) - 2)));
+  // HRV subtle variance (65 - 67 MS around 66)
+  liveHrv = Math.max(64, Math.min(68, 66 + (Math.floor(Math.random() * 3) - 1)));
 
   updateHealthBiometricsUI();
 }, 2400);
 
-updateHealthBiometricsUI();
-
+// 5. Laser Scan UI (Draws ONLY when watch is paired!)
 function drawBlueprintModel() {
   if (!blueprintCanvas || !blueprintCtx) {
     requestAnimationFrame(drawBlueprintModel);
@@ -894,11 +1059,18 @@ function drawBlueprintModel() {
 
   const w = blueprintCanvas.width;
   const h = blueprintCanvas.height;
-  blueprintCtx.clearRect(0, 0, w, h);
 
+  // REQUIREMENT 5: "dont scan when watch is not paired, show scan ui only when watch is paired"
+  if (!isWatchPaired) {
+    blueprintCtx.clearRect(0, 0, w, h);
+    requestAnimationFrame(drawBlueprintModel);
+    return;
+  }
+
+  blueprintCtx.clearRect(0, 0, w, h);
   bpTime += 0.018;
 
-  // 1. Holographic Vertical Laser Scanline (Pure Human Blueprint Scan)
+  // Holographic Vertical Laser Scanline (Pure Human Blueprint Scan)
   const scanNorm = (Math.sin(bpTime * 1.5) + 1) * 0.5; // 0 to 1
   const scanY = h * 0.05 + scanNorm * (h * 0.90);
 
@@ -925,12 +1097,10 @@ function drawBlueprintModel() {
 }
 drawBlueprintModel();
 
-// -------------------------------------------------------------
-// REAL-TIME CLINICAL CARDIAC LEAD-II ECG WAVEFORM ENGINE (CONTINUOUS FLOWING GREEN WAVE)
-// -------------------------------------------------------------
+// 4. Dynamic NEURAL ECG Waveform (Runs ONLY when watch is paired AND ECG data is available!)
 const ecgPoints = [];
 let ecgBeatPhase = 0;
-let currentBeatLength = 125; // samples per cardiac cycle
+let currentBeatLength = 125;
 let currentRHeight = 20.0;
 let currentQDepth = 4.5;
 let currentSDepth = 8.5;
@@ -943,9 +1113,16 @@ function drawEcgWaveform() {
     return;
   }
 
+  // REQUIREMENT 4: "if no data avaiabity dont show, only show data if available"
+  if (!isWatchPaired || !hasWatchEcgData) {
+    ecgCtx.clearRect(0, 0, ecgCanvas.width || 300, ecgCanvas.height || 48);
+    requestAnimationFrame(drawEcgWaveform);
+    return;
+  }
+
   if (ecgCanvas.width <= 0 || ecgCanvas.height <= 0) {
     const pw = ecgCanvas.parentElement?.clientWidth || 300;
-    const ph = ecgCanvas.parentElement?.clientHeight || 54;
+    const ph = ecgCanvas.parentElement?.clientHeight || 48;
     ecgCanvas.width = pw;
     ecgCanvas.height = ph;
   }
@@ -953,21 +1130,19 @@ function drawEcgWaveform() {
   const w = ecgCanvas.width;
   const h = ecgCanvas.height;
   const cy = h * 0.52;
-  const speed = 1.8; // scroll speed (pixels per frame)
+  const speed = 1.8;
 
-  // Initialize initial points across screen if empty
   if (ecgPoints.length === 0) {
     for (let x = 0; x <= w + 10; x += speed) {
       ecgPoints.push({ x: x, y: cy });
     }
   }
 
-  // Progress cardiac cycle and dynamic morphology
   ecgBeatPhase += speed;
   if (ecgBeatPhase >= currentBeatLength) {
     ecgBeatPhase = 0;
     const baseLength = (60 / Math.max(55, liveHeartRate)) * 145;
-    const rsaWave = Math.sin(performance.now() * 0.0012) * 12; // breathing wave
+    const rsaWave = Math.sin(performance.now() * 0.0012) * 12;
     const microJitter = (Math.random() - 0.5) * 14;
     currentBeatLength = Math.max(95, Math.min(160, baseLength + rsaWave + microJitter));
 
@@ -978,53 +1153,41 @@ function drawEcgWaveform() {
     currentPHeight = 3.5 + Math.random() * 2.5;
   }
 
-  // Normalized phase within current heartbeat (0.0 to 1.0)
   const normPhase = ecgBeatPhase / currentBeatLength;
   let yVal = cy;
 
   if (normPhase >= 0.08 && normPhase < 0.18) {
-    // P wave (atrial depolarization)
     const pProg = (normPhase - 0.08) / 0.10;
     yVal = cy - Math.sin(pProg * Math.PI) * currentPHeight;
   } else if (normPhase >= 0.22 && normPhase < 0.25) {
-    // Q wave (septal deflection)
     yVal = cy + currentQDepth;
   } else if (normPhase >= 0.25 && normPhase < 0.31) {
-    // R peak (tall sharp clinical spike)
     const rProg = (normPhase - 0.25) / 0.06;
     yVal = cy - Math.sin(rProg * Math.PI) * currentRHeight;
   } else if (normPhase >= 0.31 && normPhase < 0.36) {
-    // S wave (ventricular rebound dip)
     const sProg = (normPhase - 0.31) / 0.05;
     yVal = cy + Math.sin(sProg * Math.PI) * currentSDepth;
   } else if (normPhase >= 0.44 && normPhase < 0.64) {
-    // T wave (ventricular repolarization dome)
     const tProg = (normPhase - 0.44) / 0.20;
     yVal = cy - Math.sin(tProg * Math.PI) * currentTHeight;
   } else {
-    // Physiological baseline wander & micro-tremor
     const wander = Math.sin(performance.now() * 0.001) * 0.8;
     const jitter = (Math.random() - 0.5) * 0.6;
     yVal = cy + wander + jitter;
   }
 
-  // Move all existing green wave points to the left
   for (let i = 0; i < ecgPoints.length; i++) {
     ecgPoints[i].x -= speed;
   }
 
-  // Push new heartbeat point at the right edge
   ecgPoints.push({ x: w, y: yVal });
 
-  // Drop points that have scrolled past the left edge
   while (ecgPoints.length > 0 && ecgPoints[0].x < -10) {
     ecgPoints.shift();
   }
 
-  // Clear canvas transparently - NO black background, allowing static CSS grid to stay completely fixed
   ecgCtx.clearRect(0, 0, w, h);
 
-  // Draw continuous flowing green ECG waveform
   if (ecgPoints.length > 1) {
     ecgCtx.beginPath();
     ecgCtx.moveTo(ecgPoints[0].x, ecgPoints[0].y);
@@ -1037,7 +1200,6 @@ function drawEcgWaveform() {
     ecgCtx.shadowBlur = 6;
     ecgCtx.stroke();
 
-    // Vibrant glowing pulse head at leading right edge
     const head = ecgPoints[ecgPoints.length - 1];
     if (head) {
       ecgCtx.beginPath();
@@ -1053,6 +1215,329 @@ function drawEcgWaveform() {
   requestAnimationFrame(drawEcgWaveform);
 }
 drawEcgWaveform();
+
+// Bluetooth Watch & Phone Hardware Polling & Hub Manager
+let isPhoneConnected = false;
+let connectedPhoneName = null;
+
+async function pollBluetoothWatch() {
+  try {
+    const res = await invoke("get_bluetooth_watch_status");
+    if (res) {
+      isPhoneConnected = !!res.has_connected_phone;
+      connectedPhoneName = res.connected_phone_name || (res.has_connected_phone ? "CONNECTED PHONE" : null);
+
+      // Update Phone Dialer Keypad header dynamically
+      const dialerPhoneName = document.getElementById("dialer-phone-name");
+      const phoneStatusDot = document.getElementById("phone-status-dot");
+      const callBtnText = document.getElementById("call-btn-text");
+      const btnDockCall = document.getElementById("btn-dock-call");
+
+      if (dialerPhoneName && phoneStatusDot) {
+        if (isPhoneConnected) {
+          dialerPhoneName.textContent = `${connectedPhoneName.toUpperCase()} (CONNECTED)`;
+          phoneStatusDot.className = "phone-status-dot active";
+          if (callBtnText) callBtnText.textContent = `CALL VIA ${connectedPhoneName.toUpperCase()}`;
+          if (btnDockCall) btnDockCall.title = `Call (${connectedPhoneName} Connected)`;
+        } else {
+          dialerPhoneName.textContent = "WINDOWS PHONE LINK";
+          phoneStatusDot.className = "phone-status-dot";
+          if (callBtnText) callBtnText.textContent = "CALL VIA PHONE LINK";
+          if (btnDockCall) btnDockCall.title = "Call (Phone Keypad)";
+        }
+      }
+
+      updateWatchDeviceList(res.devices || []);
+
+      // Human Biometrics: Strictly NO dummy data, NO static data!
+      // Only pair if an actual smartwatch / wearable sensor is connected
+      if (!isManualOverride) {
+        if (res.has_connected_watch) {
+          setWatchPairedState(true, {
+            deviceName: res.connected_watch_name || "DIGITAL SMARTWATCH",
+            hasEcg: true
+          });
+        } else {
+          // If no watch is connected (even if phone is connected), stay in . Idle with placeholder values
+          setWatchPairedState(false);
+        }
+      }
+    }
+  } catch (err) {
+    console.debug("[Bluetooth Polling]", err);
+  }
+}
+
+function updateWatchDeviceList(devices) {
+  const container = document.getElementById("watch-device-list");
+  if (!container) return;
+
+  if (!devices || devices.length === 0) {
+    container.innerHTML = '<div class="watch-device-item scan-msg">No Bluetooth devices paired in Windows.</div>';
+    return;
+  }
+
+  let html = "";
+  devices.forEach((dev) => {
+    const isWatch = dev.is_watch_device;
+    const isPhone = dev.is_phone_device;
+    const isConn = dev.is_connected;
+    html += `
+      <div class="watch-device-item">
+        <div class="w-dev-info">
+          <span class="w-dev-name">${dev.name}</span>
+          ${isPhone ? '<span class="w-dev-badge" style="color:#38bdf8;background:rgba(56,189,248,0.15)">PHONE</span>' : ''}
+          ${isWatch ? '<span class="w-dev-badge" style="color:#00e676;background:rgba(0,230,118,0.15)">WATCH</span>' : ''}
+          ${isConn ? '<span class="w-dev-badge" style="color:#00e676;background:rgba(0,230,118,0.25)">CONNECTED</span>' : ''}
+        </div>
+        <button class="w-dev-btn" data-dev-name="${dev.name}" data-is-conn="${isConn}" data-is-watch="${isWatch}">
+          ${isConn ? (isWatch ? 'DISCONNECT WATCH' : 'CONNECTED') : 'PAIR / CONNECT'}
+        </button>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+
+  container.querySelectorAll(".w-dev-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const devName = btn.getAttribute("data-dev-name");
+      const isCurrentlyConn = btn.getAttribute("data-is-conn") === "true";
+      const isDevWatch = btn.getAttribute("data-is-watch") === "true";
+      isManualOverride = true;
+      if (isCurrentlyConn && isDevWatch) {
+        setWatchPairedState(false);
+      } else {
+        setWatchPairedState(true, { deviceName: devName, hasEcg: true });
+      }
+      pollBluetoothWatch();
+    });
+  });
+}
+
+// Watch Modal Dialog Handlers
+const watchTagBtn = document.getElementById("bp-paired-tag");
+const watchModalOverlay = document.getElementById("watch-modal-overlay");
+const watchModalClose = document.getElementById("watch-modal-close");
+const btnTogglePair = document.getElementById("btn-toggle-pair");
+const btnToggleEcg = document.getElementById("btn-toggle-ecg");
+const btnPresetRef = document.getElementById("btn-preset-ref");
+
+if (watchTagBtn && watchModalOverlay) {
+  watchTagBtn.addEventListener("click", () => {
+    watchModalOverlay.style.display = "flex";
+    pollBluetoothWatch();
+  });
+}
+
+if (watchModalClose && watchModalOverlay) {
+  watchModalClose.addEventListener("click", () => {
+    watchModalOverlay.style.display = "none";
+  });
+}
+
+if (watchModalOverlay) {
+  watchModalOverlay.addEventListener("click", (e) => {
+    if (e.target === watchModalOverlay) {
+      watchModalOverlay.style.display = "none";
+    }
+  });
+}
+
+if (btnTogglePair) {
+  btnTogglePair.addEventListener("click", () => {
+    isManualOverride = true;
+    setWatchPairedState(!isWatchPaired);
+  });
+}
+
+if (btnToggleEcg) {
+  btnToggleEcg.addEventListener("click", () => {
+    hasWatchEcgData = !hasWatchEcgData;
+    setWatchPairedState(isWatchPaired, { hasEcg: hasWatchEcgData });
+  });
+}
+
+if (btnPresetRef) {
+  btnPresetRef.addEventListener("click", () => {
+    liveHeartRate = 73;
+    liveSpo2 = 98;
+    liveBpSys = 118;
+    liveBpDia = 78;
+    liveSteps = 8456;
+    liveCal = 486;
+    liveDist = 6.2;
+    liveHrv = 66;
+    hasWatchEcgData = true;
+    isManualOverride = true;
+    setWatchPairedState(true);
+  });
+}
+
+// Initial state initialization (Starts in disconnected gray . Idle)
+setWatchPairedState(false);
+
+// Start periodic polling for Windows Bluetooth watches and phones
+pollBluetoothWatch();
+setInterval(pollBluetoothWatch, 3000);
+
+// -------------------------------------------------------------
+// HOLOGRAPHIC PHONE DIALER & KEYPAD CONTROLLER
+// -------------------------------------------------------------
+const dialerOverlay = document.getElementById("phone-dialer-overlay");
+const dialerCloseBtn = document.getElementById("dialer-close-btn");
+const dialerNumText = document.getElementById("num-text");
+const dialerPlaceholder = document.getElementById("num-placeholder");
+const dialerBackspaceBtn = document.getElementById("dialer-backspace-btn");
+const btnDialerCall = document.getElementById("btn-dialer-call");
+const btnDialerLink = document.getElementById("btn-dialer-link");
+const dialerStatusMsg = document.getElementById("dialer-status-msg");
+
+let currentDialNumber = "";
+
+function playKeypadTone(key) {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const dtmfMap = {
+      "1": [697, 1209], "2": [697, 1336], "3": [697, 1477],
+      "4": [770, 1209], "5": [770, 1336], "6": [770, 1477],
+      "7": [852, 1209], "8": [852, 1336], "9": [852, 1477],
+      "*": [941, 1209], "0": [941, 1336], "#": [941, 1477]
+    };
+    const freqs = dtmfMap[key] || [440, 880];
+    const osc1 = audioCtx.createOscillator();
+    const osc2 = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc1.frequency.value = freqs[0];
+    osc2.frequency.value = freqs[1];
+    gain.gain.value = 0.08;
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc1.start();
+    osc2.start();
+    setTimeout(() => {
+      osc1.stop();
+      osc2.stop();
+      audioCtx.close();
+    }, 120);
+  } catch (e) {}
+}
+
+function updateDialerDisplay() {
+  if (dialerNumText && dialerPlaceholder) {
+    if (currentDialNumber.length > 0) {
+      dialerNumText.textContent = currentDialNumber;
+      dialerPlaceholder.style.display = "none";
+    } else {
+      dialerNumText.textContent = "";
+      dialerPlaceholder.style.display = "inline";
+    }
+  }
+}
+
+function appendDialDigit(char) {
+  if (currentDialNumber.length < 24) {
+    currentDialNumber += char;
+    updateDialerDisplay();
+    playKeypadTone(char);
+    if (dialerStatusMsg) {
+      dialerStatusMsg.textContent = isPhoneConnected 
+        ? `Ready to call via ${connectedPhoneName || "connected phone"}`
+        : "Ready to call via Windows Phone Link";
+    }
+  }
+}
+
+function removeDialDigit() {
+  if (currentDialNumber.length > 0) {
+    currentDialNumber = currentDialNumber.slice(0, -1);
+    updateDialerDisplay();
+  }
+}
+
+function openPhoneKeypad() {
+  if (dialerOverlay) {
+    dialerOverlay.style.display = "flex";
+    pollBluetoothWatch();
+    if (dialerStatusMsg) {
+      dialerStatusMsg.textContent = isPhoneConnected
+        ? `${connectedPhoneName || "Phone"} connected & ready. Enter number or tap keypad.`
+        : "Phone Link ready. Enter phone number to call.";
+    }
+  }
+}
+
+function closePhoneKeypad() {
+  if (dialerOverlay) {
+    dialerOverlay.style.display = "none";
+  }
+}
+
+async function triggerPhoneCall() {
+  if (!currentDialNumber || currentDialNumber.trim().length === 0) {
+    if (dialerStatusMsg) dialerStatusMsg.textContent = "Please enter a phone number first.";
+    return;
+  }
+
+  const numToCall = currentDialNumber.trim();
+  if (dialerStatusMsg) {
+    dialerStatusMsg.textContent = `Dialing ${numToCall} on ${connectedPhoneName || "connected phone"}...`;
+  }
+
+  try {
+    await invoke("dial_phone_call", { number: numToCall });
+    if (visorJarvisText) {
+      visorJarvisText.textContent = `Placing call to ${numToCall} via ${connectedPhoneName || "connected phone"}.`;
+    }
+  } catch (err) {
+    console.error("[Call Error]", err);
+    window.open(`tel:${numToCall}`, "_blank");
+  }
+}
+
+document.querySelectorAll(".keypad-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const key = btn.getAttribute("data-key");
+    if (key) appendDialDigit(key);
+  });
+});
+
+dialerBackspaceBtn?.addEventListener("click", removeDialDigit);
+btnDialerCall?.addEventListener("click", triggerPhoneCall);
+
+btnDialerLink?.addEventListener("click", async () => {
+  try {
+    await invoke("run_direct_action", { action: "open_app", target: "ms-yourphone:" });
+  } catch (e) {
+    window.open("ms-yourphone:", "_blank");
+  }
+});
+
+dialerCloseBtn?.addEventListener("click", closePhoneKeypad);
+dialerOverlay?.addEventListener("click", (e) => {
+  if (e.target === dialerOverlay) closePhoneKeypad();
+});
+
+window.addEventListener("keydown", (e) => {
+  if (!dialerOverlay || dialerOverlay.style.display === "none") return;
+
+  if ((e.key >= "0" && e.key <= "9") || e.key === "*" || e.key === "#" || e.key === "+") {
+    appendDialDigit(e.key);
+    e.preventDefault();
+  } else if (e.key === "Backspace") {
+    removeDialDigit();
+    e.preventDefault();
+  } else if (e.key === "Enter") {
+    triggerPhoneCall();
+    e.preventDefault();
+  } else if (e.key === "Escape") {
+    closePhoneKeypad();
+    e.preventDefault();
+  }
+});
 
 // -------------------------------------------------------------
 // SYSTEM STATE MANAGER (HUD, VISOR & NEURAL OVERDRIVE)
@@ -1182,6 +1667,54 @@ async function processDirective(prompt) {
   const clean = prompt.trim();
   if (!clean) return;
 
+  // Fast-Path: Phone Dialer & Keypad Directives
+  const lowerDirective = clean.toLowerCase();
+  if (
+    lowerDirective === "open phone" ||
+    lowerDirective === "open call" ||
+    lowerDirective === "open dialer" ||
+    lowerDirective === "phone keypad" ||
+    lowerDirective === "keypad" ||
+    lowerDirective === "open keypad" ||
+    lowerDirective === "call keypad" ||
+    lowerDirective === "phone"
+  ) {
+    if (visorUserLine && visorUserText) {
+      visorUserText.textContent = `"${clean}"`;
+      visorUserLine.style.display = "flex";
+    }
+    openPhoneKeypad();
+    const replyMsg = isPhoneConnected
+      ? `Holographic phone keypad active. Connected to ${connectedPhoneName || "phone"}.`
+      : "Holographic phone keypad active, sir.";
+    if (visorJarvisText) visorJarvisText.textContent = replyMsg;
+    if (visorActionTag && visorActionDesc) {
+      visorActionDesc.textContent = "open_phone_keypad";
+      visorActionTag.style.display = "inline-flex";
+    }
+    speakResponse(replyMsg);
+    setSystemState("idle");
+    return;
+  }
+
+  // Fast-Path: Direct Call Dialing (e.g., "call 9876543210" or "dial +1234567890")
+  const callMatch = clean.match(/^(?:call|dial)\s+([\d\+\-\s\(\)]+)$/i);
+  if (callMatch) {
+    const rawNum = callMatch[1].replace(/[\s\-\(\)]/g, "");
+    if (rawNum.length >= 3) {
+      if (visorUserLine && visorUserText) {
+        visorUserText.textContent = `"${clean}"`;
+        visorUserLine.style.display = "flex";
+      }
+      currentDialNumber = rawNum;
+      updateDialerDisplay();
+      openPhoneKeypad();
+      await triggerPhoneCall();
+      setSystemState("idle");
+      return;
+    }
+  }
+
   // 1. Show user instruction on Holographic Visor
   if (visorUserLine && visorUserText) {
     visorUserText.textContent = `"${clean}"`;
@@ -1288,8 +1821,8 @@ visorMicBtn?.addEventListener("click", (e) => {
 // -------------------------------------------------------------
 // BORDERLESS APP DOCK REAL LAUNCHERS (PHONE, OUTLOOK, WHATSAPP, SPOTIFY)
 // -------------------------------------------------------------
-btnDockCall?.addEventListener("click", async () => {
-  await processDirective("open call");
+btnDockCall?.addEventListener("click", () => {
+  openPhoneKeypad();
 });
 
 btnDockMail?.addEventListener("click", async () => {

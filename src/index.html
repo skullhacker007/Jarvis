@@ -62,29 +62,43 @@
       <!-- ========================================================= -->
       <!-- LEFT MIDDLE: HUMAN BIOMETRICS & HEALTH BLUEPRINT HUD       -->
       <!-- ========================================================= -->
-      <div class="humanoid-blueprint-panel" id="humanoid-blueprint-panel">
+      <div class="humanoid-blueprint-panel not-paired" id="humanoid-blueprint-panel">
         <div class="blueprint-header">
           <div class="bp-title-group">
             <span class="bp-beacon"></span>
             <span class="bp-title">HUMAN BIOMETRICS</span>
           </div>
-          <div class="bp-paired-tag" title="BLE Connected">
+          <button class="bp-paired-tag idle" id="bp-paired-tag" title="Watch Bluetooth Telemetry (Click to manage)">
+            <svg class="bp-watch-icon" id="bp-watch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="5" width="12" height="14" rx="3"></rect>
+              <path d="M9 5V2h6v3"></path>
+              <path d="M9 19v3h6v-3"></path>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
             <span class="bp-sync-dot" id="bp-ble-status"></span>
-            <span class="bp-paired-label">PAIRED</span>
-          </div>
+            <span class="bp-paired-label" id="bp-paired-label">. Idle</span>
+          </button>
         </div>
 
         <!-- Realistic Holographic Human Male Anatomical CAD Blueprint -->
-        <div class="blueprint-canvas-box">
-          <img src="assets/human_blueprint.jpg" alt="Human Male Blueprint" class="blueprint-body-img" />
+        <div class="blueprint-canvas-box" id="blueprint-canvas-box">
+          <img src="assets/human_blueprint.jpg" alt="Human Male Blueprint" class="blueprint-body-img" id="blueprint-body-img" />
           <canvas id="blueprint-canvas" class="blueprint-canvas" width="300" height="200"></canvas>
           
           <!-- Blueprint CAD Crosshair Corner Markers -->
-          <div class="bp-cad-corners">
+          <div class="bp-cad-corners" id="bp-cad-corners">
             <span class="bp-corner top-left">+</span>
             <span class="bp-corner top-right">+</span>
             <span class="bp-corner bottom-left">+</span>
             <span class="bp-corner bottom-right">+</span>
+          </div>
+
+          <!-- Standby UI when watch is not paired -->
+          <div class="bp-scanner-standby" id="bp-scanner-standby">
+            <div class="standby-badge">
+              <span class="standby-dot"></span>
+              <span class="standby-text">SCANNER STANDBY // PAIR WATCH</span>
+            </div>
           </div>
         </div>
 
@@ -104,17 +118,17 @@
           </div>
           <div class="bp-profile-cell">
             <span class="bp-prof-label">STATUS</span>
-            <span class="bp-prof-val cyan">ACTIVE</span>
+            <span class="bp-prof-val" id="bio-status">IDLE</span>
           </div>
         </div>
 
-        <!-- Live Vitals Grid: Heart Rate, Pulse SpO2, Blood Pressure -->
+        <!-- Live Vitals Grid: Heart Rate, Pulse SpO2, Blood Pressure (as per reference) -->
         <div class="bp-vitals-grid">
           <div class="bp-vital-card">
             <div class="vital-top">
               <span class="vital-label">HEART RATE</span>
               <div class="vital-heart-badge" title="Live Cardiac Telemetry">
-                <svg class="vital-heart-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg class="vital-heart-svg" id="vital-heart-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="url(#vital-heart-grad)" stroke="#ff2a5f" stroke-width="1.2"/>
                   <defs>
                     <linearGradient id="vital-heart-grad" x1="12" y1="3" x2="12" y2="21.35" gradientUnits="userSpaceOnUse">
@@ -126,7 +140,7 @@
               </div>
             </div>
             <div class="vital-val-row">
-              <span class="vital-num cyan" id="vital-hr-val">74</span>
+              <span class="vital-num cyan" id="vital-hr-val">--</span>
               <span class="vital-unit">BPM</span>
             </div>
           </div>
@@ -136,7 +150,7 @@
               <span class="vital-icon">O₂</span>
             </div>
             <div class="vital-val-row">
-              <span class="vital-num emerald" id="vital-spo2-val">98</span>
+              <span class="vital-num emerald" id="vital-spo2-val">--</span>
               <span class="vital-unit">%</span>
             </div>
           </div>
@@ -146,41 +160,45 @@
               <span class="vital-icon">BP</span>
             </div>
             <div class="vital-val-row">
-              <span class="vital-num purple" id="vital-bp-val">118/78</span>
+              <span class="vital-num purple" id="vital-bp-val">--/--</span>
               <span class="vital-unit">mmHg</span>
             </div>
           </div>
         </div>
 
-        <!-- Total Steps & Activity Progress Deck (Noise / Fitbit) -->
+        <!-- Total Steps & Activity Progress Deck (Noise / Fitbit / Apple Watch) -->
         <div class="bp-activity-deck">
           <div class="bp-activity-header">
             <div class="act-title-row">
-              <span class="act-icon">👟</span>
+              <svg class="act-shoe-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2.5 15.5l3-7.5 4 1.5 4-2 6 2.5 2 3.5v3h-19v-1z" stroke="#00f2fe" fill="rgba(0, 242, 254, 0.2)"/>
+                <path d="M5.5 14.5l3-2" stroke="#ffffff"/>
+                <path d="M9.5 14.5l3-2" stroke="#ffffff"/>
+              </svg>
               <span class="act-title">DAILY STEPS</span>
             </div>
             <div class="act-nums">
-              <span class="act-cur" id="act-steps-val">8,420</span>
-              <span class="act-goal">/ 10,000</span>
+              <span class="act-cur" id="act-steps-val">--</span>
+              <span class="act-goal" id="act-goal-val">/ 10,000</span>
             </div>
           </div>
           <div class="bp-step-meter">
-            <div class="bp-step-fill" id="act-steps-fill" style="width: 84.2%;"></div>
+            <div class="bp-step-fill" id="act-steps-fill" style="width: 0%;"></div>
           </div>
           <div class="act-sub-metrics">
-            <span class="act-metric"><strong id="act-cal-val">485</strong> KCAL</span>
+            <span class="act-metric"><strong id="act-cal-val">--</strong> KCAL</span>
             <span class="act-dot">•</span>
-            <span class="act-metric"><strong id="act-dist-val">6.2</strong> KM</span>
+            <span class="act-metric"><strong id="act-dist-val">--</strong> KM</span>
             <span class="act-dot">•</span>
-            <span class="act-metric">HRV <strong id="act-hrv-val">64</strong> MS</span>
+            <span class="act-metric">HRV <strong id="act-hrv-val">--</strong> MS</span>
           </div>
         </div>
 
-        <!-- Real-Time Neural ECG Waveform Strip -->
-        <div class="blueprint-ecg-strip">
+        <!-- Real-Time Neural ECG Waveform Strip (Shows ONLY when ECG data is available) -->
+        <div class="blueprint-ecg-strip" id="blueprint-ecg-strip" style="display: none;">
           <div class="ecg-label-row">
             <span class="ecg-label">NEURAL ECG // CARDIAC LEAD II</span>
-            <span class="ecg-bpm" id="ecg-bpm">74 BPM</span>
+            <span class="ecg-bpm" id="ecg-bpm">-- BPM</span>
           </div>
           <div class="ecg-canvas-box">
             <canvas id="ecg-canvas" class="ecg-canvas" width="300" height="48"></canvas>
@@ -458,6 +476,166 @@
               </svg>
             </div>
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- SMARTWATCH TELEMETRY & BLUETOOTH CONTROLLER MODAL         -->
+    <!-- ========================================================= -->
+    <div class="watch-modal-overlay" id="watch-modal-overlay" style="display: none;">
+      <div class="watch-modal-card">
+        <div class="watch-modal-header">
+          <div class="watch-modal-title-group">
+            <svg class="watch-modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="6" y="5" width="12" height="14" rx="3"></rect>
+              <path d="M9 5V2h6v3"></path>
+              <path d="M9 19v3h6v-3"></path>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+            <span class="watch-modal-title">DIGITAL WATCH // BLUETOOTH SYNC</span>
+          </div>
+          <button class="watch-modal-close" id="watch-modal-close" title="Close">&times;</button>
+        </div>
+
+        <div class="watch-modal-body">
+          <div class="watch-status-banner idle" id="watch-status-banner">
+            <span class="ws-indicator" id="ws-indicator"></span>
+            <div class="ws-text-group">
+              <span class="ws-label" id="ws-label">STATUS: IDLE // DISCONNECTED</span>
+              <span class="ws-sub" id="ws-sub">Awaiting Bluetooth digital watch</span>
+            </div>
+          </div>
+
+          <div class="watch-section-title">DETECTED BLUETOOTH HARDWARE</div>
+          <div class="watch-device-list" id="watch-device-list">
+            <div class="watch-device-item scan-msg">Scanning for connected Bluetooth devices...</div>
+          </div>
+
+          <div class="watch-section-title">DIAGNOSTIC & TELEMETRY CONTROLS</div>
+          <div class="watch-controls-grid">
+            <button class="w-ctrl-btn" id="btn-toggle-pair">
+              <span class="btn-ctrl-dot"></span>
+              <span class="btn-ctrl-text" id="btn-pair-text">CONNECT WATCH (. PAIRED)</span>
+            </button>
+            <button class="w-ctrl-btn active" id="btn-toggle-ecg">
+              <span class="btn-ctrl-dot"></span>
+              <span class="btn-ctrl-text" id="btn-ecg-text">ECG SENSOR: AVAILABLE</span>
+            </button>
+          </div>
+
+          <div class="watch-presets-row">
+            <span class="w-preset-label">IMAGE REFERENCE PRESET:</span>
+            <button class="w-preset-btn" id="btn-preset-ref">APPLY REFERENCE DATA (73 BPM / 98% / 118/78 / 8,456 STEPS)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- HOLOGRAPHIC PHONE DIALER & KEYPAD CALL MATRIX HUD         -->
+    <!-- ========================================================= -->
+    <div class="phone-dialer-overlay" id="phone-dialer-overlay" style="display: none;">
+      <div class="phone-dialer-card">
+        <!-- Header -->
+        <div class="dialer-header">
+          <div class="dialer-title-group">
+            <svg class="dialer-head-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+            <div class="dialer-titles">
+              <span class="dialer-title">PHONE LINK // CALL MATRIX</span>
+              <span class="dialer-device-status" id="dialer-device-status">
+                <span class="phone-status-dot" id="phone-status-dot"></span>
+                <span id="dialer-phone-name">SEARCHING FOR PHONE...</span>
+              </span>
+            </div>
+          </div>
+          <button class="dialer-close-btn" id="dialer-close-btn" title="Close Keypad">&times;</button>
+        </div>
+
+        <!-- Phone Number Display Screen -->
+        <div class="dialer-screen">
+          <div class="dialer-num-display" id="dialer-num-display">
+            <span class="num-placeholder" id="num-placeholder">Enter number to dial...</span>
+            <span class="num-text" id="num-text"></span>
+          </div>
+          <button class="dialer-backspace-btn" id="dialer-backspace-btn" title="Backspace">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+              <line x1="18" y1="9" x2="12" y2="15"/>
+              <line x1="12" y1="9" x2="18" y2="15"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Touch/Click 3x4 Keypad Grid -->
+        <div class="dialer-keypad-grid">
+          <button class="keypad-btn" data-key="1">
+            <span class="key-digit">1</span>
+            <span class="key-letters">&nbsp;</span>
+          </button>
+          <button class="keypad-btn" data-key="2">
+            <span class="key-digit">2</span>
+            <span class="key-letters">ABC</span>
+          </button>
+          <button class="keypad-btn" data-key="3">
+            <span class="key-digit">3</span>
+            <span class="key-letters">DEF</span>
+          </button>
+          <button class="keypad-btn" data-key="4">
+            <span class="key-digit">4</span>
+            <span class="key-letters">GHI</span>
+          </button>
+          <button class="keypad-btn" data-key="5">
+            <span class="key-digit">5</span>
+            <span class="key-letters">JKL</span>
+          </button>
+          <button class="keypad-btn" data-key="6">
+            <span class="key-digit">6</span>
+            <span class="key-letters">MNO</span>
+          </button>
+          <button class="keypad-btn" data-key="7">
+            <span class="key-digit">7</span>
+            <span class="key-letters">PQRS</span>
+          </button>
+          <button class="keypad-btn" data-key="8">
+            <span class="key-digit">8</span>
+            <span class="key-letters">TUV</span>
+          </button>
+          <button class="keypad-btn" data-key="9">
+            <span class="key-digit">9</span>
+            <span class="key-letters">WXYZ</span>
+          </button>
+          <button class="keypad-btn" data-key="*">
+            <span class="key-digit">*</span>
+            <span class="key-letters">&nbsp;</span>
+          </button>
+          <button class="keypad-btn" data-key="0">
+            <span class="key-digit">0</span>
+            <span class="key-letters">+</span>
+          </button>
+          <button class="keypad-btn" data-key="#">
+            <span class="key-digit">#</span>
+            <span class="key-letters">&nbsp;</span>
+          </button>
+        </div>
+
+        <!-- Call Actions Bar -->
+        <div class="dialer-actions">
+          <button class="btn-dialer-call" id="btn-dialer-call">
+            <svg class="call-btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+            <span id="call-btn-text">CALL VIA PHONE</span>
+          </button>
+          <button class="btn-dialer-link" id="btn-dialer-link" title="Open Windows Phone Link">
+            <span>PHONE LINK APP</span>
+          </button>
+        </div>
+
+        <div class="dialer-status-msg" id="dialer-status-msg">
+          Ready for dialing. Type on screen or PC keyboard.
         </div>
       </div>
     </div>
