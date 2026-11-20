@@ -1,9 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::process::Command;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use sysinfo::{Networks, System};
+
+static ACTIVE_QR_PID: AtomicU32 = AtomicU32::new(0);
+static QR_CODE_CACHE: Mutex<Option<Vec<String>>> = Mutex::new(None);
+static QR_PAIR_STATUS: Mutex<Option<PhoneSyncStatus>> = Mutex::new(None);
 
 const OLLAMA_CHAT_URL: &str = "http://127.0.0.1:11434/api/chat";
 const OLLAMA_PS_URL: &str = "http://127.0.0.1:11434/api/ps";
@@ -30,6 +36,90 @@ fn get_groq_api_key() -> String {
         }
     }
     String::new()
+}
+
+fn get_phone_config_path() -> String {
+    for p in [
+        "phone_config.json",
+        "./phone_config.json",
+        "../phone_config.json",
+        "C:/Users/Chowdary/Desktop/Project/Jarvis/phone_config.json",
+    ] {
+        if std::path::Path::new(p).exists() {
+            return p.to_string();
+        }
+    }
+    "phone_config.json".to_string()
+}
+
+fn save_phone_endpoint(endpoint: &str, model: &str) {
+    let json = serde_json::json!({
+        "endpoint": endpoint,
+        "model": model
+    });
+    let _ = std::fs::write(get_phone_config_path(), json.to_string());
+}
+
+fn get_phone_model_name() -> String {
+    if let Ok(content) = std::fs::read_to_string(get_phone_config_path()) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(m) = val.get("model").and_then(|v| v.as_str()) {
+                let t = m.trim();
+                if !t.is_empty() && !t.contains("UNKNOWN") && !t.contains("DISCONNECTED") {
+                    return t.to_string();
+                }
+            }
+        }
+    }
+    "CPH2661".to_string()
+}
+
+fn get_phone_adb_endpoint() -> String {
+    if let Ok(content) = std::fs::read_to_string(get_phone_config_path()) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(ep) = val.get("endpoint").and_then(|v| v.as_str()) {
+                if !ep.trim().is_empty() {
+                    return ep.trim().to_string();
+                }
+            }
+        }
+    }
+    if let Ok(k) = std::env::var("PHONE_ADB_ENDPOINT") {
+        let t = k.trim().trim_matches('\'').trim_matches('"');
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("PHONE_ADB_ENDPOINT") {
+                    if let Some(val) = trimmed.split('=').nth(1) {
+                        let res = val.trim().trim_matches('\'').trim_matches('"').to_string();
+                        if !res.is_empty() {
+                            return res;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "192.168.1.7:5555".to_string()
+}
+
+fn get_adb_path() -> String {
+    for p in [
+        "tools/platform-tools/adb.exe",
+        "./tools/platform-tools/adb.exe",
+        "../tools/platform-tools/adb.exe",
+        "C:/Users/Chowdary/Desktop/Project/Jarvis/tools/platform-tools/adb.exe",
+    ] {
+        if std::path::Path::new(p).exists() {
+            return p.to_string();
+        }
+    }
+    "adb".to_string()
 }
 
 #[cfg(windows)]
@@ -439,7 +529,31 @@ fn query_windows_bluetooth_devices() -> WatchStatusResult {
 
 #[tauri::command]
 fn get_bluetooth_watch_status() -> Result<WatchStatusResult, String> {
-    Ok(query_windows_bluetooth_devices())
+    let mut status = query_windows_bluetooth_devices();
+    if !status.has_connected_phone {
+        let adb_path = get_adb_path();
+        let endpoint = get_phone_adb_endpoint();
+        if let Ok(out) = silent_command(&adb_path).args(["devices", "-l"]).output() {
+            let str_out = String::from_utf8_lossy(&out.stdout);
+            if str_out.contains(&endpoint) && str_out.contains("device") {
+                status.has_connected_phone = true;
+                if status.connected_phone_name.is_none() {
+                    let mut model_found = get_phone_model_name();
+                    for line in str_out.lines() {
+                        if line.contains(&endpoint) && line.contains("model:") {
+                            for part in line.split_whitespace() {
+                                if part.starts_with("model:") {
+                                    model_found = part.replace("model:", "").replace('_', " ");
+                                }
+                            }
+                        }
+                    }
+                    status.connected_phone_name = Some(model_found);
+                }
+            }
+        }
+    }
+    Ok(status)
 }
 
 #[tauri::command]
@@ -449,18 +563,349 @@ fn dial_phone_call(number: String) -> Result<String, String> {
         return Err("Phone number is empty".to_string());
     }
 
-    #[cfg(windows)]
-    {
-        let ps_script = format!(
-            "Start-Process 'tel:{}' -WindowStyle Normal -ErrorAction SilentlyContinue",
-            clean_num
-        );
-        let _ = silent_command("powershell")
-            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
-            .spawn();
+    let adb_path = get_adb_path();
+    let endpoint = get_phone_adb_endpoint();
+
+    // 1. Ensure ADB connects to phone over Wi-Fi
+    let _ = silent_command(&adb_path)
+        .args(["connect", &endpoint])
+        .output();
+
+    // 2. Trigger direct call via ADB intent on the phone
+    let call_res = silent_command(&adb_path)
+        .args([
+            "-s",
+            &endpoint,
+            "shell",
+            "am",
+            "start",
+            "-a",
+            "android.intent.action.CALL",
+            "-d",
+            &format!("tel:{}", clean_num),
+        ])
+        .output();
+
+    let mut direct_success = false;
+    if let Ok(out) = call_res {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if out.status.success() && !stdout.contains("Error") && !stderr.contains("Error") {
+            direct_success = true;
+        }
     }
 
-    Ok(format!("Dialing {} via connected phone", clean_num))
+    if !direct_success {
+        // Attempt fast auto-reconnect before reporting status
+        let _ = auto_sync_phone();
+        let retry_endpoint = get_phone_adb_endpoint();
+        let retry_res = silent_command(&adb_path)
+            .args([
+                "-s",
+                &retry_endpoint,
+                "shell",
+                "am",
+                "start",
+                "-a",
+                "android.intent.action.CALL",
+                "-d",
+                &format!("tel:{}", clean_num),
+            ])
+            .output();
+        if let Ok(out) = retry_res {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if out.status.success() && !stdout.contains("Error") && !stderr.contains("Error") {
+                direct_success = true;
+            }
+        }
+    }
+
+    if direct_success {
+        Ok(format!("Directly dialing {} on phone via Wi-Fi", clean_num))
+    } else {
+        Err(format!("Direct phone uplink unreachable. Please tap SYNC PHONE to link your device."))
+    }
+}
+
+#[tauri::command]
+fn end_phone_call() -> Result<String, String> {
+    let adb_path = get_adb_path();
+    let endpoint = get_phone_adb_endpoint();
+    let _ = silent_command(&adb_path)
+        .args(["-s", &endpoint, "shell", "input", "keyevent", "KEYCODE_ENDCALL"])
+        .output();
+    Ok("Call ended successfully".to_string())
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PhoneSyncStatus {
+    pub is_connected: bool,
+    pub model: String,
+    pub endpoint: String,
+    pub message: String,
+}
+
+fn kill_active_qr_session() {
+    let pid = ACTIVE_QR_PID.swap(0, Ordering::SeqCst);
+    if pid > 0 {
+        #[cfg(windows)]
+        {
+            let _ = silent_command("taskkill").args(["/F", "/T", "/PID", &pid.to_string()]).output();
+        }
+    }
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut in_escape = false;
+    for ch in s.chars() {
+        if ch == '\x1b' {
+            in_escape = true;
+        } else if in_escape {
+            if ch == 'm' {
+                in_escape = false;
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+fn sync_paired_device(ep: &str) -> PhoneSyncStatus {
+    let adb_path = get_adb_path();
+
+    std::thread::sleep(Duration::from_millis(800));
+
+    // Query adb mdns services to discover the wireless debugging port
+    if let Ok(mdns_out) = silent_command(&adb_path).args(["mdns", "services"]).output() {
+        let mdns_text = String::from_utf8_lossy(&mdns_out.stdout);
+        for line in mdns_text.lines() {
+            if line.contains("_adb._tcp") {
+                if let Some(service_ep) = line.split_whitespace().last() {
+                    if service_ep.contains(':') {
+                        let _ = silent_command(&adb_path).args(["connect", service_ep]).output();
+                    }
+                }
+            }
+        }
+    }
+
+    if !ep.is_empty() {
+        if let Some(ip) = ep.split(':').next() {
+            let static_ep = format!("{}:5555", ip);
+            let _ = silent_command(&adb_path).args(["connect", &static_ep]).output();
+        }
+        let _ = silent_command(&adb_path).args(["connect", ep]).output();
+        std::thread::sleep(Duration::from_millis(400));
+    }
+
+    if let Ok(res) = auto_sync_phone() {
+        if res.is_connected {
+            return res;
+        }
+    }
+
+    auto_sync_phone().unwrap_or_else(|_| PhoneSyncStatus {
+        is_connected: false,
+        model: "DISCONNECTED".to_string(),
+        endpoint: ep.to_string(),
+        message: "Pairing completed, waiting for device handshake".to_string(),
+    })
+}
+
+#[tauri::command]
+fn start_qr_pair_window() -> Result<String, String> {
+    // Pure in-app scanner active - no external cmd window spawned
+    Ok("QR pairing gateway active in UI".to_string())
+}
+
+#[tauri::command]
+fn generate_pairing_qr() -> Result<Vec<String>, String> {
+    kill_active_qr_session();
+
+    if let Ok(mut cache) = QR_CODE_CACHE.lock() {
+        *cache = None;
+    }
+    if let Ok(mut status) = QR_PAIR_STATUS.lock() {
+        *status = None;
+    }
+
+    let adb_path = get_adb_path();
+    let mut cmd = silent_command(&adb_path);
+    cmd.args(["pair", "--qr"])
+       .stdout(Stdio::piped())
+       .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn adb pair: {}", e))?;
+    let pid = child.id();
+    ACTIVE_QR_PID.store(pid, Ordering::SeqCst);
+
+    let stdout = child.stdout.take().ok_or("Failed to capture adb stdout")?;
+
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        let mut qr_lines = Vec::new();
+        let mut reading_qr = false;
+
+        for line_res in reader.lines() {
+            if let Ok(line) = line_res {
+                let clean_line = strip_ansi(&line);
+
+                if clean_line.contains('█') || clean_line.contains('▄') || clean_line.contains('▀') {
+                    reading_qr = true;
+                    qr_lines.push(clean_line.clone());
+                } else if reading_qr && clean_line.contains("Waiting for device to scan QR code") {
+                    if let Ok(mut cache) = QR_CODE_CACHE.lock() {
+                        *cache = Some(qr_lines.clone());
+                    }
+                }
+
+                if clean_line.to_lowercase().contains("successfully paired") {
+                    let parts: Vec<&str> = clean_line.split_whitespace().collect();
+                    let mut ep = String::new();
+                    for (i, p) in parts.iter().enumerate() {
+                        if (*p == "to" || *p == "to:") && i + 1 < parts.len() {
+                            ep = parts[i + 1].trim().trim_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != ':').to_string();
+                            break;
+                        }
+                    }
+
+                    std::thread::sleep(Duration::from_millis(500));
+                    let sync_res = sync_paired_device(&ep);
+                    if let Ok(mut status) = QR_PAIR_STATUS.lock() {
+                        *status = Some(sync_res);
+                    }
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        let _ = child.wait();
+    });
+
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_millis(3000) {
+        if let Ok(cache) = QR_CODE_CACHE.lock() {
+            if let Some(ref lines) = *cache {
+                if !lines.is_empty() {
+                    return Ok(lines.clone());
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    Err("Timeout waiting for adb pair QR generation".to_string())
+}
+
+#[tauri::command]
+fn check_qr_pairing_status() -> Result<Option<PhoneSyncStatus>, String> {
+    if let Ok(status) = QR_PAIR_STATUS.lock() {
+        Ok(status.clone())
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+fn cancel_qr_pairing() -> Result<String, String> {
+    kill_active_qr_session();
+    Ok("QR pairing session cancelled".to_string())
+}
+
+#[tauri::command]
+fn auto_sync_phone() -> Result<PhoneSyncStatus, String> {
+    let adb_path = get_adb_path();
+    let current_ep = get_phone_adb_endpoint();
+
+    // 1. Try connecting to stored endpoint first
+    let _ = silent_command(&adb_path).args(["connect", &current_ep]).output();
+
+    // 2. Query adb devices
+    if let Ok(out) = silent_command(&adb_path).args(["devices", "-l"]).output() {
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.contains("device") && !trimmed.starts_with("List of") {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if let Some(id) = parts.first() {
+                    let mut model_name = "ANDROID PHONE".to_string();
+                    for part in &parts {
+                        if part.starts_with("model:") {
+                            model_name = part.replace("model:", "").replace('_', " ");
+                        }
+                    }
+
+                    // If connected via USB or temporary port, switch to Wi-Fi TCP mode 5555
+                    if !id.contains(":5555") {
+                        let _ = silent_command(&adb_path).args(["-s", id, "tcpip", "5555"]).output();
+                        if let Ok(ip_out) = silent_command(&adb_path)
+                            .args(["-s", id, "shell", "ip -f inet addr show wlan0"])
+                            .output()
+                        {
+                            let ip_text = String::from_utf8_lossy(&ip_out.stdout);
+                            for ip_line in ip_text.lines() {
+                                let l = ip_line.trim();
+                                if l.starts_with("inet ") {
+                                    if let Some(ip_chunk) = l.split_whitespace().nth(1) {
+                                        let clean_ip = ip_chunk.split('/').next().unwrap_or("").trim();
+                                        if !clean_ip.is_empty() {
+                                            let new_ep = format!("{}:5555", clean_ip);
+                                            let _ = silent_command(&adb_path).args(["connect", &new_ep]).output();
+                                            save_phone_endpoint(&new_ep, &model_name);
+                                            return Ok(PhoneSyncStatus {
+                                                is_connected: true,
+                                                model: model_name,
+                                                endpoint: new_ep,
+                                                message: "Phone synced and locked to Wi-Fi static port 5555".to_string(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    save_phone_endpoint(id, &model_name);
+                    return Ok(PhoneSyncStatus {
+                        is_connected: true,
+                        model: model_name,
+                        endpoint: id.to_string(),
+                        message: "Direct phone connection established".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(PhoneSyncStatus {
+        is_connected: false,
+        model: "DISCONNECTED".to_string(),
+        endpoint: current_ep,
+        message: "No device detected. Click Generate Pairing QR or connect USB.".to_string(),
+    })
+}
+
+#[tauri::command]
+fn pair_phone_manual(endpoint: String, code: String) -> Result<String, String> {
+    let adb_path = get_adb_path();
+    let pair_res = silent_command(&adb_path)
+        .args(["pair", endpoint.trim(), code.trim()])
+        .output();
+
+    if let Ok(out) = pair_res {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        if out.status.success() && stdout.contains("Successfully paired") {
+            let _ = auto_sync_phone();
+            return Ok("Pairing successful! Phone connected.".to_string());
+        } else {
+            return Err(format!("Pairing failed: {}", stdout));
+        }
+    }
+    Err("Failed to execute ADB pair command".to_string())
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -538,11 +983,9 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
                 return Ok(format!("Opened {}", url));
             }
 
-            // Direct Phone / Call link - Prioritize focusing active Phone app / streamed Android Phone
+            // Direct Phone / Call - strictly HUD managed, never launch Windows Phone Link
             if app_clean == "call" || app_clean == "phone" {
-                if win32_apps::focus_window("phone") || win32_apps::focus_window("phone link") {
-                    return Ok("Focused Phone application".to_string());
-                }
+                return Ok("Phone call matrix active in HUD".to_string());
             }
 
             let executable = match app_clean {
@@ -558,7 +1001,6 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
                 "edge" | "msedge" => "msedge",
                 "code" | "vscode" | "vs code" | "visual studio code" => "code",
                 "settings" => "ms-settings:",
-                "call" | "phone" => "ms-phone:",
                 "mail" | "email" | "outlook" => "ms-outlook:",
                 "message" | "messages" | "whatsapp" => "whatsapp:",
                 "music" | "spotify" => "spotify:",
@@ -1262,9 +1704,7 @@ try {
     Write-Output ""
 }
 "#;
-        let mut cmd = Command::new("powershell");
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        let mut cmd = silent_command("powershell");
         let output = cmd
             .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps_code])
             .output();
@@ -1541,7 +1981,8 @@ pub fn run() {
         .setup(|app| {
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_fullscreen(true);
+                let _ = window.show();
+                let _ = window.set_focus();
             }
 
             // Auto-preload qwen3.5:2b into memory as soon as app opens
@@ -1567,6 +2008,13 @@ pub fn run() {
             get_system_telemetry,
             get_bluetooth_watch_status,
             dial_phone_call,
+            end_phone_call,
+            start_qr_pair_window,
+            generate_pairing_qr,
+            check_qr_pairing_status,
+            cancel_qr_pairing,
+            auto_sync_phone,
+            pair_phone_manual,
             listen_mic
         ])
         .run(tauri::generate_context!())

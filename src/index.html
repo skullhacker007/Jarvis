@@ -1,9 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="background-color: #030712; background: #030712; color: #f8fafc;">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
     <title>J.A.R.V.I.S. // STARK AI SYSTEM CONTROLLER</title>
+    <style>
+      html, body {
+        background-color: #030712 !important;
+        background: #030712 !important;
+        color: #f8fafc !important;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+    </style>
     <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -441,8 +452,8 @@
       <div class="bottom-dock-container">
         <!-- Completely Borderless Floating App Icons Dock -->
         <div class="app-icons-dock">
-          <!-- 1. PHONE (Direct to Call / Phone Link) -->
-          <button class="dock-app-item" id="btn-dock-call" title="Call (Phone Link)">
+          <!-- 1. PHONE (Direct Call via Wi-Fi ADB) -->
+          <button class="dock-app-item" id="btn-dock-call" title="Call (Direct Phone Dialer)">
             <div class="dock-icon-box">
               <svg class="dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
@@ -542,19 +553,17 @@
       <div class="phone-dialer-card">
         <!-- Header -->
         <div class="dialer-header">
-          <div class="dialer-title-group">
-            <svg class="dialer-head-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-            </svg>
-            <div class="dialer-titles">
-              <span class="dialer-title">PHONE LINK // CALL MATRIX</span>
-              <span class="dialer-device-status" id="dialer-device-status">
-                <span class="phone-status-dot" id="phone-status-dot"></span>
-                <span id="dialer-phone-name">SEARCHING FOR PHONE...</span>
-              </span>
+          <div class="dialer-head-left">
+            <div class="dialer-title">CELLULAR CALL MATRIX</div>
+            <div class="dialer-tech-pill">
+              <span class="phone-status-dot active" id="phone-status-dot"></span>
+              <span id="dialer-phone-name">CPH2661</span>
             </div>
           </div>
-          <button class="dialer-close-btn" id="dialer-close-btn" title="Close Keypad">&times;</button>
+          <div class="dialer-head-right">
+            <button class="btn-sync-phone-chip" id="btn-sync-phone-chip" title="Sync / Pair Any Android Phone">⚡ SYNC</button>
+            <button class="dialer-close-btn" id="dialer-close-btn" title="Close Keypad">&times;</button>
+          </div>
         </div>
 
         <!-- Phone Number Display Screen -->
@@ -630,15 +639,125 @@
             <svg class="call-btn-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
               <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
             </svg>
-            <span id="call-btn-text">CALL VIA PHONE</span>
+            <span id="call-btn-text">INITIATE CALL</span>
           </button>
-          <button class="btn-dialer-link" id="btn-dialer-link" title="Open Windows Phone Link">
-            <span>PHONE LINK APP</span>
+          <button class="btn-dialer-link" id="btn-dialer-link" title="Hang Up / Disconnect Call">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="width: 14px; height: 14px; margin-right: 4px;">
+              <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/>
+              <line x1="23" y1="1" x2="1" y2="23"/>
+            </svg>
+            <span>END</span>
           </button>
         </div>
 
         <div class="dialer-status-msg" id="dialer-status-msg">
           Ready for dialing. Type on screen or PC keyboard.
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- UNIVERSAL PHONE UPLINK & QR SYNC MODAL                     -->
+    <!-- ========================================================= -->
+    <div class="phone-sync-overlay" id="phone-sync-overlay" style="display: none;">
+      <div class="phone-sync-card">
+        <!-- Stark CAD Corner Accents -->
+        <span class="sync-corner top-left">+</span>
+        <span class="sync-corner top-right">+</span>
+        <span class="sync-corner bottom-left">+</span>
+        <span class="sync-corner bottom-right">+</span>
+
+        <!-- Header -->
+        <div class="phone-sync-header">
+          <div class="sync-head-left">
+            <div class="sync-badge">
+              <span class="sync-beacon"></span>
+              <span>STARK UPLINK GATEWAY</span>
+            </div>
+            <div class="sync-title">UNIVERSAL PHONE PAIRING</div>
+          </div>
+          <button class="sync-close-btn" id="sync-close-btn" title="Close Gateway">&times;</button>
+        </div>
+
+        <!-- Sleek Horizontal Pipeline Flow (3 Steps) -->
+        <div class="sync-pipeline">
+          <div class="pipeline-step">
+            <div class="step-num-pill">01</div>
+            <div class="step-meta">
+              <span class="step-name">DEV MODE</span>
+              <span class="step-hint">Tap Build # 7x</span>
+            </div>
+          </div>
+          <div class="pipeline-arrow">&rarr;</div>
+          <div class="pipeline-step">
+            <div class="step-num-pill">02</div>
+            <div class="step-meta">
+              <span class="step-name">WIRELESS DEBUG</span>
+              <span class="step-hint">Toggle ON</span>
+            </div>
+          </div>
+          <div class="pipeline-arrow">&rarr;</div>
+          <div class="pipeline-step active">
+            <div class="step-num-pill">03</div>
+            <div class="step-meta">
+              <span class="step-name">SCAN QR</span>
+              <span class="step-hint">Tap Pair with QR</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- High-Tech Holographic Radar Target Screen -->
+        <div class="sync-scanner-box">
+          <div class="radar-hud-frame">
+            <div class="radar-hud-circle outer"></div>
+            <div class="radar-hud-circle inner"></div>
+            <div class="radar-sweep-beam"></div>
+            <div class="radar-hud-crosshair"></div>
+            <svg class="radar-phone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <rect x="5" y="2" width="14" height="20" rx="3"></rect>
+              <line x1="12" y1="18" x2="12.01" y2="18" stroke-width="3"></line>
+            </svg>
+          </div>
+          <div class="sync-status-readout">
+            <span class="sync-dot-live"></span>
+            <span class="sync-status-text" id="sync-status-text">RADAR ACTIVE // READY FOR PAIRING HANDSHAKE</span>
+          </div>
+        </div>
+
+        <!-- Primary Action Buttons Row -->
+        <div class="sync-buttons-row">
+          <button class="btn-qr-launch" id="btn-qr-launch">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="btn-svg-icon">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+              <rect x="10" y="10" width="4" height="4" fill="currentColor"></rect>
+            </svg>
+            <span>GENERATE PAIRING QR</span>
+          </button>
+          <button class="btn-auto-detect" id="btn-auto-detect" title="Auto-detect phone on Wi-Fi or USB">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="btn-svg-icon">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span>AUTO-DETECT PHONE</span>
+          </button>
+        </div>
+
+        <!-- Manual 6-Digit Code Fallback (Collapsible) -->
+        <div class="sync-manual-toggle" id="sync-manual-toggle">
+          <span>&plus; Manual 6-digit code entry</span>
+        </div>
+        <div class="sync-manual-inputs" id="sync-manual-inputs" style="display: none;">
+          <input type="text" id="sync-input-port" placeholder="Port or IP:Port (e.g. 36987)" class="sync-input" />
+          <input type="text" id="sync-input-code" placeholder="6-Digit Pairing Code" class="sync-input" />
+          <button class="btn-sync-pair" id="btn-sync-pair">PAIR</button>
+        </div>
+
+        <!-- Footer USB Instant Tip -->
+        <div class="sync-footer-tip">
+          <span class="usb-tip-icon">⚡</span>
+          <span><strong>1-SECOND USB LINK:</strong> Plug phone in via USB for 2 seconds to pair wirelessly with zero clicks.</span>
         </div>
       </div>
     </div>

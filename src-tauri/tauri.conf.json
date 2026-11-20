@@ -12,14 +12,17 @@
       {
         "label": "main",
         "title": "J.A.R.V.I.S. // STARK HOLOGRAPHIC CONSOLE",
-        "width": 1024,
-        "height": 576,
+        "width": 1280,
+        "height": 720,
         "minWidth": 900,
         "minHeight": 500,
         "resizable": true,
         "decorations": true,
         "center": true,
-        "fullscreen": true
+        "fullscreen": false,
+        "maximized": true,
+        "visible": true,
+        "backgroundColor": "#030712"
       }
     ],
     "security": {

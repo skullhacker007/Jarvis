@@ -45,8 +45,7 @@ async function invoke(cmd, args = {}) {
   }
 
   if (cmd === "dial_phone_call") {
-    console.log(`[Phone Dialer] Calling ${args.number} via connected phone...`);
-    window.open(`tel:${args.number}`, "_blank");
+    console.log(`[Phone Dialer] Direct dialing ${args.number} via phone uplink...`);
     return `Dialing ${args.number}`;
   }
 
@@ -377,16 +376,16 @@ async function refreshSystemTelemetry() {
     }
 
     // 2. CPU (Real system load from sysinfo)
-    const cpuVal = Math.round(telem.cpu_usage);
+    const cpuVal = Math.round(telem.cpu_usage || 0);
     if (cpuPercentLabel) cpuPercentLabel.textContent = `${cpuVal}%`;
     cpuHistory.shift();
     cpuHistory.push(cpuVal);
     drawSparkline(cpuCanvas, cpuCtx, cpuHistory, "#38bdf8", "rgba(56, 189, 248, 0.12)", 100);
 
-    // 3. RAM (Real physical 64 GB load)
-    const ramGb = telem.ram_used_gb.toFixed(1);
-    const totalGb = telem.ram_total_gb.toFixed(0);
-    const ramPct = Math.round(telem.ram_percent);
+    // 3. RAM (Real physical load)
+    const ramGb = (telem.ram_used_gb || 0).toFixed(1);
+    const totalGb = (telem.ram_total_gb || 16).toFixed(0);
+    const ramPct = Math.round(telem.ram_percent || 0);
     if (ramUsageLabel) ramUsageLabel.textContent = `${ramGb} / ${totalGb} GB (${ramPct}%)`;
     if (ramMeterFill) ramMeterFill.style.width = `${Math.min(100, ramPct)}%`;
     ramHistory.shift();
@@ -394,10 +393,12 @@ async function refreshSystemTelemetry() {
     drawSparkline(ramCanvas, ramCtx, ramHistory, "#60a5fa", "rgba(96, 165, 250, 0.12)", 100);
 
     // 4. Network I/O (Real adapter bandwidth)
-    const rx = telem.net_rx_kb > 1024 ? `${(telem.net_rx_kb / 1024).toFixed(1)} MB/s` : `${Math.round(telem.net_rx_kb)} KB/s`;
-    const tx = telem.net_tx_kb > 1024 ? `${(telem.net_tx_kb / 1024).toFixed(1)} MB/s` : `${Math.round(telem.net_tx_kb)} KB/s`;
+    const rxKb = telem.net_rx_kb || 0;
+    const txKb = telem.net_tx_kb || 0;
+    const rx = rxKb > 1024 ? `${(rxKb / 1024).toFixed(1)} MB/s` : `${Math.round(rxKb)} KB/s`;
+    const tx = txKb > 1024 ? `${(txKb / 1024).toFixed(1)} MB/s` : `${Math.round(txKb)} KB/s`;
     if (netIoLabel) netIoLabel.textContent = `↓ ${rx}  ↑ ${tx}`;
-    const netSum = Math.min(100, Math.round((telem.net_rx_kb + telem.net_tx_kb) / 10));
+    const netSum = Math.min(100, Math.round((rxKb + txKb) / 10));
     netHistory.shift();
     netHistory.push(netSum);
     drawSparkline(netCanvas, netCtx, netHistory, "#34d399", "rgba(52, 211, 153, 0.12)", 100);
@@ -1342,15 +1343,15 @@ async function pollBluetoothWatch() {
 
       if (dialerPhoneName && phoneStatusDot) {
         if (isPhoneConnected) {
-          dialerPhoneName.textContent = `${connectedPhoneName.toUpperCase()} (CONNECTED)`;
+          dialerPhoneName.textContent = connectedPhoneName ? connectedPhoneName.toUpperCase() : "ONLINE";
           phoneStatusDot.className = "phone-status-dot active";
-          if (callBtnText) callBtnText.textContent = `CALL VIA ${connectedPhoneName.toUpperCase()}`;
-          if (btnDockCall) btnDockCall.title = `Call (${connectedPhoneName} Connected)`;
+          if (callBtnText) callBtnText.textContent = "INITIATE CALL";
+          if (btnDockCall) btnDockCall.title = `Direct Phone (${connectedPhoneName})`;
         } else {
-          dialerPhoneName.textContent = "WINDOWS PHONE LINK";
+          dialerPhoneName.textContent = "OFFLINE";
           phoneStatusDot.className = "phone-status-dot";
-          if (callBtnText) callBtnText.textContent = "CALL VIA PHONE LINK";
-          if (btnDockCall) btnDockCall.title = "Call (Phone Keypad)";
+          if (callBtnText) callBtnText.textContent = "INITIATE CALL";
+          if (btnDockCall) btnDockCall.title = "Direct Phone Call";
         }
       }
 
@@ -1553,7 +1554,7 @@ function appendDialDigit(char) {
     if (dialerStatusMsg) {
       dialerStatusMsg.textContent = isPhoneConnected 
         ? `Ready to call via ${connectedPhoneName || "connected phone"}`
-        : "Ready to call via Windows Phone Link";
+        : "Direct dialing mode ready. Tap Sync Phone if disconnected.";
     }
   }
 }
@@ -1572,7 +1573,7 @@ function openPhoneKeypad() {
     if (dialerStatusMsg) {
       dialerStatusMsg.textContent = isPhoneConnected
         ? `${connectedPhoneName || "Phone"} connected & ready. Enter number or tap keypad.`
-        : "Phone Link ready. Enter phone number to call.";
+        : "Direct Phone ready. Enter phone number to call.";
     }
   }
 }
@@ -1591,17 +1592,19 @@ async function triggerPhoneCall() {
 
   const numToCall = currentDialNumber.trim();
   if (dialerStatusMsg) {
-    dialerStatusMsg.textContent = `Dialing ${numToCall} on ${connectedPhoneName || "connected phone"}...`;
+    dialerStatusMsg.textContent = `Dialing ${numToCall} directly on ${connectedPhoneName || "phone"}...`;
   }
 
   try {
     await invoke("dial_phone_call", { number: numToCall });
     if (visorJarvisText) {
-      visorJarvisText.textContent = `Placing call to ${numToCall} via ${connectedPhoneName || "connected phone"}.`;
+      visorJarvisText.textContent = `Placing direct call to ${numToCall} on phone.`;
     }
   } catch (err) {
     console.error("[Call Error]", err);
-    window.open(`tel:${numToCall}`, "_blank");
+    if (dialerStatusMsg) {
+      dialerStatusMsg.textContent = `Direct call failed: ${err}. Please ensure phone is synced.`;
+    }
   }
 }
 
@@ -1617,9 +1620,11 @@ btnDialerCall?.addEventListener("click", triggerPhoneCall);
 
 btnDialerLink?.addEventListener("click", async () => {
   try {
-    await invoke("run_direct_action", { action: "open_app", target: "ms-yourphone:" });
+    await invoke("end_phone_call");
+    if (dialerStatusMsg) dialerStatusMsg.textContent = "Call terminated on connected phone.";
+    if (visorJarvisText) visorJarvisText.textContent = "Call terminated.";
   } catch (e) {
-    window.open("ms-yourphone:", "_blank");
+    if (dialerStatusMsg) dialerStatusMsg.textContent = "Unable to end call.";
   }
 });
 
@@ -1643,6 +1648,201 @@ window.addEventListener("keydown", (e) => {
   } else if (e.key === "Escape") {
     closePhoneKeypad();
     e.preventDefault();
+  }
+});
+
+// -------------------------------------------------------------
+// UNIVERSAL PHONE UPLINK & QR SYNC CONTROLLER
+// -------------------------------------------------------------
+const btnSyncPhoneChip = document.getElementById("btn-sync-phone-chip");
+const phoneSyncOverlay = document.getElementById("phone-sync-overlay");
+const syncCloseBtn = document.getElementById("sync-close-btn");
+const btnQrLaunch = document.getElementById("btn-qr-launch");
+const btnAutoDetect = document.getElementById("btn-auto-detect");
+const syncStatusText = document.getElementById("sync-status-text");
+const syncManualToggle = document.getElementById("sync-manual-toggle");
+const syncManualInputs = document.getElementById("sync-manual-inputs");
+const syncInputPort = document.getElementById("sync-input-port");
+const syncInputCode = document.getElementById("sync-input-code");
+const btnSyncPair = document.getElementById("btn-sync-pair");
+
+let qrPollInterval = null;
+
+function renderQrCanvas(lines) {
+  const grid = [];
+  for (const line of lines) {
+    const topRow = [];
+    const botRow = [];
+    for (const ch of line) {
+      if (ch === ' ') {
+        topRow.push(0);
+        botRow.push(0);
+      } else if (ch === '▀') {
+        topRow.push(1);
+        botRow.push(0);
+      } else if (ch === '▄') {
+        topRow.push(0);
+        botRow.push(1);
+      } else if (ch === '█') {
+        topRow.push(1);
+        botRow.push(1);
+      } else {
+        topRow.push(0);
+        botRow.push(0);
+      }
+    }
+    grid.push(topRow);
+    grid.push(botRow);
+  }
+
+  const cols = grid[0]?.length || 37;
+  const rows = cols; // A standard QR code is always an exact 1:1 square
+  const scale = 4;
+
+  let canvas = document.getElementById("sync-qr-canvas");
+  if (!canvas) {
+    canvas = document.createElement("canvas");
+    canvas.id = "sync-qr-canvas";
+    canvas.className = "sync-qr-canvas";
+  }
+  canvas.width = cols * scale;
+  canvas.height = rows * scale;
+  const ctx = canvas.getContext("2d");
+
+  // Pure white quiet zone & background
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Black dark modules: 0 = dark, 1 = light
+  ctx.fillStyle = "#000000";
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (grid[r] && grid[r][c] === 0) {
+        ctx.fillRect(c * scale, r * scale, scale, scale);
+      }
+    }
+  }
+
+  const scannerBox = document.querySelector(".sync-scanner-box");
+  const radarFrame = document.querySelector(".radar-hud-frame");
+  if (radarFrame) radarFrame.style.display = "none";
+
+  if (scannerBox && !scannerBox.contains(canvas)) {
+    const readout = scannerBox.querySelector(".sync-status-readout");
+    scannerBox.insertBefore(canvas, readout);
+  }
+  canvas.style.display = "block";
+}
+
+function resetQrScannerView() {
+  if (qrPollInterval) {
+    clearInterval(qrPollInterval);
+    qrPollInterval = null;
+  }
+  invoke("cancel_qr_pairing").catch(() => {});
+  const radarFrame = document.querySelector(".radar-hud-frame");
+  const canvas = document.getElementById("sync-qr-canvas");
+  if (radarFrame) radarFrame.style.display = "flex";
+  if (canvas) canvas.style.display = "none";
+}
+
+function openPhoneSyncModal() {
+  if (phoneSyncOverlay) {
+    phoneSyncOverlay.style.display = "flex";
+    resetQrScannerView();
+    if (syncStatusText) syncStatusText.textContent = "RADAR ACTIVE // READY FOR PAIRING HANDSHAKE";
+  }
+}
+
+function closePhoneSyncModal() {
+  resetQrScannerView();
+  if (phoneSyncOverlay) {
+    phoneSyncOverlay.style.display = "none";
+  }
+}
+
+btnSyncPhoneChip?.addEventListener("click", openPhoneSyncModal);
+syncCloseBtn?.addEventListener("click", closePhoneSyncModal);
+phoneSyncOverlay?.addEventListener("click", (e) => {
+  if (e.target === phoneSyncOverlay) closePhoneSyncModal();
+});
+
+btnQrLaunch?.addEventListener("click", async () => {
+  if (syncStatusText) syncStatusText.textContent = "GENERATING STARK PAIRING QR...";
+  try {
+    const lines = await invoke("generate_pairing_qr");
+    if (lines && lines.length > 0) {
+      renderQrCanvas(lines);
+      if (syncStatusText) syncStatusText.textContent = "POINT PHONE CAMERA AT QR (Wireless Debug > Pair with QR)";
+
+      if (qrPollInterval) clearInterval(qrPollInterval);
+      qrPollInterval = setInterval(async () => {
+        try {
+          let res = await invoke("check_qr_pairing_status");
+          if (!res || !res.is_connected) {
+            const fallback = await invoke("auto_sync_phone");
+            if (fallback && fallback.is_connected) {
+              res = fallback;
+            }
+          }
+          if (res && res.is_connected) {
+            clearInterval(qrPollInterval);
+            qrPollInterval = null;
+            if (syncStatusText) syncStatusText.textContent = `✓ UPLINK ESTABLISHED: ${res.model}`;
+            if (visorJarvisText) visorJarvisText.textContent = `New mobile uplink established with ${res.model}. Direct calling online.`;
+            speakResponse(`Mobile uplink established with ${res.model}.`);
+            pollBluetoothWatch();
+            setTimeout(closePhoneSyncModal, 2000);
+          }
+        } catch (_) {}
+      }, 1000);
+    }
+  } catch (err) {
+    if (syncStatusText) syncStatusText.textContent = "Error generating QR: " + err;
+  }
+});
+
+btnAutoDetect?.addEventListener("click", async () => {
+  if (syncStatusText) syncStatusText.textContent = "Scanning network & USB for Android devices...";
+  try {
+    const res = await invoke("auto_sync_phone");
+    if (res && res.is_connected) {
+      if (syncStatusText) syncStatusText.textContent = `SYNC COMPLETE: ${res.model} [${res.endpoint}]`;
+      if (visorJarvisText) visorJarvisText.textContent = `Uplink established with ${res.model}. Direct calling online.`;
+      speakResponse(`Mobile uplink established with ${res.model}.`);
+      pollBluetoothWatch();
+      setTimeout(closePhoneSyncModal, 1800);
+    } else {
+      if (syncStatusText) syncStatusText.textContent = res ? res.message : "No phone detected.";
+    }
+  } catch (err) {
+    if (syncStatusText) syncStatusText.textContent = "Auto-detect error: " + err;
+  }
+});
+
+syncManualToggle?.addEventListener("click", () => {
+  if (syncManualInputs) {
+    const isHidden = syncManualInputs.style.display === "none";
+    syncManualInputs.style.display = isHidden ? "flex" : "none";
+  }
+});
+
+btnSyncPair?.addEventListener("click", async () => {
+  const port = syncInputPort?.value?.trim();
+  const code = syncInputCode?.value?.trim();
+  if (!port || !code) {
+    if (syncStatusText) syncStatusText.textContent = "Please enter both port and 6-digit code.";
+    return;
+  }
+  const targetEndpoint = port.includes(":") ? port : `192.168.1.7:${port}`;
+  if (syncStatusText) syncStatusText.textContent = `Pairing with ${targetEndpoint}...`;
+  try {
+    const res = await invoke("pair_phone_manual", { endpoint: targetEndpoint, code });
+    if (syncStatusText) syncStatusText.textContent = res;
+    pollBluetoothWatch();
+    setTimeout(closePhoneSyncModal, 1800);
+  } catch (err) {
+    if (syncStatusText) syncStatusText.textContent = "Pairing error: " + err;
   }
 });
 
@@ -1774,7 +1974,7 @@ async function processDirective(prompt) {
   const clean = prompt.trim();
   if (!clean) return;
 
-  // Fast-Path: Direct Phone Application Launch / Focus (Reference Image 2)
+  // Fast-Path: Direct Phone Keypad / Dialer Matrix (100% Direct - No Microsoft Phone Link)
   const lowerDirective = clean.toLowerCase();
   if (
     lowerDirective === "open phone" ||
@@ -1782,26 +1982,7 @@ async function processDirective(prompt) {
     lowerDirective === "open call" ||
     lowerDirective === "call" ||
     lowerDirective === "launch phone" ||
-    lowerDirective === "start phone"
-  ) {
-    if (visorUserLine && visorUserText) {
-      visorUserText.textContent = `"${clean}"`;
-      visorUserLine.style.display = "flex";
-    }
-    const replyMsg = "Opening direct Phone link for you, sir.";
-    if (visorJarvisText) visorJarvisText.textContent = replyMsg;
-    if (visorActionTag && visorActionDesc) {
-      visorActionDesc.textContent = "open_phone_app";
-      visorActionTag.style.display = "inline-flex";
-    }
-    speakResponse(replyMsg);
-    await invoke("run_direct_action", { action: "open_app", target: "phone" });
-    setSystemState("idle");
-    return;
-  }
-
-  // Fast-Path: Explicit Keypad / Dialer Request
-  if (
+    lowerDirective === "start phone" ||
     lowerDirective === "open dialer" ||
     lowerDirective === "dialer" ||
     lowerDirective === "phone keypad" ||
@@ -1813,33 +1994,64 @@ async function processDirective(prompt) {
       visorUserText.textContent = `"${clean}"`;
       visorUserLine.style.display = "flex";
     }
-    openPhoneKeypad();
-    const replyMsg = isPhoneConnected
-      ? `Holographic phone keypad active. Connected to ${connectedPhoneName || "phone"}.`
-      : "Holographic phone keypad active, sir.";
+    const replyMsg = "Opening holographic call matrix, sir.";
     if (visorJarvisText) visorJarvisText.textContent = replyMsg;
     if (visorActionTag && visorActionDesc) {
-      visorActionDesc.textContent = "open_phone_keypad";
+      visorActionDesc.textContent = "open_direct_dialer";
       visorActionTag.style.display = "inline-flex";
     }
+    openPhoneKeypad();
     speakResponse(replyMsg);
     setSystemState("idle");
     return;
   }
 
-  // Fast-Path: Direct Call Dialing (e.g., "call 9876543210" or "dial +1234567890")
-  const callMatch = clean.match(/^(?:call|dial)\s+([\d\+\-\s\(\)]+)$/i);
+  // Fast-Path: End Call / Hang Up
+  if (/^(?:end\s+call|cut\s+call|hang\s*up|disconnect\s+call|stop\s+call)$/i.test(clean)) {
+    if (visorUserLine && visorUserText) {
+      visorUserText.textContent = `"${clean}"`;
+      visorUserLine.style.display = "flex";
+    }
+    await invoke("end_phone_call");
+    const replyMsg = "Call ended, Sir.";
+    if (visorJarvisText) visorJarvisText.textContent = replyMsg;
+    speakResponse(replyMsg);
+    setSystemState("idle");
+    return;
+  }
+
+  // Fast-Path: Direct Call Contact or Number (e.g., "call mom" or "call 9876543210")
+  const callMatch = clean.match(/^(?:call|dial)\s+(.+)$/i);
   if (callMatch) {
-    const rawNum = callMatch[1].replace(/[\s\-\(\)]/g, "");
-    if (rawNum.length >= 3) {
+    const target = callMatch[1].trim();
+    let numToDial = target.replace(/[\s\-\(\)]/g, "");
+
+    let contactBook = {
+      "mom": "",
+      "dad": "",
+      "home": ""
+    };
+    try {
+      const stored = JSON.parse(localStorage.getItem("jarvis_contacts") || "{}");
+      contactBook = { ...contactBook, ...stored };
+    } catch (e) {}
+
+    const lowerTarget = target.toLowerCase();
+    if (contactBook[lowerTarget] && contactBook[lowerTarget].length > 0) {
+      numToDial = contactBook[lowerTarget];
+    }
+
+    if (/^[\d\+\*#]+$/.test(numToDial) && numToDial.length >= 3) {
       if (visorUserLine && visorUserText) {
         visorUserText.textContent = `"${clean}"`;
         visorUserLine.style.display = "flex";
       }
-      currentDialNumber = rawNum;
+      currentDialNumber = numToDial;
       updateDialerDisplay();
       await invoke("dial_phone_call", { number: currentDialNumber });
-      if (visorJarvisText) visorJarvisText.textContent = `Dialing ${rawNum} via connected phone...`;
+      const replyMsg = `Dialing ${target} directly on your phone.`;
+      if (visorJarvisText) visorJarvisText.textContent = replyMsg;
+      speakResponse(replyMsg);
       setSystemState("idle");
       return;
     }
@@ -1951,16 +2163,7 @@ visorMicBtn?.addEventListener("click", (e) => {
 // -------------------------------------------------------------
 // BORDERLESS APP DOCK REAL LAUNCHERS (PHONE, OUTLOOK, WHATSAPP, SPOTIFY)
 // -------------------------------------------------------------
-btnDockCall?.addEventListener("click", async () => {
-  try {
-    await invoke("run_direct_action", { action: "open_app", target: "phone" });
-  } catch (err) {
-    console.warn("Failed to open phone app directly:", err);
-    window.open("ms-phone:", "_blank");
-  }
-});
-
-btnDockCall?.addEventListener("contextmenu", (e) => {
+btnDockCall?.addEventListener("click", (e) => {
   e.preventDefault();
   openPhoneKeypad();
 });
@@ -2224,9 +2427,11 @@ async function toggleVoiceListener() {
 }
 
 // React immediately to any audio device plug / unplug
-navigator.mediaDevices?.addEventListener("devicechange", () => {
-  refreshSystemTelemetry();
-});
+try {
+  navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+    refreshSystemTelemetry();
+  });
+} catch (e) {}
 
 if ("speechSynthesis" in window) {
   synthesisVoices = window.speechSynthesis.getVoices();

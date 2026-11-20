@@ -2308,127 +2308,176 @@ body {
 }
 
 /* ========================================================= */
-/* HOLOGRAPHIC PHONE DIALER & KEYPAD HUD                     */
+/* HOLOGRAPHIC PHONE DIALER & KEYPAD HUD (ULTRA-PRO STARK UI) */
 /* ========================================================= */
 .phone-dialer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 5, 15, 0.82);
-  backdrop-filter: blur(12px);
-  z-index: 1000;
+  background: rgba(3, 7, 18, 0.76);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 10000;
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: fadeIn 0.2s ease-out;
+  animation: dialer-fade-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dialer-fade-in {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .phone-dialer-card {
-  width: 350px;
+  width: 364px;
   max-width: 92vw;
-  background: linear-gradient(150deg, rgba(10, 20, 38, 0.97) 0%, rgba(6, 12, 24, 0.98) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.324);
-  box-shadow: 0 0 35px rgba(56, 189, 248, 0.18), inset 0 0 20px rgba(56, 189, 248, 0.036);
-  border-radius: 8px;
+  background: linear-gradient(165deg, rgba(10, 18, 36, 0.95) 0%, rgba(5, 10, 22, 0.98) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  box-shadow: 0 25px 65px rgba(0, 0, 0, 0.85), 0 0 40px rgba(56, 189, 248, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
   overflow: hidden;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+/* Subtle Stark CAD Corner Highlights */
+.phone-dialer-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 20px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, #38bdf8 50%, transparent 100%);
+  opacity: 0.9;
 }
 
 .dialer-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: rgba(56, 189, 248, 0.058);
-  border-bottom: 1px solid rgba(56, 189, 248, 0.158);
+  padding: 12px 18px 10px 18px;
+  background: rgba(56, 189, 248, 0.04);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.14);
 }
 
-.dialer-title-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.dialer-head-icon {
-  width: 18px;
-  height: 18px;
-  stroke: var(--cyan-neon);
-  filter: drop-shadow(0 0 5px var(--cyan-glow));
-}
-
-.dialer-titles {
+.dialer-head-left {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .dialer-title {
   font-family: var(--font-orbitron);
-  font-size: 0.80rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: #f1f5f9;
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: #f8fafc;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
 }
 
-.dialer-device-status {
-  font-family: var(--font-mono);
-  font-size: 0.60rem;
-  color: #94a3b8;
-  display: flex;
+.dialer-tech-pill {
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #38bdf8;
+  letter-spacing: 0.8px;
+}
+
+.dialer-head-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 5px;
 }
 
 .phone-status-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #64748b;
+  flex-shrink: 0;
 }
 
 .phone-status-dot.active {
-  background: #34d399;
-  box-shadow: 0 0 8px #34d399;
+  background: #10b981;
+  box-shadow: 0 0 10px #10b981, 0 0 4px #34d399;
+}
+
+.btn-sync-phone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  font-family: var(--font-orbitron);
+  font-size: 0.50rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-sync-phone-chip:hover {
+  background: #38bdf8;
+  color: #030712;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+  transform: translateY(-1px);
 }
 
 .dialer-close-btn {
-  background: transparent;
-  border: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.2);
   color: #94a3b8;
-  font-size: 1.4rem;
+  font-size: 1.05rem;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  padding: 0 4px;
-  transition: color 0.2s ease;
+  transition: all 0.2s ease;
 }
 
 .dialer-close-btn:hover {
-  color: #f43f5e;
+  background: rgba(244, 63, 94, 0.15);
+  border-color: #f43f5e;
+  color: #fb7185;
+  transform: rotate(90deg);
 }
 
 .dialer-screen {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
-  margin: 12px 16px 8px 16px;
-  background: rgba(0, 5, 12, 0.7);
-  border: 1px solid rgba(56, 189, 248, 0.202);
-  border-radius: 6px;
-  box-shadow: inset 0 0 10px rgba(56, 189, 248, 0.043);
-  min-height: 48px;
+  padding: 10px 16px;
+  margin: 14px 18px 10px 18px;
+  background: radial-gradient(ellipse at center, rgba(56, 189, 248, 0.08) 0%, rgba(3, 7, 18, 0.8) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 10px;
+  box-shadow: inset 0 0 16px rgba(56, 189, 248, 0.05), 0 4px 14px rgba(0, 0, 0, 0.35);
+  min-height: 54px;
   box-sizing: border-box;
 }
 
 .dialer-num-display {
   flex: 1;
   font-family: var(--font-orbitron);
-  font-size: 1.30rem;
+  font-size: 1.38rem;
   font-weight: 700;
-  letter-spacing: 2px;
-  color: var(--cyan-neon);
-  text-shadow: 0 0 6px var(--cyan-glow);
+  letter-spacing: 2.4px;
+  color: #38bdf8;
+  text-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2436,23 +2485,23 @@ body {
 
 .num-placeholder {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: #475569;
-  letter-spacing: 0.8px;
+  letter-spacing: 1px;
 }
 
 .dialer-backspace-btn {
-  background: transparent;
-  border: none;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
   color: #94a3b8;
-  width: 24px;
-  height: 24px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  padding: 0;
-  transition: color 0.2s ease, transform 0.1s ease;
+  transition: all 0.2s ease;
 }
 
 .dialer-backspace-btn svg {
@@ -2461,8 +2510,11 @@ body {
 }
 
 .dialer-backspace-btn:hover {
-  color: var(--cyan-neon);
-  transform: scale(1.1);
+  background: rgba(56, 189, 248, 0.12);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+  transform: scale(1.05);
 }
 
 .dialer-backspace-btn:active {
@@ -2472,8 +2524,8 @@ body {
 .dialer-keypad-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 6px 20px;
+  gap: 10px;
+  padding: 6px 18px 12px 18px;
 }
 
 .keypad-btn {
@@ -2481,33 +2533,34 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 9px 0;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(56, 189, 248, 0.158);
-  border-radius: 6px;
+  height: 54px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.038) 0%, rgba(255, 255, 255, 0.015) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
 }
 
 .keypad-btn:hover {
-  background: rgba(56, 189, 248, 0.101);
-  border-color: var(--cyan-neon);
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.216);
-  transform: translateY(-1px);
+  background: linear-gradient(145deg, rgba(56, 189, 248, 0.15) 0%, rgba(56, 189, 248, 0.04) 100%);
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.28), inset 0 0 8px rgba(56, 189, 248, 0.08);
+  transform: translateY(-2px);
 }
 
 .keypad-btn:active {
-  background: rgba(56, 189, 248, 0.202);
-  box-shadow: 0 0 16px var(--cyan-glow);
-  transform: translateY(1px) scale(0.96);
+  background: rgba(56, 189, 248, 0.24);
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+  transform: translateY(1px) scale(0.97);
 }
 
 .key-digit {
   font-family: var(--font-orbitron);
-  font-size: 1.20rem;
+  font-size: 1.28rem;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #f8fafc;
   line-height: 1;
 }
 
@@ -2516,72 +2569,77 @@ body {
   font-size: 0.48rem;
   font-weight: 600;
   color: #64748b;
-  letter-spacing: 1px;
-  margin-top: 2px;
+  letter-spacing: 1.2px;
+  margin-top: 3px;
 }
 
 .dialer-actions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 20px;
+  gap: 10px;
+  padding: 0 18px 12px 18px;
 }
 
 .btn-dialer-call {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 11px;
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.188), rgba(52, 211, 153, 0.09));
-  border: 1.5px solid #34d399;
-  border-radius: 6px;
+  height: 44px;
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  border: 1px solid #34d399;
+  border-radius: 10px;
   color: #ffffff;
   font-family: var(--font-orbitron);
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: 0.78rem;
+  font-weight: 800;
   letter-spacing: 1px;
   cursor: pointer;
-  box-shadow: 0 0 15px rgba(52, 211, 153, 0.262);
-  transition: all 0.2s ease;
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-dialer-call:hover {
-  background: #34d399;
-  color: #040814;
-  box-shadow: 0 0 25px rgba(52, 211, 153, 0.488);
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
 }
 
 .btn-dialer-call:active {
-  transform: scale(0.98);
+  transform: translateY(1px) scale(0.98);
 }
 
 .call-btn-svg {
   width: 17px;
   height: 17px;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.4));
 }
 
 .btn-dialer-link {
+  width: 88px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 7px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 4px;
-  color: #94a3b8;
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  font-weight: 600;
+  gap: 5px;
+  height: 44px;
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-radius: 10px;
+  color: #fb7185;
+  font-family: var(--font-orbitron);
+  font-size: 0.68rem;
+  font-weight: 700;
   letter-spacing: 0.6px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .btn-dialer-link:hover {
-  background: rgba(56, 189, 248, 0.072);
-  border-color: var(--cyan-neon);
-  color: var(--cyan-neon);
+  background: rgba(244, 63, 94, 0.22);
+  border-color: #f43f5e;
+  box-shadow: 0 0 16px rgba(244, 63, 94, 0.35);
+  color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .dialer-status-msg {
@@ -2589,6 +2647,482 @@ body {
   font-size: 0.58rem;
   color: #64748b;
   text-align: center;
-  padding: 0 16px 12px 16px;
+  padding: 0 18px 14px 18px;
+  letter-spacing: 0.4px;
+}
+
+/* ========================================================= */
+/* UNIVERSAL PHONE UPLINK & QR SYNC MODAL                    */
+/* ========================================================= */
+.phone-sync-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.82);
+  backdrop-filter: blur(12px);
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeInModal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.phone-sync-card {
+  width: 92%;
+  max-width: 470px;
+  background: rgba(7, 12, 24, 0.96);
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.85), 0 0 35px rgba(56, 189, 248, 0.18), inset 0 0 25px rgba(56, 189, 248, 0.04);
+  border-radius: 12px;
+  padding: 20px 22px 18px 22px;
+  color: #f1f5f9;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Stark CAD Reticle Corners */
+.sync-corner {
+  position: absolute;
+  color: #38bdf8;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+  opacity: 0.65;
+}
+.sync-corner.top-left { top: 6px; left: 8px; }
+.sync-corner.top-right { top: 6px; right: 8px; }
+.sync-corner.bottom-left { bottom: 6px; left: 8px; }
+.sync-corner.bottom-right { bottom: 6px; right: 8px; }
+
+/* Header */
+.phone-sync-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+
+.sync-head-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.50rem;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: #38bdf8;
+  text-transform: uppercase;
+}
+
+.sync-beacon {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8, 0 0 14px rgba(56, 189, 248, 0.6);
+  animation: pulse-glow 1.4s infinite;
+}
+
+.sync-title {
+  font-family: var(--font-orbitron);
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.sync-close-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 50%;
+  color: #94a3b8;
+  width: 26px;
+  height: 26px;
+  font-size: 1.1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sync-close-btn:hover {
+  background: rgba(244, 63, 94, 0.15);
+  border-color: #f43f5e;
+  color: #fb7185;
+  transform: rotate(90deg);
+}
+
+/* Horizontal 3-Step Pipeline Flow */
+.sync-pipeline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+  gap: 6px;
+}
+
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+}
+
+.step-num-pill {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #94a3b8;
+  font-family: var(--font-orbitron);
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.step-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.step-name {
+  font-family: var(--font-orbitron);
+  font-size: 0.56rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  letter-spacing: 0.6px;
+  line-height: 1.1;
+}
+
+.step-hint {
+  font-family: var(--font-mono);
+  font-size: 0.48rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.pipeline-arrow {
+  color: #38bdf8;
+  opacity: 0.45;
+  font-size: 0.75rem;
+  user-select: none;
+}
+
+.pipeline-step.active .step-num-pill {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+}
+
+.pipeline-step.active .step-name {
+  color: #38bdf8;
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+/* High-Tech Holographic Radar Target Screen */
+.sync-scanner-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 14px;
+  background: radial-gradient(circle at center, rgba(14, 165, 233, 0.09) 0%, rgba(3, 7, 18, 0.8) 75%);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 10px;
+  margin-bottom: 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+.radar-hud-frame {
+  width: 82px;
+  height: 82px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.radar-hud-circle.outer {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px dashed rgba(56, 189, 248, 0.5);
+  animation: spin-clockwise 20s linear infinite;
+}
+
+.radar-hud-circle.inner {
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.radar-sweep-beam {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(56, 189, 248, 0.35) 0deg, transparent 65deg, transparent 360deg);
+  animation: spin-clockwise 2.4s linear infinite;
+}
+
+.radar-hud-crosshair {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.radar-hud-crosshair::before,
+.radar-hud-crosshair::after {
+  content: "";
+  position: absolute;
+  background: rgba(56, 189, 248, 0.25);
+}
+
+.radar-hud-crosshair::before {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.radar-hud-crosshair::after {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.radar-phone-icon {
+  width: 26px;
+  height: 26px;
+  color: #38bdf8;
+  filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.8));
+  z-index: 2;
+  position: relative;
+}
+
+.sync-qr-canvas {
+  border: 2px solid #38bdf8;
+  border-radius: 8px;
+  box-shadow: 0 0 25px rgba(56, 189, 248, 0.45);
+  margin-bottom: 12px;
+  background: #ffffff;
+  padding: 6px;
+  image-rendering: pixelated;
+  animation: fadeInModal 0.25s ease;
+}
+
+.sync-status-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(3, 7, 18, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 20px;
+  padding: 4px 12px;
+  max-width: 95%;
+}
+
+.sync-dot-live {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  flex-shrink: 0;
+  animation: pulse-glow 1.4s infinite;
+}
+
+.sync-status-text {
+  font-family: var(--font-mono);
+  font-size: 0.60rem;
+  color: #38bdf8;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Primary Action Buttons Row */
+.sync-buttons-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.btn-qr-launch, .btn-auto-detect {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 8px;
+  font-family: var(--font-orbitron);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.btn-qr-launch {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.22) 0%, rgba(14, 165, 233, 0.4) 100%);
+  border: 1px solid #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 2px 12px rgba(56, 189, 248, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-qr-launch:hover {
+  background: #38bdf8;
+  color: #030712;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-qr-launch:active {
+  transform: translateY(1px);
+}
+
+.btn-auto-detect {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.3) 100%);
+  border: 1px solid #34d399;
+  color: #a7f3d0;
+  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.btn-auto-detect:hover {
+  background: #10b981;
+  color: #030712;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-auto-detect:active {
+  transform: translateY(1px);
+}
+
+.btn-svg-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+/* Manual Code Entry */
+.sync-manual-toggle {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  color: #64748b;
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: color 0.2s ease;
+  user-select: none;
+}
+
+.sync-manual-toggle:hover {
+  color: #38bdf8;
+}
+
+.sync-manual-inputs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sync-input {
+  flex: 1;
+  background: rgba(3, 7, 18, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: #38bdf8;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.sync-input:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.btn-sync-pair {
+  background: #38bdf8;
+  border: none;
+  border-radius: 6px;
+  color: #030712;
+  font-family: var(--font-orbitron);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  padding: 0 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-sync-pair:hover {
+  background: #7dd3fc;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.5);
+}
+
+/* Footer USB Instant Tip */
+.sync-footer-tip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(56, 189, 248, 0.04);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+.usb-tip-icon {
+  color: #fbbf24;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.sync-footer-tip strong {
+  color: #e2e8f0;
 }
 
