@@ -177,6 +177,8 @@ mod win32_apps {
         fn SetForegroundWindow(hWnd: HWND) -> BOOL;
         fn ShowWindow(hWnd: HWND, nCmdShow: i32) -> BOOL;
         fn BringWindowToTop(hWnd: HWND) -> BOOL;
+        fn AttachThreadInput(idAttach: DWORD, idAttachTo: DWORD, fAttach: BOOL) -> BOOL;
+        fn GetCurrentThreadId() -> DWORD;
     }
 
     const GW_OWNER: u32 = 4;
@@ -244,9 +246,19 @@ mod win32_apps {
                         title.contains(tgt) || tgt.contains(&title)
                     };
                     if matches {
+                        let cur_thread = GetCurrentThreadId();
+                        let mut pid: DWORD = 0;
+                        let target_thread = GetWindowThreadProcessId(hwnd, &mut pid);
+                        if cur_thread != target_thread && target_thread != 0 {
+                            AttachThreadInput(cur_thread, target_thread, 1);
+                        }
                         ShowWindow(hwnd, 9); // SW_RESTORE
                         BringWindowToTop(hwnd);
                         SetForegroundWindow(hwnd);
+                        if cur_thread != target_thread && target_thread != 0 {
+                            AttachThreadInput(cur_thread, target_thread, 0);
+                        }
+                        crate::win32_system_agent::LAST_EXTERNAL_HWND.store(hwnd as usize, std::sync::atomic::Ordering::SeqCst);
                         ft.found = true;
                         return 0; // stop enumeration
                     }
@@ -271,12 +283,20 @@ mod win32_apps {
 #[cfg(windows)]
 pub mod win32_system_agent {
     use std::ffi::c_void;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     type HWND = *mut c_void;
     type BOOL = i32;
     type UINT = u32;
+    type DWORD = u32;
+    type LPARAM = isize;
     type HANDLE = *mut c_void;
     type HGLOBAL = *mut c_void;
+    type HDC = *mut c_void;
+    type HBITMAP = *mut c_void;
+    type HGDIOBJ = *mut c_void;
+
+    pub static LAST_EXTERNAL_HWND: AtomicUsize = AtomicUsize::new(0);
 
     const CF_UNICODETEXT: UINT = 13;
     const GMEM_MOVEABLE: UINT = 0x0002;
@@ -325,6 +345,89 @@ pub mod win32_system_agent {
         fn mouse_event(dwFlags: u32, dx: u32, dy: u32, dwData: u32, dwExtraInfo: usize);
         fn GetForegroundWindow() -> HWND;
         fn ShowWindow(hWnd: HWND, nCmdShow: i32) -> BOOL;
+        fn BringWindowToTop(hWnd: HWND) -> BOOL;
+        fn SetForegroundWindow(hWnd: HWND) -> BOOL;
+        fn AttachThreadInput(idAttach: DWORD, idAttachTo: DWORD, fAttach: BOOL) -> BOOL;
+        fn GetCurrentThreadId() -> DWORD;
+        fn GetWindowThreadProcessId(hWnd: HWND, lpdwProcessId: *mut DWORD) -> DWORD;
+        fn GetWindowTextW(hWnd: HWND, lpString: *mut u16, nMaxCount: i32) -> i32;
+        fn GetClassNameW(hWnd: HWND, lpClassName: *mut u16, nMaxCount: i32) -> i32;
+        fn IsWindow(hWnd: HWND) -> BOOL;
+        fn IsWindowVisible(hWnd: HWND) -> BOOL;
+        fn EnumChildWindows(hWndParent: HWND, lpEnumFunc: extern "system" fn(HWND, LPARAM) -> BOOL, lParam: LPARAM) -> BOOL;
+        // GDI for in-memory screen capture
+        fn GetDC(hWnd: HWND) -> HDC;
+        fn ReleaseDC(hWnd: HWND, hDC: HDC) -> i32;
+        fn GetSystemMetrics(nIndex: i32) -> i32;
+        fn CreateCompatibleDC(hDC: HDC) -> HDC;
+        fn CreateCompatibleBitmap(hDC: HDC, cx: i32, cy: i32) -> HBITMAP;
+        fn SelectObject(hDC: HDC, h: HGDIOBJ) -> HGDIOBJ;
+        fn BitBlt(hDC: HDC, x: i32, y: i32, cx: i32, cy: i32, hdcSrc: HDC, x1: i32, y1: i32, rop: u32) -> BOOL;
+        fn GetDIBits(hdc: HDC, hbm: HBITMAP, start: UINT, cLines: UINT, lpvBits: *mut c_void, lpbmi: *mut c_void, usage: UINT) -> i32;
+        fn DeleteObject(ho: HGDIOBJ) -> BOOL;
+        fn DeleteDC(hdc: HDC) -> BOOL;
+    }
+
+    pub fn start_window_focus_tracker() {
+        std::thread::spawn(|| {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                unsafe {
+                    let hwnd = GetForegroundWindow();
+                    if !hwnd.is_null() && IsWindow(hwnd) != 0 {
+                        let mut buf = [0u16; 256];
+                        let len = GetWindowTextW(hwnd, buf.as_mut_ptr(), 256);
+                        if len > 0 {
+                            let title = String::from_utf16_lossy(&buf[..len as usize]);
+                            let lower = title.to_lowercase();
+                            if !lower.contains("jarvis")
+                                && !lower.contains("stark holographic")
+                                && title != "Program Manager"
+                                && title != "Windows Input Experience"
+                            {
+                                LAST_EXTERNAL_HWND.store(hwnd as usize, Ordering::SeqCst);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn restore_external_focus(target_hint: Option<&str>) -> bool {
+        unsafe {
+            if let Some(target) = target_hint {
+                let clean = target.trim().to_lowercase();
+                if !clean.is_empty() {
+                    if crate::win32_apps::focus_window(&clean) {
+                        std::thread::sleep(std::time::Duration::from_millis(60));
+                        return true;
+                    }
+                }
+            }
+
+            let raw = LAST_EXTERNAL_HWND.load(Ordering::SeqCst);
+            if raw != 0 {
+                let hwnd = raw as HWND;
+                if IsWindow(hwnd) != 0 {
+                    let cur_thread = GetCurrentThreadId();
+                    let mut pid: DWORD = 0;
+                    let target_thread = GetWindowThreadProcessId(hwnd, &mut pid);
+                    if cur_thread != target_thread && target_thread != 0 {
+                        AttachThreadInput(cur_thread, target_thread, 1);
+                    }
+                    ShowWindow(hwnd, 9); // SW_RESTORE
+                    BringWindowToTop(hwnd);
+                    SetForegroundWindow(hwnd);
+                    if cur_thread != target_thread && target_thread != 0 {
+                        AttachThreadInput(cur_thread, target_thread, 0);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(60));
+                    return GetForegroundWindow() == hwnd;
+                }
+            }
+        }
+        false
     }
 
     pub fn media_play_pause() {
@@ -388,12 +491,14 @@ pub mod win32_system_agent {
     }
 
     pub fn scroll(delta: i32) {
+        restore_external_focus(None);
         unsafe {
             mouse_event(MOUSEEVENTF_WHEEL, 0, 0, delta as u32, 0);
         }
     }
 
     pub fn click_left() {
+        restore_external_focus(None);
         unsafe {
             mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
             std::thread::sleep(std::time::Duration::from_millis(30));
@@ -402,6 +507,7 @@ pub mod win32_system_agent {
     }
 
     pub fn click_right() {
+        restore_external_focus(None);
         unsafe {
             mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
             std::thread::sleep(std::time::Duration::from_millis(30));
@@ -447,7 +553,25 @@ pub mod win32_system_agent {
         }
     }
 
+    pub fn press_tab() {
+        restore_external_focus(None);
+        send_single_key(VK_TAB);
+    }
+
+    pub fn press_shift_tab() {
+        restore_external_focus(None);
+        send_key_combo_2(VK_SHIFT, VK_TAB);
+    }
+
+    pub fn clear_field() {
+        restore_external_focus(None);
+        send_key_combo_2(VK_CONTROL, 0x41);
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        send_single_key(VK_BACK);
+    }
+
     pub fn maximize_active_window() {
+        restore_external_focus(None);
         unsafe {
             let hwnd = GetForegroundWindow();
             if !hwnd.is_null() {
@@ -457,6 +581,7 @@ pub mod win32_system_agent {
     }
 
     pub fn minimize_active_window() {
+        restore_external_focus(None);
         unsafe {
             let hwnd = GetForegroundWindow();
             if !hwnd.is_null() {
@@ -466,6 +591,7 @@ pub mod win32_system_agent {
     }
 
     pub fn restore_active_window() {
+        restore_external_focus(None);
         unsafe {
             let hwnd = GetForegroundWindow();
             if !hwnd.is_null() {
@@ -475,6 +601,7 @@ pub mod win32_system_agent {
     }
 
     pub fn paste_text(text: &str) -> Result<(), String> {
+        restore_external_focus(None);
         let utf16: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
         let bytes = utf16.len() * 2;
 
@@ -517,12 +644,174 @@ pub mod win32_system_agent {
 
         Ok(())
     }
+
+    pub fn capture_screen_ram() -> Option<Vec<u8>> {
+        unsafe {
+            let hdc_screen = GetDC(std::ptr::null_mut());
+            if hdc_screen.is_null() {
+                return None;
+            }
+            let width = GetSystemMetrics(0); // SM_CXSCREEN
+            let height = GetSystemMetrics(1); // SM_CYSCREEN
+            if width <= 0 || height <= 0 {
+                ReleaseDC(std::ptr::null_mut(), hdc_screen);
+                return None;
+            }
+
+            let hdc_mem = CreateCompatibleDC(hdc_screen);
+            if hdc_mem.is_null() {
+                ReleaseDC(std::ptr::null_mut(), hdc_screen);
+                return None;
+            }
+
+            let hbm = CreateCompatibleBitmap(hdc_screen, width, height);
+            if hbm.is_null() {
+                DeleteDC(hdc_mem);
+                ReleaseDC(std::ptr::null_mut(), hdc_screen);
+                return None;
+            }
+
+            let old_bm = SelectObject(hdc_mem, hbm);
+            BitBlt(hdc_mem, 0, 0, width, height, hdc_screen, 0, 0, 0x00CC0020); // SRCCOPY
+
+            let image_size = (width * height * 4) as usize;
+            let file_size = 54 + image_size;
+            let mut buffer: Vec<u8> = vec![0u8; file_size];
+
+            // 1. BITMAPFILEHEADER (14 bytes)
+            buffer[0] = 0x42; // 'B'
+            buffer[1] = 0x4D; // 'M'
+            buffer[2..6].copy_from_slice(&(file_size as u32).to_le_bytes());
+            buffer[10..14].copy_from_slice(&54u32.to_le_bytes());
+
+            // 2. BITMAPINFOHEADER (40 bytes)
+            buffer[14..18].copy_from_slice(&40u32.to_le_bytes());
+            buffer[18..22].copy_from_slice(&(width as i32).to_le_bytes());
+            buffer[22..26].copy_from_slice(&(-(height as i32)).to_le_bytes()); // top-down
+            buffer[26..28].copy_from_slice(&1u16.to_le_bytes());
+            buffer[28..30].copy_from_slice(&32u16.to_le_bytes());
+            buffer[30..34].copy_from_slice(&0u32.to_le_bytes());
+            buffer[34..38].copy_from_slice(&(image_size as u32).to_le_bytes());
+
+            #[repr(C)]
+            struct BITMAPINFOHEADER {
+                bi_size: u32,
+                bi_width: i32,
+                bi_height: i32,
+                bi_planes: u16,
+                bi_bit_count: u16,
+                bi_compression: u32,
+                bi_size_image: u32,
+                bi_xpels_per_meter: i32,
+                bi_ypels_per_meter: i32,
+                bi_clr_used: u32,
+                bi_clr_important: u32,
+            }
+            #[repr(C)]
+            struct BITMAPINFO {
+                bmi_header: BITMAPINFOHEADER,
+                bmi_colors: [u32; 1],
+            }
+
+            let mut bi = BITMAPINFO {
+                bmi_header: BITMAPINFOHEADER {
+                    bi_size: 40,
+                    bi_width: width,
+                    bi_height: -height,
+                    bi_planes: 1,
+                    bi_bit_count: 32,
+                    bi_compression: 0,
+                    bi_size_image: image_size as u32,
+                    bi_xpels_per_meter: 0,
+                    bi_ypels_per_meter: 0,
+                    bi_clr_used: 0,
+                    bi_clr_important: 0,
+                },
+                bmi_colors: [0; 1],
+            };
+
+            GetDIBits(
+                hdc_mem,
+                hbm,
+                0,
+                height as u32,
+                buffer[54..].as_mut_ptr() as *mut c_void,
+                &mut bi as *mut _ as *mut c_void,
+                0,
+            );
+
+            SelectObject(hdc_mem, old_bm);
+            DeleteObject(hbm);
+            DeleteDC(hdc_mem);
+            ReleaseDC(std::ptr::null_mut(), hdc_screen);
+
+            Some(buffer)
+        }
+    }
+
+    struct ChildWindowInfo {
+        elements: Vec<String>,
+    }
+
+    extern "system" fn child_enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        unsafe {
+            if IsWindowVisible(hwnd) != 0 {
+                let mut class_buf = [0u16; 128];
+                let class_len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), 128);
+                let class_name = if class_len > 0 {
+                    String::from_utf16_lossy(&class_buf[..class_len as usize])
+                } else {
+                    String::new()
+                };
+
+                let mut text_buf = [0u16; 256];
+                let text_len = GetWindowTextW(hwnd, text_buf.as_mut_ptr(), 256);
+                let text = if text_len > 0 {
+                    String::from_utf16_lossy(&text_buf[..text_len as usize]).trim().to_string()
+                } else {
+                    String::new()
+                };
+
+                if !text.is_empty() || class_name == "Edit" || class_name == "Button" || class_name.contains("RichEdit") {
+                    let info = &mut *(lparam as *mut ChildWindowInfo);
+                    if info.elements.len() < 25 {
+                        let label = if text.is_empty() {
+                            format!("[{}]", class_name)
+                        } else {
+                            format!("[{}: '{}']", class_name, text)
+                        };
+                        info.elements.push(label);
+                    }
+                }
+            }
+            1
+        }
+    }
+
+    pub fn get_foreground_ui_elements() -> Vec<String> {
+        let mut info = ChildWindowInfo { elements: Vec::new() };
+        unsafe {
+            let mut hwnd = GetForegroundWindow();
+            if hwnd.is_null() {
+                let raw = LAST_EXTERNAL_HWND.load(Ordering::SeqCst);
+                if raw != 0 {
+                    hwnd = raw as HWND;
+                }
+            }
+            if !hwnd.is_null() && IsWindow(hwnd) != 0 {
+                EnumChildWindows(hwnd, child_enum_proc, &mut info as *mut _ as LPARAM);
+            }
+        }
+        info.elements
+    }
 }
 
 pub use win32_system_agent as win32_clipboard;
 
 #[cfg(not(windows))]
 pub mod win32_system_agent {
+    pub fn start_window_focus_tracker() {}
+    pub fn restore_external_focus(_target_hint: Option<&str>) -> bool { false }
     pub fn media_play_pause() {}
     pub fn media_next() {}
     pub fn media_prev() {}
@@ -537,10 +826,15 @@ pub mod win32_system_agent {
     pub fn send_key_combo_2(_mod_vk: u8, _key_vk: u8) {}
     pub fn send_key_combo_3(_mod1: u8, _mod2: u8, _key: u8) {}
     pub fn send_single_key(_key: u8) {}
+    pub fn press_tab() {}
+    pub fn press_shift_tab() {}
+    pub fn clear_field() {}
     pub fn maximize_active_window() {}
     pub fn minimize_active_window() {}
     pub fn restore_active_window() {}
     pub fn paste_text(_text: &str) -> Result<(), String> { Ok(()) }
+    pub fn capture_screen_ram() -> Option<Vec<u8>> { None }
+    pub fn get_foreground_ui_elements() -> Vec<String> { Vec::new() }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -1307,13 +1601,23 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
             };
 
             // Launch single instance using invisible PowerShell runner with normal target window
-            let ps_script = format!("Start-Process '{}' -WindowStyle Normal -ErrorAction SilentlyContinue", executable);
-            let res = silent_command("powershell")
+            let ps_script = format!(
+                "try {{ Start-Process '{}' -WindowStyle Normal -ErrorAction Stop; 'OK' }} catch {{ $_.Exception.Message }}",
+                executable
+            );
+            let output = silent_command("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
-                .spawn();
+                .output();
 
-            match res {
-                Ok(_) => Ok(format!("Opened {}", app_clean)),
+            match output {
+                Ok(out) => {
+                    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if stdout == "OK" || stdout.is_empty() {
+                        Ok(format!("Opened {}", app_clean))
+                    } else {
+                        Err(format!("Could not launch {}: {}", app_clean, stdout))
+                    }
+                }
                 Err(e) => Err(format!("Failed to open {}: {}", app_clean, e)),
             }
         }
@@ -1460,72 +1764,124 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
         }
         "new_tab" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x54);
+            {
+                let tgt = if !clean_target.is_empty() { Some(clean_target) } else { None };
+                if let Some(t) = tgt {
+                    if !win32_system_agent::restore_external_focus(Some(t)) {
+                        let _ = execute_system_action("open_app", t);
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        win32_system_agent::restore_external_focus(Some(t));
+                    }
+                } else {
+                    win32_system_agent::restore_external_focus(None);
+                }
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x54);
+            }
             Ok("Opened new browser tab.".to_string())
         }
         "close_tab" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x57);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x57);
+            }
             Ok("Closed active tab.".to_string())
         }
         "reopen_tab" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x54);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x54);
+            }
             Ok("Reopened closed tab.".to_string())
         }
         "next_tab" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x09);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x09);
+            }
             Ok("Switched to next tab.".to_string())
         }
         "prev_tab" | "previous_tab" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x09);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x09);
+            }
             Ok("Switched to previous tab.".to_string())
         }
         "refresh" | "refresh_page" => {
             #[cfg(windows)]
-            win32_system_agent::send_single_key(win32_system_agent::VK_F5);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_single_key(win32_system_agent::VK_F5);
+            }
             Ok("Refreshed page.".to_string())
         }
         "browser_back" | "go_back" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_LEFT);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_LEFT);
+            }
             Ok("Navigated back.".to_string())
         }
         "browser_forward" | "go_forward" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_RIGHT);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_RIGHT);
+            }
             Ok("Navigated forward.".to_string())
         }
         "save" | "save_file" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x53);
+            {
+                let tgt = if !clean_target.is_empty() { Some(clean_target) } else { None };
+                win32_system_agent::restore_external_focus(tgt);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x53);
+            }
             Ok("File saved.".to_string())
         }
         "copy" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x43);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x43);
+            }
             Ok("Copied to clipboard.".to_string())
         }
         "paste" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x56);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x56);
+            }
             Ok("Clipboard pasted.".to_string())
         }
         "select_all" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x41);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x41);
+            }
             Ok("Selected all.".to_string())
         }
         "undo" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x5A);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x5A);
+            }
             Ok("Undo executed.".to_string())
         }
         "redo" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x59);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x59);
+            }
             Ok("Redo executed.".to_string())
         }
         "maximize" => {
@@ -1545,12 +1901,18 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
         }
         "snap_left" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_LEFT);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_LEFT);
+            }
             Ok("Snapped window left.".to_string())
         }
         "snap_right" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_RIGHT);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_RIGHT);
+            }
             Ok("Snapped window right.".to_string())
         }
         "switch_window" => {
@@ -1560,22 +1922,63 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
         }
         "close_window" => {
             #[cfg(windows)]
-            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_F4);
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_F4);
+            }
             Ok("Closed active window.".to_string())
         }
-        "press_enter" => {
-            #[cfg(windows)]
-            win32_system_agent::send_single_key(win32_system_agent::VK_RETURN);
-            Ok("Enter sent.".to_string())
-        }
-        "press_escape" => {
-            #[cfg(windows)]
-            win32_system_agent::send_single_key(win32_system_agent::VK_ESCAPE);
-            Ok("Escape sent.".to_string())
-        }
-        "write_code" | "type_code" | "type" => {
+        "press_enter" | "enter" => {
             #[cfg(windows)]
             {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_single_key(win32_system_agent::VK_RETURN);
+            }
+            Ok("Enter sent.".to_string())
+        }
+        "press_escape" | "escape" => {
+            #[cfg(windows)]
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_single_key(win32_system_agent::VK_ESCAPE);
+            }
+            Ok("Escape sent.".to_string())
+        }
+        "press_tab" | "tab" | "next_field" | "next_input" => {
+            #[cfg(windows)]
+            win32_system_agent::press_tab();
+            Ok("Tab key sent to active field.".to_string())
+        }
+        "press_shift_tab" | "shift_tab" | "prev_field" | "previous_field" | "back_field" => {
+            #[cfg(windows)]
+            win32_system_agent::press_shift_tab();
+            Ok("Shift+Tab sent to active field.".to_string())
+        }
+        "press_backspace" | "backspace" => {
+            #[cfg(windows)]
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_single_key(win32_system_agent::VK_BACK);
+            }
+            Ok("Backspace sent.".to_string())
+        }
+        "clear_field" | "clear_input" | "empty_field" => {
+            #[cfg(windows)]
+            win32_system_agent::clear_field();
+            Ok("Active field cleared.".to_string())
+        }
+        "submit_form" | "submit" => {
+            #[cfg(windows)]
+            {
+                win32_system_agent::restore_external_focus(None);
+                win32_system_agent::send_single_key(win32_system_agent::VK_RETURN);
+            }
+            Ok("Form submitted.".to_string())
+        }
+        "write_code" | "type_code" | "type" | "type_text" => {
+            #[cfg(windows)]
+            {
+                win32_system_agent::restore_external_focus(None);
                 let _ = win32_system_agent::paste_text(clean_target);
                 Ok("Text injected into active window.".to_string())
             }
@@ -1887,11 +2290,44 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
     }
 
     // 3. Browser & Tab Controller
-    if lower == "new tab" || lower == "open new tab" || lower == "open tab" {
+    let is_new_tab = lower == "new tab"
+        || lower == "open new tab"
+        || lower == "open a new tab"
+        || lower == "open tab"
+        || lower == "create tab"
+        || lower.contains("new tab")
+        || lower.contains("open a tab");
+
+    if is_new_tab {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x54);
+        {
+            let target_app = if lower.contains("chrome") {
+                Some("chrome")
+            } else if lower.contains("edge") {
+                Some("edge")
+            } else {
+                None
+            };
+            if let Some(target) = target_app {
+                if !win32_system_agent::restore_external_focus(Some(target)) {
+                    let _ = execute_system_action("open_app", target);
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    win32_system_agent::restore_external_focus(Some(target));
+                }
+            } else {
+                win32_system_agent::restore_external_focus(None);
+            }
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x54);
+        }
+        let reply_text = if lower.contains("chrome") {
+            "New tab opened in Chrome, sir."
+        } else if lower.contains("edge") {
+            "New tab opened in Edge, sir."
+        } else {
+            "New tab opened, sir."
+        };
         return Some(JarvisResponse {
-            reply: "New tab opened, sir.".into(),
+            reply: reply_text.into(),
             action: Some("🌐 New Tab".into()),
             command: Some("Ctrl + T".into()),
             output: Some("New tab created.".into()),
@@ -1907,7 +2343,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "close tab" || lower == "close this tab" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x57);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x57);
+        }
         return Some(JarvisResponse {
             reply: "Active tab closed, sir.".into(),
             action: Some("🌐 Close Tab".into()),
@@ -1925,7 +2364,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "reopen tab" || lower == "undo close tab" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x54);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x54);
+        }
         return Some(JarvisResponse {
             reply: "Reopened closed tab, sir.".into(),
             action: Some("🌐 Reopen Tab".into()),
@@ -1943,7 +2385,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "next tab" || lower == "switch tab" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x09);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x09);
+        }
         return Some(JarvisResponse {
             reply: "Switched to next tab, sir.".into(),
             action: Some("🌐 Next Tab".into()),
@@ -1961,7 +2406,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "previous tab" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x09);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x09);
+        }
         return Some(JarvisResponse {
             reply: "Switched to previous tab, sir.".into(),
             action: Some("🌐 Previous Tab".into()),
@@ -1979,7 +2427,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "refresh" || lower == "refresh page" || lower == "reload" || lower == "reload page" {
         #[cfg(windows)]
-        win32_system_agent::send_single_key(win32_system_agent::VK_F5);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_single_key(win32_system_agent::VK_F5);
+        }
         return Some(JarvisResponse {
             reply: "Refreshed page, sir.".into(),
             action: Some("🌐 Refresh".into()),
@@ -1997,7 +2448,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "go back" || lower == "back" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_LEFT);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_LEFT);
+        }
         return Some(JarvisResponse {
             reply: "Navigated back, sir.".into(),
             action: Some("🌐 Go Back".into()),
@@ -2015,7 +2469,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "go forward" || lower == "forward" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_RIGHT);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_RIGHT);
+        }
         return Some(JarvisResponse {
             reply: "Navigated forward, sir.".into(),
             action: Some("🌐 Go Forward".into()),
@@ -2031,10 +2488,13 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
         });
     }
 
-    // 4. Keyboard Shortcuts
+    // 4. Keyboard Shortcuts & Form Controls
     if lower == "save" || lower == "save file" || lower == "save this" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x53);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x53);
+        }
         return Some(JarvisResponse {
             reply: "File saved, sir.".into(),
             action: Some("💾 Save File".into()),
@@ -2052,7 +2512,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "copy" || lower == "copy this" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x43);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x43);
+        }
         return Some(JarvisResponse {
             reply: "Copied, sir.".into(),
             action: Some("📋 Copy".into()),
@@ -2070,7 +2533,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "paste" || lower == "paste this" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x56);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x56);
+        }
         return Some(JarvisResponse {
             reply: "Pasted, sir.".into(),
             action: Some("📋 Paste".into()),
@@ -2088,7 +2554,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "select all" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x41);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x41);
+        }
         return Some(JarvisResponse {
             reply: "Selected all, sir.".into(),
             action: Some("🔤 Select All".into()),
@@ -2106,7 +2575,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "undo" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x5A);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x5A);
+        }
         return Some(JarvisResponse {
             reply: "Undone, sir.".into(),
             action: Some("↩️ Undo".into()),
@@ -2124,7 +2596,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "redo" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x59);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x59);
+        }
         return Some(JarvisResponse {
             reply: "Redone, sir.".into(),
             action: Some("↪️ Redo".into()),
@@ -2142,7 +2617,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "press enter" || lower == "hit enter" || lower == "enter" {
         #[cfg(windows)]
-        win32_system_agent::send_single_key(win32_system_agent::VK_RETURN);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_single_key(win32_system_agent::VK_RETURN);
+        }
         return Some(JarvisResponse {
             reply: "Enter key sent, sir.".into(),
             action: Some("⌨️ Enter".into()),
@@ -2160,7 +2638,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "press escape" || lower == "escape" {
         #[cfg(windows)]
-        win32_system_agent::send_single_key(win32_system_agent::VK_ESCAPE);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_single_key(win32_system_agent::VK_ESCAPE);
+        }
         return Some(JarvisResponse {
             reply: "Escape pressed, sir.".into(),
             action: Some("⌨️ Escape".into()),
@@ -2178,7 +2659,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "press backspace" || lower == "backspace" {
         #[cfg(windows)]
-        win32_system_agent::send_single_key(win32_system_agent::VK_BACK);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_single_key(win32_system_agent::VK_BACK);
+        }
         return Some(JarvisResponse {
             reply: "Backspace pressed, sir.".into(),
             action: Some("⌨️ Backspace".into()),
@@ -2194,14 +2678,14 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
         });
     }
 
-    if lower == "press tab" || lower == "tab" {
+    if lower == "press tab" || lower == "tab" || lower == "next field" || lower == "next input" {
         #[cfg(windows)]
-        win32_system_agent::send_single_key(win32_system_agent::VK_TAB);
+        win32_system_agent::press_tab();
         return Some(JarvisResponse {
-            reply: "Tab key sent, sir.".into(),
+            reply: "Next field, sir.".into(),
             action: Some("⌨️ Tab".into()),
             command: Some("VK_TAB".into()),
-            output: Some("Tab key sent.".into()),
+            output: Some("Tab key sent to active field.".into()),
             latency_ms: start.elapsed().as_millis(),
             prompt_tokens: 1,
             eval_tokens: 4,
@@ -2209,6 +2693,104 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
             tokens_per_sec: 25.0,
             model_name: MODEL_NAME.to_string(),
             token_words: vec!["tab".into()],
+        });
+    }
+
+    if lower == "previous field" || lower == "prev field" || lower == "shift tab" || lower == "press shift tab" || lower == "back field" {
+        #[cfg(windows)]
+        win32_system_agent::press_shift_tab();
+        return Some(JarvisResponse {
+            reply: "Previous field, sir.".into(),
+            action: Some("⌨️ Shift+Tab".into()),
+            command: Some("Shift + Tab".into()),
+            output: Some("Shift+Tab sent to active field.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["shift".into(), "tab".into()],
+        });
+    }
+
+    if lower == "clear field" || lower == "clear input" || lower == "empty field" {
+        #[cfg(windows)]
+        win32_system_agent::clear_field();
+        return Some(JarvisResponse {
+            reply: "Active field cleared, sir.".into(),
+            action: Some("⌨️ Clear Field".into()),
+            command: Some("Ctrl+A + Backspace".into()),
+            output: Some("Cleared field content.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["clear".into(), "field".into()],
+        });
+    }
+
+    // Safety Guardrail for Payments & Sensitive Submissions
+    let is_sensitive_intent = (lower.contains("pay ") || lower.contains("payment") || lower.contains("buy now") || lower.contains("checkout") || lower.contains("transfer money"))
+        && !lower.contains("confirm");
+
+    if is_sensitive_intent {
+        return Some(JarvisResponse {
+            reply: "⚠️ Sensitive transaction detected. Please say 'Confirm submission' to proceed.".into(),
+            action: Some("🛡️ Safety Guardrail".into()),
+            command: Some("Sensitive Transaction Halted".into()),
+            output: Some("Action paused for explicit voice confirmation.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 4,
+            eval_tokens: 12,
+            total_tokens: 16,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["safety".into(), "guardrail".into()],
+        });
+    }
+
+    if lower == "confirm submission" || lower == "confirm payment" || lower == "confirm purchase" {
+        #[cfg(windows)]
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_single_key(win32_system_agent::VK_RETURN);
+        }
+        return Some(JarvisResponse {
+            reply: "Transaction confirmed and submitted, sir.".into(),
+            action: Some("✅ Confirmed Submission".into()),
+            command: Some("VK_RETURN (Confirmed)".into()),
+            output: Some("Submission executed after confirmation.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 5,
+            total_tokens: 7,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["confirm".into(), "submit".into()],
+        });
+    }
+
+    if lower == "submit form" || lower == "submit" {
+        #[cfg(windows)]
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_single_key(win32_system_agent::VK_RETURN);
+        }
+        return Some(JarvisResponse {
+            reply: "Form submitted, sir.".into(),
+            action: Some("📝 Submit Form".into()),
+            command: Some("VK_RETURN".into()),
+            output: Some("Form submission triggered.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["submit".into(), "form".into()],
         });
     }
 
@@ -2269,7 +2851,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "snap left" || lower == "window left" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_LEFT);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_LEFT);
+        }
         return Some(JarvisResponse {
             reply: "Window snapped to left, sir.".into(),
             action: Some("◧ Snap Left".into()),
@@ -2287,7 +2872,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "snap right" || lower == "window right" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_RIGHT);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_RIGHT);
+        }
         return Some(JarvisResponse {
             reply: "Window snapped to right, sir.".into(),
             action: Some("◨ Snap Right".into()),
@@ -2323,7 +2911,10 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
     if lower == "close window" || lower == "close this window" || lower == "close this" {
         #[cfg(windows)]
-        win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_F4);
+        {
+            win32_system_agent::restore_external_focus(None);
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_F4);
+        }
         return Some(JarvisResponse {
             reply: "Closed active window, sir.".into(),
             action: Some("❌ Close Window".into()),
@@ -2340,11 +2931,29 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
     }
 
     // 6. Direct Typing into Active Window
-    if lower.starts_with("type ") {
-        let text_to_type = prompt.trim_start()[5..].trim();
+    let has_code_subject = lower.contains("code")
+        || lower.contains("react")
+        || lower.contains("python")
+        || lower.contains("javascript")
+        || lower.contains("html")
+        || lower.contains("function")
+        || lower.contains("script");
+
+    if !has_code_subject && (lower.starts_with("type ") || lower.starts_with("enter ") || (lower.starts_with("write ") && !lower.contains("code"))) {
+        let text_to_type = if lower.starts_with("type ") {
+            prompt.trim_start()[5..].trim()
+        } else if lower.starts_with("enter ") {
+            prompt.trim_start()[6..].trim()
+        } else {
+            prompt.trim_start()[6..].trim()
+        };
+
         if !text_to_type.is_empty() {
             #[cfg(windows)]
-            let _ = win32_system_agent::paste_text(text_to_type);
+            {
+                win32_system_agent::restore_external_focus(None);
+                let _ = win32_system_agent::paste_text(text_to_type);
+            }
             return Some(JarvisResponse {
                 reply: format!("Typed '{}', sir.", text_to_type),
                 action: Some("⌨️ Type Text".into()),
@@ -2467,17 +3076,36 @@ fn get_foreground_window_title() -> String {
     unsafe extern "system" {
         fn GetForegroundWindow() -> HWND;
         fn GetWindowTextW(hWnd: HWND, lpString: *mut u16, nMaxCount: i32) -> i32;
+        fn IsWindow(hWnd: HWND) -> i32;
     }
     unsafe {
-        let hwnd = GetForegroundWindow();
+        let mut hwnd = GetForegroundWindow();
         if !hwnd.is_null() {
             let mut buf = [0u16; 512];
             let len = GetWindowTextW(hwnd, buf.as_mut_ptr(), 512);
             if len > 0 {
                 let title = String::from_utf16_lossy(&buf[..len as usize]);
                 let trimmed = title.trim();
-                if !trimmed.is_empty() {
+                let lower = trimmed.to_lowercase();
+                if !trimmed.is_empty() && !lower.contains("jarvis") && !lower.contains("stark holographic") {
                     return trimmed.to_string();
+                }
+            }
+        }
+
+        // Fall back to tracked external window
+        let raw = win32_system_agent::LAST_EXTERNAL_HWND.load(std::sync::atomic::Ordering::SeqCst);
+        if raw != 0 {
+            hwnd = raw as HWND;
+            if IsWindow(hwnd) != 0 {
+                let mut buf = [0u16; 512];
+                let len = GetWindowTextW(hwnd, buf.as_mut_ptr(), 512);
+                if len > 0 {
+                    let title = String::from_utf16_lossy(&buf[..len as usize]);
+                    let trimmed = title.trim();
+                    if !trimmed.is_empty() {
+                        return trimmed.to_string();
+                    }
                 }
             }
         }
@@ -2630,6 +3258,8 @@ async fn handle_screen_vision(
     _state: &tauri::State<'_, AppState>,
     start_time: Instant,
 ) -> Result<JarvisResponse, String> {
+    use base64::Engine;
+
     let fg_window = get_foreground_window_title();
     #[cfg(windows)]
     let active_windows = win32_apps::get_taskbar_windows();
@@ -2637,51 +3267,124 @@ async fn handle_screen_vision(
     let active_windows: Vec<(u32, String)> = Vec::new();
     let sample_apps: Vec<String> = active_windows.iter().take(5).map(|(_, title)| title.clone()).collect();
 
+    #[cfg(windows)]
+    let ui_elements = win32_system_agent::get_foreground_ui_elements();
+    #[cfg(not(windows))]
+    let ui_elements: Vec<String> = Vec::new();
+
+    let ui_summary = if ui_elements.is_empty() {
+        String::new()
+    } else {
+        format!(". Detected UI Elements: {}", ui_elements.join(", "))
+    };
+
+    #[cfg(windows)]
+    let ram_bmp = win32_system_agent::capture_screen_ram();
+    #[cfg(not(windows))]
+    let ram_bmp: Option<Vec<u8>> = None;
+
     let groq_key = get_groq_api_key();
     let client = reqwest::Client::new();
 
-    let vision_context = format!(
-        "Active Foreground Window: \"{}\". Other visible taskbar windows: {}. User request: \"{}\"",
-        fg_window,
-        sample_apps.join(", "),
-        prompt
-    );
+    let vision_system_prompt = "You are J.A.R.V.I.S. Holographic Screen Vision Agent. You analyze the user's active display, UI elements, and screen pixels. Provide a concise, highly intelligent, spoken tactical analysis under 20 words as Tony Stark's assistant. Do not use markdown.";
 
-    let vision_system_prompt = "You are J.A.R.V.I.S. Holographic Screen Vision Agent. You analyze the user's active display and windows. Provide a concise, highly intelligent, spoken tactical analysis under 20 words as Tony Stark's assistant. Do not use markdown.";
-
-    let payload = serde_json::json!({
-        "model": "qwen/qwen3.8-27b",
-        "messages": [
-            { "role": "system", "content": vision_system_prompt },
-            { "role": "user", "content": vision_context }
-        ],
-        "temperature": 0.2,
-        "max_tokens": 60
-    });
-
-    let mut reply = format!("Active on screen: {}.", fg_window);
+    let mut reply = format!("Active on screen: {}{}.", fg_window, if ui_elements.is_empty() { "" } else { " with input controls detected" });
     let mut eval_tokens = 15u32;
     let mut prompt_tokens = 40u32;
+    let mut model_used = "qwen/qwen3.8-27b (Vision)".to_string();
 
     if !groq_key.is_empty() {
-        if let Ok(res) = client
-            .post(GROQ_CHAT_URL)
-            .header("Authorization", format!("Bearer {}", groq_key))
-            .header("Content-Type", "application/json")
-            .timeout(Duration::from_millis(4500))
-            .json(&payload)
-            .send()
-            .await
-        {
-            if let Ok(json_val) = res.json::<serde_json::Value>().await {
-                if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
-                    let cleaned = content.trim().replace('"', "").replace('*', "");
-                    if !cleaned.is_empty() {
-                        reply = cleaned;
+        let mut visual_success = false;
+
+        // 1. Try In-Memory Groq Vision LPU if bitmap captured
+        if let Some(bmp_bytes) = ram_bmp {
+            let b64 = base64::prelude::BASE64_STANDARD.encode(&bmp_bytes);
+            let vision_payload = serde_json::json!({
+                "model": "llama-3.2-11b-vision-preview",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": format!("Active Window: '{}'{}. User request: '{}'. Provide a concise tactical analysis of what is visible on screen under 20 words as Tony Stark's assistant. Do not use markdown.", fg_window, ui_summary, prompt)
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": format!("data:image/bmp;base64,{}", b64)
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "max_tokens": 70,
+                "temperature": 0.2
+            });
+
+            if let Ok(res) = client
+                .post(GROQ_CHAT_URL)
+                .header("Authorization", format!("Bearer {}", groq_key))
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(4500))
+                .json(&vision_payload)
+                .send()
+                .await
+            {
+                if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                    if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
+                        let cleaned = content.trim().replace('"', "").replace('*', "");
+                        if !cleaned.is_empty() {
+                            reply = cleaned;
+                            model_used = "llama-3.2-11b-vision-preview (Groq Vision)".to_string();
+                            prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(250) as u32;
+                            eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(20) as u32;
+                            visual_success = true;
+                        }
                     }
                 }
-                prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(40) as u32;
-                eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(15) as u32;
+            }
+        }
+
+        // 2. Failsafe to Qwen 3.8 27B with UI structure context if vision payload skipped or failed
+        if !visual_success {
+            let vision_context = format!(
+                "Active Foreground Window: \"{}\"{}. Other visible taskbar windows: {}. User request: \"{}\"",
+                fg_window,
+                ui_summary,
+                sample_apps.join(", "),
+                prompt
+            );
+
+            let payload = serde_json::json!({
+                "model": "qwen/qwen3.8-27b",
+                "messages": [
+                    { "role": "system", "content": vision_system_prompt },
+                    { "role": "user", "content": vision_context }
+                ],
+                "temperature": 0.2,
+                "max_tokens": 60
+            });
+
+            if let Ok(res) = client
+                .post(GROQ_CHAT_URL)
+                .header("Authorization", format!("Bearer {}", groq_key))
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(4000))
+                .json(&payload)
+                .send()
+                .await
+            {
+                if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                    if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
+                        let cleaned = content.trim().replace('"', "").replace('*', "");
+                        if !cleaned.is_empty() {
+                            reply = cleaned;
+                        }
+                    }
+                    prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(40) as u32;
+                    eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(15) as u32;
+                }
             }
         }
     }
@@ -2696,13 +3399,13 @@ async fn handle_screen_vision(
         reply: reply.clone(),
         action: Some(format!("👁️ Screen Vision: {}", fg_window)),
         command: Some(format!("Active Focus: {}", fg_window)),
-        output: Some(format!("Inspected window: {}", fg_window)),
+        output: Some(format!("Inspected window: {}{}", fg_window, ui_summary)),
         latency_ms,
         prompt_tokens,
         eval_tokens,
         total_tokens,
         tokens_per_sec,
-        model_name: "qwen/qwen3.8-27b (Vision)".to_string(),
+        model_name: model_used,
         token_words: words,
     })
 }
@@ -2872,12 +3575,21 @@ CRITICAL RULES:
         entry.latency_ms = latency_ms;
     }
 
-    let reply = if clean_code.is_empty() {
-        "I was unable to synthesize the code at this moment, sir.".to_string()
+    let (action_label, reply) = if clean_code.is_empty() {
+        (
+            format!("⚠️ Developer Agent: Synthesis Failed for {}", target_app_name),
+            "I was unable to synthesize the code at this moment, sir.".to_string(),
+        )
     } else if lower_prompt.contains("react") {
-        format!("I have written the React component into {}, sir.", target_app_name)
+        (
+            format!("⚡ Developer Agent: Code Injected into {}", target_app_name),
+            format!("I have written the React component into {}, sir.", target_app_name),
+        )
     } else {
-        format!("Code written into {}, sir.", target_app_name)
+        (
+            format!("⚡ Developer Agent: Code Injected into {}", target_app_name),
+            format!("Code written into {}, sir.", target_app_name),
+        )
     };
 
     let mut words: Vec<String> = prompt.split_whitespace().map(|s| s.to_string()).collect();
@@ -2888,7 +3600,7 @@ CRITICAL RULES:
 
     Ok(JarvisResponse {
         reply: reply.clone(),
-        action: Some(format!("⚡ Developer Agent: Code Injected into {}", target_app_name)),
+        action: Some(action_label),
         command: Some(format!("Target: {} | Lines: {}", target_app_name, clean_code.lines().count())),
         output: Some(clean_code.to_string()),
         latency_ms,
@@ -3156,9 +3868,7 @@ Rules:
                             .to_string();
 
                         let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
-
-                        let mut cmd_output = None;
-                        let mut executed_action_label = None;
+                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
 
                         if action != "none" && !target.is_empty() {
                             let act_name = match action.as_str() {
@@ -3171,27 +3881,28 @@ Rules:
 
                             match execute_system_action(act_name, &target) {
                                 Ok(msg) => {
-                                    executed_action_label = Some(format!("⚡ {}", msg));
-                                    cmd_output = Some(msg);
+                                    action_label = Some(format!("⚡ {}", msg));
+                                    output_msg = Some(msg);
                                 }
                                 Err(err) => {
-                                    executed_action_label = Some(format!("⚠️ {}", err));
-                                    cmd_output = Some(err);
+                                    action_label = Some(format!("⚠️ {}", err));
+                                    output_msg = Some(err.clone());
+                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
                                 }
                             }
                         }
 
                         let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
                         words.push("→".to_string());
-                        for w in reply.split_whitespace() {
+                        for w in reply_text.split_whitespace() {
                             words.push(w.to_string());
                         }
 
                         return Ok(JarvisResponse {
-                            reply,
-                            action: executed_action_label,
+                            reply: reply_text,
+                            action: action_label,
                             command: if !target.is_empty() { Some(target) } else { None },
-                            output: cmd_output,
+                            output: output_msg,
                             latency_ms,
                             prompt_tokens,
                             eval_tokens,
@@ -3267,9 +3978,7 @@ Rules:
 
                         let raw_content = json_val["message"]["content"].as_str().unwrap_or("").trim().to_string();
                         let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
-
-                        let mut cmd_output = None;
-                        let mut executed_action_label = None;
+                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
 
                         if action != "none" && !target.is_empty() {
                             let act_name = match action.as_str() {
@@ -3282,27 +3991,28 @@ Rules:
 
                             match execute_system_action(act_name, &target) {
                                 Ok(msg) => {
-                                    executed_action_label = Some(format!("⚡ {}", msg));
-                                    cmd_output = Some(msg);
+                                    action_label = Some(format!("⚡ {}", msg));
+                                    output_msg = Some(msg);
                                 }
                                 Err(err) => {
-                                    executed_action_label = Some(format!("⚠️ {}", err));
-                                    cmd_output = Some(err);
+                                    action_label = Some(format!("⚠️ {}", err));
+                                    output_msg = Some(err.clone());
+                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
                                 }
                             }
                         }
 
                         let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
                         words.push("→".to_string());
-                        for w in reply.split_whitespace() {
+                        for w in reply_text.split_whitespace() {
                             words.push(w.to_string());
                         }
 
                         return Ok(JarvisResponse {
-                            reply,
-                            action: executed_action_label,
+                            reply: reply_text,
+                            action: action_label,
                             command: if !target.is_empty() { Some(target) } else { None },
-                            output: cmd_output,
+                            output: output_msg,
                             latency_ms,
                             prompt_tokens: prompt_eval_count,
                             eval_tokens: eval_count,
@@ -3334,12 +4044,15 @@ Rules:
     };
 
     if fallback_act != "none" && !fallback_tgt.is_empty() {
-        let _ = execute_system_action(fallback_act, &fallback_tgt);
+        let (action_label, reply_text, output_msg) = match execute_system_action(fallback_act, &fallback_tgt) {
+            Ok(msg) => (format!("⚡ {}", msg), format!("Executing {} for you, sir.", fallback_tgt), Some(msg)),
+            Err(err) => (format!("⚠️ {}", err), format!("Unable to {}: {}", fallback_act.replace('_', " "), err), Some(err)),
+        };
         return Ok(JarvisResponse {
-            reply: format!("Executing {} for you, sir.", fallback_tgt),
-            action: Some(format!("⚡ {}", fallback_tgt)),
+            reply: reply_text,
+            action: Some(action_label),
             command: Some(fallback_tgt.clone()),
-            output: Some(format!("Executed {}", fallback_tgt)),
+            output: output_msg,
             latency_ms: start_time.elapsed().as_millis(),
             prompt_tokens: 6,
             eval_tokens: 6,
@@ -3818,6 +4531,7 @@ pub fn run() {
         })
         .setup(|app| {
             use tauri::Manager;
+            win32_system_agent::start_window_focus_tracker();
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
@@ -3956,6 +4670,34 @@ mod tests {
 
         let res_newtab = check_fast_path("new tab");
         assert!(res_newtab.is_some(), "check_fast_path('new tab') should return Some");
+
+        let res_newtab_chrome = check_fast_path("open new tab in chrome");
+        assert!(res_newtab_chrome.is_some(), "check_fast_path('open new tab in chrome') should return Some");
+        assert_eq!(res_newtab_chrome.unwrap().reply, "New tab opened in Chrome, sir.");
+
+        let res_tab = check_fast_path("next field");
+        assert!(res_tab.is_some(), "check_fast_path('next field') should return Some");
+        assert_eq!(res_tab.unwrap().reply, "Next field, sir.");
+
+        let res_shift_tab = check_fast_path("previous field");
+        assert!(res_shift_tab.is_some(), "check_fast_path('previous field') should return Some");
+        assert_eq!(res_shift_tab.unwrap().reply, "Previous field, sir.");
+
+        let res_clear = check_fast_path("clear field");
+        assert!(res_clear.is_some(), "check_fast_path('clear field') should return Some");
+        assert_eq!(res_clear.unwrap().reply, "Active field cleared, sir.");
+
+        let res_guardrail = check_fast_path("pay 50 dollars now");
+        assert!(res_guardrail.is_some(), "check_fast_path('pay 50 dollars now') should return Some");
+        assert!(res_guardrail.unwrap().reply.contains("Sensitive transaction detected"));
+
+        let res_confirm = check_fast_path("confirm submission");
+        assert!(res_confirm.is_some(), "check_fast_path('confirm submission') should return Some");
+        assert_eq!(res_confirm.unwrap().reply, "Transaction confirmed and submitted, sir.");
+
+        let res_type = check_fast_path("type I'm a good boy");
+        assert!(res_type.is_some(), "check_fast_path('type I'm a good boy') should return Some");
+        assert_eq!(res_type.unwrap().reply, "Typed 'I'm a good boy', sir.");
 
         let res_save = check_fast_path("save");
         assert!(res_save.is_some(), "check_fast_path('save') should return Some");

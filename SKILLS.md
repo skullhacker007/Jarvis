@@ -75,8 +75,9 @@ cmd.args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
 - Command execution is clean, instantaneous, and silent.
 
 ### 5. Holographic Screen Vision (`inspect_screen`)
-Powered by the **Vision Agent** (`qwen/qwen3.8-27b`):
-- Real-time Win32 foreground window and visible taskbar process inspection.
+Powered by the **Vision Agent** (`llama-3.2-11b-vision-preview` on Groq LPU with `qwen/qwen3.8-27b` failsafe):
+- In-memory Win32 GDI screen capture directly to RAM bytes (zero disk file writes).
+- Real-time UI element hierarchy inspection via `EnumChildWindows` (buttons, inputs, edit boxes, labels).
 - Triggered by saying *"Jarvis, inspect my screen"*, *"what is on my screen"*, *"debug screen"*, or clicking the **👁️ Vision** icon in the dock.
 - Provides concise tactical spoken analysis of active applications, open code, and screen context.
 
@@ -94,7 +95,7 @@ Powered by real-time intelligence feeds (Google News RSS & Wikipedia APIs):
 Powered by `qwen/qwen3.8-27b` on Groq LPU with local `qwen3.5:2b` failsafe:
 - Generates complete, modern, production-grade source code (React, Python, JavaScript, HTML, algorithms, etc.).
 - Automatically detects target editor, focusing or launching **Notepad** (or **VS Code**).
-- Injects clean code directly into the active editor using native Win32 clipboard paste (`Ctrl+V`) with zero dropped characters or escaping issues.
+- Injects clean code directly into the active editor using native Win32 clipboard paste (`Ctrl+V`) with verified focus restoration and zero dropped characters.
 - Triggered by voice or text:
   - *"open notepad and write code"*
   - *"open notepad and write a react code"*
@@ -102,14 +103,18 @@ Powered by `qwen/qwen3.8-27b` on Groq LPU with local `qwen3.5:2b` failsafe:
   - *"write python script in vs code"*
   - *"type hello world in notepad"*
 
-### 9. System Agent: Complete Desktop, Media, Mouse & Keyboard Automation
+### 9. System Agent: Complete Desktop, Media, Mouse, Keyboard & Form Automation
 Provides full hands-free voice control across Windows without touching keyboard or mouse:
+- **Window Focus Manager & Verification**: Continuous background tracking of external foreground window (`LAST_EXTERNAL_HWND`). Automatically breaks foreground lock via Win32 `AttachThreadInput` and verifies focus before executing input actions.
+- **Browser & Tabs**: New tab (`Ctrl+T`), close tab (`Ctrl+W`), reopen tab (`Ctrl+Shift+T`), switch tabs (`Ctrl+Tab`), refresh (`F5`), back/forward (`Alt+Left`/`Alt+Right`). Naturally understands *"open new tab in chrome"*, *"new tab in edge"*, *"open new tab while I opened Chrome"*.
+- **Voice Form Filler**: Hands-free web form entry: *"type [text]"*, *"next field"* (`VK_TAB`), *"previous field"* (`Shift+Tab`), *"clear field"* (`Ctrl+A` + Backspace), *"submit form"* (`VK_RETURN`).
+- **Safety Guardrail**: Automatically halts sensitive transactions (payments, purchases, checkout, data wipe) and demands explicit voice confirmation (*"Confirm submission"*).
+- **Voice Barge-In**: Instant audio interruption — speaking a new command or saying *"stop"* / *"cancel"* cancels TTS immediately without disabling the microphone.
 - **Media Controller**: Global play/pause, next track, previous track, stop (`play`, `pause`, `resume`, `play music`, `next song`, `previous song`, `stop music`).
 - **Mouse & Scrolling**: Real-time wheel scrolling (`scroll down`, `scroll up`, `scroll to top`, `scroll to bottom`), left click, right click, double click.
-- **Browser & Tabs**: New tab (`Ctrl+T`), close tab (`Ctrl+W`), reopen tab (`Ctrl+Shift+T`), switch tabs (`Ctrl+Tab`), refresh (`F5`), back/forward (`Alt+Left`/`Alt+Right`).
 - **Keyboard Shortcuts**: Save (`Ctrl+S`), copy (`Ctrl+C`), paste (`Ctrl+V`), select all (`Ctrl+A`), undo (`Ctrl+Z`), redo (`Ctrl+Y`), enter, escape, backspace, tab.
 - **Window Management**: Maximize, minimize, restore, snap left (`Win+Left`), snap right (`Win+Right`), switch window (`Alt+Tab`), close window (`Alt+F4`).
-- **Direct Typing**: Dictates and pastes text into any active field (`type [text]`).
+- **Direct Typing**: Dictates and pastes text into any active field (`type [text]`, `enter [text]`).
 - **App Switching**: Focus any running window (`focus [app]`, `switch to [app]`).
 
 ---

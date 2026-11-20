@@ -162,12 +162,27 @@ function showJarvisFeedback(text, action = null, isThinking = false) {
     visorJarvisText.textContent = text;
   }
   if (visorBeaconDot) {
-    visorBeaconDot.className = isThinking ? "visor-jarvis-dot thinking" : "visor-jarvis-dot";
+    if (isThinking) {
+      visorBeaconDot.className = "visor-jarvis-dot thinking";
+    } else if (action && action.startsWith("⚠️")) {
+      visorBeaconDot.className = "visor-jarvis-dot warning";
+    } else if (isSpeakingTTS) {
+      visorBeaconDot.className = "visor-jarvis-dot speaking";
+    } else {
+      visorBeaconDot.className = "visor-jarvis-dot";
+    }
   }
   if (visorActionTag && visorActionDesc) {
     if (action) {
       visorActionDesc.textContent = action;
       visorActionTag.style.display = "inline-flex";
+      if (action.startsWith("⚠️")) {
+        visorActionTag.style.borderColor = "rgba(255, 170, 0, 0.7)";
+        visorActionTag.style.color = "#ffaa00";
+      } else {
+        visorActionTag.style.borderColor = "";
+        visorActionTag.style.color = "";
+      }
     } else {
       visorActionTag.style.display = "none";
     }
@@ -2359,9 +2374,9 @@ function normalizeVoiceTranscription(raw) {
   if (!text) return "";
   const lower = text.toLowerCase().replace(/[.,!?;:]/g, "").trim();
 
-  // 1. Preserve rich multi-word instructions (Developer Agent, System Agent, Search, Vision)
-  const isActionPhrase = /\b(?:write|type|generate|create|build|code|script|component|function|search|google|who|what|why|how|inspect|look|explain|debug|scroll|click|tab|window|save|copy|paste|select|undo|redo|enter|escape|play|pause|resume|skip|next|previous|stop|mute|volume|lock)\b/i.test(lower) ||
-                         lower.includes(" and ") || lower.includes(" in ") || lower.includes(" to ");
+  // 1. Preserve rich multi-word instructions (Developer Agent, System Agent, Search, Vision, Form Filler)
+  const isActionPhrase = /\b(?:write|type|generate|create|build|code|script|component|function|search|google|who|what|why|how|inspect|look|explain|debug|scroll|click|tab|window|save|copy|paste|select|undo|redo|enter|escape|play|pause|resume|skip|next|previous|stop|mute|volume|lock|field|input|submit|confirm|clear|pay|payment|checkout)\b/i.test(lower) ||
+                         lower.includes(" and ") || lower.includes(" in ") || lower.includes(" to ") || lower.includes(" while ");
 
   // 2. Media Controls: direct pass-through
   if (
@@ -2373,7 +2388,7 @@ function normalizeVoiceTranscription(raw) {
     return lower;
   }
 
-  // 3. Desktop Navigation & Action phrases: pass directly through
+  // 3. Desktop Navigation, Action phrases & Form Filling: pass directly through
   if (
     lower === "scroll down" || lower === "scroll up" || lower === "click" || lower === "right click" ||
     lower === "double click" || lower === "new tab" || lower === "close tab" || lower === "next tab" ||
@@ -2381,7 +2396,11 @@ function normalizeVoiceTranscription(raw) {
     lower === "copy" || lower === "paste" || lower === "select all" || lower === "undo" || lower === "redo" ||
     lower === "maximize" || lower === "minimize" || lower === "restore" || lower === "snap left" ||
     lower === "snap right" || lower === "switch window" || lower === "close window" || lower === "enter" ||
-    lower === "escape"
+    lower === "escape" || lower === "next field" || lower === "next input" || lower === "tab" || lower === "press tab" ||
+    lower === "previous field" || lower === "prev field" || lower === "shift tab" || lower === "back field" ||
+    lower === "clear field" || lower === "clear input" || lower === "empty field" ||
+    lower === "submit form" || lower === "submit" || lower === "confirm submission" || lower === "confirm payment" ||
+    lower === "backspace" || lower === "press backspace"
   ) {
     return lower;
   }
@@ -2432,17 +2451,36 @@ async function handleVoiceDirective(rawText) {
     console.log("[Voice] Ignored because voice is muted:", rawText);
     return;
   }
+
+  // Voice Barge-In: interrupt TTS playback immediately when user speaks
   if (isSpeakingTTS) {
-    console.log("[Voice] Ignored because Jarvis is currently speaking TTS:", rawText);
-    return;
-  }
-  if (isProcessingDirective) {
-    console.log("[Voice] Directive currently executing, ignoring:", rawText);
-    return;
+    console.log("[Voice Barge-In] Interrupting TTS for incoming user directive:", rawText);
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    isSpeakingTTS = false;
   }
 
   const clean = (rawText || "").trim();
   if (!clean) return;
+
+  const lowerRaw = clean.toLowerCase();
+  // Fast halt on direct interrupt words
+  if (lowerRaw === "stop" || lowerRaw === "cancel" || lowerRaw === "shut up" || lowerRaw === "hold on" || lowerRaw === "wait") {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    isSpeakingTTS = false;
+    isProcessingDirective = false;
+    showJarvisFeedback("Standing by, sir.", null, false);
+    setSystemState("idle");
+    return;
+  }
+
+  if (isProcessingDirective) {
+    console.log("[Voice] Directive currently executing, ignoring:", rawText);
+    return;
+  }
 
   const now = Date.now();
   if (clean.toLowerCase() === lastProcessedVoice.toLowerCase() && (now - lastProcessedTime) < 2000) {
