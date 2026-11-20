@@ -380,13 +380,32 @@
       <!-- COMPACT FLOATING INPUT PILL (MIC - TEXTFIELD - EXEC)      -->
       <!-- ========================================================= -->
       <div class="holographic-input-bar visor-collapsed" id="holographic-visor-container">
+        <!-- Floating Feedback Readout Banner -->
+        <div class="visor-response-banner" id="visor-response-banner" style="display: none;">
+          <span class="visor-jarvis-dot" id="visor-beacon-dot"></span>
+          <span class="visor-jarvis-text" id="visor-jarvis-text">Standing by for your directive, sir.</span>
+          <span class="visor-action-tag" id="visor-action-tag" style="display: none;">
+            <span class="action-desc" id="visor-action-desc">READY</span>
+          </span>
+        </div>
+
         <form class="visor-command-form" id="visor-command-form" autocomplete="off">
-          <!-- Voice Mic Button (Clean Subtle Cyan, No Harsh Blinking) -->
-          <button type="button" class="visor-mic-btn" id="visor-mic-btn" title="Voice Input (Groq Whisper)">
-            <svg class="visor-mic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <!-- Voice Mic Button (With Active Mic & Mute Slash SVGs) -->
+          <button type="button" class="visor-mic-btn" id="visor-mic-btn" title="Voice Input (Click to Mute / Unmute)">
+            <!-- Unmuted Active Mic Icon -->
+            <svg class="visor-mic-svg icon-mic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" x2="12" y1="19" y2="22"/>
+              <line x1="12" y1="19" x2="12" y2="22"/>
+            </svg>
+            <!-- Muted Slash Mic Icon -->
+            <svg class="visor-mic-svg icon-mic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="2" y1="2" x2="22" y2="22"/>
+              <path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/>
+              <path d="M5 10v2a7 7 0 0 0 12 5"/>
+              <path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/>
+              <path d="M9 9v3a3 3 0 0 0 5.12 2.12"/>
+              <line x1="12" y1="19" x2="12" y2="22"/>
             </svg>
           </button>
 

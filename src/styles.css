@@ -1496,6 +1496,8 @@ body {
   font-size: 0.65rem;
   transition: all 0.2s ease;
   flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
 }
 
 .model-item:hover {
@@ -1770,6 +1772,67 @@ body {
   transform: translateX(-50%) translateY(14px) scale(0.96);
 }
 
+/* Visor Response Feedback Readout Banner */
+.visor-response-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(3, 7, 18, 0.94);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 14px;
+  padding: 4px 12px;
+  margin-bottom: 6px;
+  font-family: var(--font-tech);
+  font-size: 0.74rem;
+  color: #e0f2fe;
+  letter-spacing: 0.3px;
+  box-sizing: border-box;
+  animation: visorFadeIn 0.2s ease-out;
+}
+
+@keyframes visorFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.visor-jarvis-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan-neon);
+  box-shadow: 0 0 8px var(--cyan-neon);
+  flex-shrink: 0;
+}
+
+.visor-jarvis-dot.thinking {
+  background: #fbbf24;
+  box-shadow: 0 0 10px #fbbf24;
+  animation: pulse-dot 0.8s infinite alternate;
+}
+
+.visor-jarvis-dot.speaking {
+  background: #a855f7;
+  box-shadow: 0 0 10px #a855f7;
+}
+
+.visor-jarvis-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visor-action-tag {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 0.62rem;
+  color: var(--cyan-neon);
+  font-family: var(--font-hero);
+  text-transform: uppercase;
+}
+
 .visor-command-form {
   display: flex;
   align-items: center;
@@ -1801,12 +1864,41 @@ body {
   box-shadow: 0 0 10px var(--cyan-glow);
 }
 
-/* Active / Listening State: Steady, Subtle Cyan Glow (No Harsh Red Blinking) */
+/* Active / Listening State: Steady, Subtle Cyan Glow */
 .visor-mic-btn.listening {
   background: rgba(56, 189, 248, 0.28);
   border-color: var(--cyan-bright);
   color: #ffffff;
   box-shadow: 0 0 14px rgba(56, 189, 248, 0.5);
+}
+
+/* Muted State with Red/Amber Tone and Slash Icon */
+.visor-mic-btn.muted {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.visor-mic-btn.muted:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #f87171;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.45);
+}
+
+.visor-mic-btn .icon-mic-off {
+  display: none;
+}
+
+.visor-mic-btn .icon-mic-on {
+  display: block;
+}
+
+.visor-mic-btn.muted .icon-mic-on {
+  display: none !important;
+}
+
+.visor-mic-btn.muted .icon-mic-off {
+  display: block !important;
 }
 
 .visor-mic-svg {

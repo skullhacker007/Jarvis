@@ -142,6 +142,44 @@ const visorContainer = document.getElementById("holographic-visor-container");
 const visorCommandForm = document.getElementById("visor-command-form");
 const visorCmdInput = document.getElementById("visor-cmd-input");
 const visorMicBtn = document.getElementById("visor-mic-btn");
+const visorExecBtn = document.getElementById("visor-exec-btn");
+const visorResponseBanner = document.getElementById("visor-response-banner");
+const visorJarvisText = document.getElementById("visor-jarvis-text");
+const visorBeaconDot = document.getElementById("visor-beacon-dot");
+const visorActionTag = document.getElementById("visor-action-tag");
+const visorActionDesc = document.getElementById("visor-action-desc");
+const visorStatusLabel = document.getElementById("visor-status-label");
+const visorMicIndicator = document.getElementById("visor-mic-indicator");
+const visorMicText = document.getElementById("visor-mic-text");
+const visorUserLine = document.getElementById("visor-user-line");
+const visorUserText = document.getElementById("visor-user-text");
+
+function showJarvisFeedback(text, action = null, isThinking = false) {
+  if (visorResponseBanner) {
+    visorResponseBanner.style.display = "flex";
+  }
+  if (visorJarvisText) {
+    visorJarvisText.textContent = text;
+  }
+  if (visorBeaconDot) {
+    visorBeaconDot.className = isThinking ? "visor-jarvis-dot thinking" : "visor-jarvis-dot";
+  }
+  if (visorActionTag && visorActionDesc) {
+    if (action) {
+      visorActionDesc.textContent = action;
+      visorActionTag.style.display = "inline-flex";
+    } else {
+      visorActionTag.style.display = "none";
+    }
+  }
+  if (visorCmdInput) {
+    if (isThinking) {
+      visorCmdInput.placeholder = text;
+    } else {
+      visorCmdInput.placeholder = text && text.length > 55 ? (text.slice(0, 52) + "...") : (text || "Give an instruction or ask anything...");
+    }
+  }
+}
 
 function openInputBar() {
   if (visorContainer) {
@@ -236,19 +274,36 @@ function updateMicUI(hasMic) {
     isVoiceListening = false;
     setSystemState("idle");
     if (visorMicText) visorMicText.textContent = "NO MIC";
-    if (visorMicBtn) visorMicBtn.classList.remove("listening");
+    if (visorMicBtn) {
+      visorMicBtn.classList.add("muted");
+      visorMicBtn.classList.remove("listening");
+      visorMicBtn.title = "No Microphone Detected";
+    }
     if (recognition) {
       try { recognition.stop(); } catch (e) {}
     }
   } else {
     isAudioActive = true;
-    if (!voiceMutedByUser && !isVoiceListening) {
-      isVoiceListening = true;
-      isListening = true;
-      setSystemState("listening");
-      if (visorMicText) visorMicText.textContent = "LISTENING...";
-      if (visorMicBtn) visorMicBtn.classList.add("listening");
-      startTauriVoiceListener();
+    if (voiceMutedByUser) {
+      if (visorMicBtn) {
+        visorMicBtn.classList.add("muted");
+        visorMicBtn.classList.remove("listening");
+        visorMicBtn.title = "Microphone Muted (Click to Unmute)";
+      }
+      if (visorMicText) visorMicText.textContent = "MUTED";
+    } else {
+      if (visorMicBtn) {
+        visorMicBtn.classList.remove("muted");
+        visorMicBtn.title = isVoiceListening ? "Microphone Active (Click to Mute)" : "Voice Input (Click to Listen)";
+      }
+      if (!isVoiceListening) {
+        isVoiceListening = true;
+        isListening = true;
+        setSystemState("listening");
+        if (visorMicText) visorMicText.textContent = "LISTENING...";
+        if (visorMicBtn) visorMicBtn.classList.add("listening");
+        startTauriVoiceListener();
+      }
     }
   }
 }
@@ -289,6 +344,14 @@ function initTokenMatrix() {
   }
 }
 initTokenMatrix();
+
+document.querySelectorAll(".ref-tab").forEach(tab => {
+  tab.style.cursor = "pointer";
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".ref-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+  });
+});
 
 function updateTokenSlots(activeCount) {
   const count = Math.min(TOTAL_SLOTS, Math.max(0, activeCount));
@@ -444,20 +507,23 @@ async function refreshSystemTelemetry() {
         visorStatusLabel.textContent = `${currentActiveModelName} // ONLINE`;
       }
 
-      if (modelNameLabel) modelNameLabel.textContent = mm.name.toUpperCase();
-      if (nnParams) nnParams.textContent = mm.parameter_size || "27B";
-      if (nnQuant) nnQuant.textContent = mm.quantization || "FP16 LPU";
+      if (modelNameLabel) modelNameLabel.textContent = (mm.name || currentActiveModelName).toUpperCase();
+      if (nnParams) nnParams.textContent = mm.parameter_size || (currentActiveModelName.includes("120B") ? "120B" : currentActiveModelName.includes("LOCAL") ? "1.9B" : "27B");
+      if (nnQuant) nnQuant.textContent = mm.quantization || (currentActiveModelName.includes("LOCAL") ? "Q8_0" : "FP16 LPU");
       
-      const ctxDisplay = mm.context_length >= 1024 ? `${Math.round(mm.context_length / 1024)}K` : `${mm.context_length}`;
+      const ctxDisplay = mm.context_length >= 1024 ? `${Math.round(mm.context_length / 1024)}K` : `${mm.context_length || "131K"}`;
       if (nnCtx) nnCtx.textContent = ctxDisplay;
       
       if (nnLatency) {
-        nnLatency.textContent = mm.last_latency_ms > 0 ? `${mm.last_latency_ms}ms` : "0ms";
+        nnLatency.textContent = mm.last_latency_ms > 0 ? `${mm.last_latency_ms}ms` : (currentActiveModelName.includes("LOCAL") ? "14ms" : "267ms");
       }
 
       if (neuralEngineState) {
         if (currentState === "thinking") {
           neuralEngineState.textContent = "INFERENCE";
+          neuralEngineState.className = "neural-status-badge active";
+        } else if (currentState === "speaking") {
+          neuralEngineState.textContent = "VOCAL SYNTH";
           neuralEngineState.className = "neural-status-badge active";
         } else if (mm.quantization && mm.quantization.includes("LPU")) {
           neuralEngineState.textContent = "HOT // LPU";
@@ -466,7 +532,7 @@ async function refreshSystemTelemetry() {
           neuralEngineState.textContent = "HOT // VRAM";
           neuralEngineState.className = "neural-status-badge";
         } else {
-          neuralEngineState.textContent = "STANDBY";
+          neuralEngineState.textContent = "ONLINE";
           neuralEngineState.className = "neural-status-badge";
         }
       }
@@ -545,6 +611,22 @@ async function refreshSystemTelemetry() {
             <span>LAT: <b>${latDisplay}</b></span>
           </div>
         `;
+        card.style.cursor = "pointer";
+        card.title = `Click to switch active model to ${m.display_name}`;
+        card.addEventListener("click", async () => {
+          try {
+            await invoke("switch_ai_model", { modelId: m.id });
+            currentActiveModelName = m.provider.includes("LOCAL") ? "OLLAMA LOCAL" : `GROQ ${m.display_name}`;
+            if (modelNameLabel) modelNameLabel.textContent = m.display_name;
+            if (nnParams) nnParams.textContent = m.id.includes("120b") ? "120B" : m.id.includes("20b") ? "20B" : m.id.includes("7b") ? "7B" : m.id.includes("qwen3.5") ? "1.9B" : "27B";
+            if (nnQuant) nnQuant.textContent = m.provider.includes("LOCAL") ? "Q8_0" : "FP16 LPU";
+            if (nnCtx) nnCtx.textContent = m.context_window;
+            refreshSystemTelemetry();
+          } catch (err) {
+            console.warn("Model switch error:", err);
+          }
+        });
+
         modelsList.appendChild(card);
       });
     }
@@ -756,13 +838,15 @@ function drawNeuralNetwork() {
   const h = neuralCanvas.height;
   neuralCtx.clearRect(0, 0, w, h);
 
+  const isModelConnected = Boolean(currentActiveModelName && !currentActiveModelName.includes("OFFLINE"));
   const isThinking = currentState === "thinking";
-  const speedMult = isThinking ? 3.4 : 1.0;
+  const isSpeaking = currentState === "speaking";
+  const speedMult = isThinking ? 3.4 : (isSpeaking ? 1.4 : 0.4);
   neuralAnimTime += 0.02 * speedMult;
 
   // 1. Subtle Background Guide Grid (Holographic HUD Coordinate Plane)
   neuralCtx.save();
-  neuralCtx.strokeStyle = "rgba(56, 189, 248, 0.03)";
+  neuralCtx.strokeStyle = isModelConnected ? "rgba(56, 189, 248, 0.03)" : "rgba(100, 116, 139, 0.03)";
   neuralCtx.lineWidth = 1;
   for (let y = 26; y < h - 16; y += 22) {
     neuralCtx.beginPath();
@@ -771,6 +855,34 @@ function drawNeuralNetwork() {
     neuralCtx.stroke();
   }
   neuralCtx.restore();
+
+  // If no model is connected, render dormant disconnected state
+  if (!isModelConnected) {
+    neuralCtx.save();
+    neuralCtx.fillStyle = "rgba(148, 163, 184, 0.4)";
+    neuralCtx.font = "600 10px 'JetBrains Mono', monospace";
+    neuralCtx.textAlign = "center";
+    neuralCtx.fillText("STANDBY // AWAITING AI MODEL CONNECTION", w / 2, h / 2);
+    neuralCtx.restore();
+
+    for (let l = 0; l < transformerLayers.length; l++) {
+      const layer = transformerLayers[l];
+      const x = getLayerX(l, transformerLayers.length, w);
+      neuralCtx.fillStyle = "rgba(100, 116, 139, 0.4)";
+      neuralCtx.font = "700 8px 'JetBrains Mono', monospace";
+      neuralCtx.textAlign = "center";
+      neuralCtx.fillText(layer.name, x, 12);
+      for (let i = 0; i < layer.count; i++) {
+        const y = getNodeY(i, layer.count, h);
+        neuralCtx.beginPath();
+        neuralCtx.arc(x, y, 2.5, 0, Math.PI * 2);
+        neuralCtx.fillStyle = "rgba(100, 116, 139, 0.25)";
+        neuralCtx.fill();
+      }
+    }
+    requestAnimationFrame(drawNeuralNetwork);
+    return;
+  }
 
   // 2. Synaptic Connections & Dynamic Multi-Head Attention Weights
   for (let l = 0; l < transformerLayers.length - 1; l++) {
@@ -784,26 +896,26 @@ function drawNeuralNetwork() {
       for (let j = 0; j < l2.count; j++) {
         const y2 = getNodeY(j, l2.count, h);
 
-        // Dynamic attention matrix simulation
+        // Attention matrix fires intensely ONLY during thinking or vocal synthesis
         const wave = Math.sin(neuralAnimTime * 2.2 + l * 1.8 + i * 0.75 + j * 1.15);
-        const isHighWeight = wave > 0.42 || (isThinking && (i + j) % 3 === 0);
+        const isHighWeight = isThinking ? (wave > 0.15 || (i + j) % 2 === 0) : (isSpeaking ? (wave > 0.65) : false);
 
         if (isHighWeight) {
           // Luminous active attention beam
           const grad = neuralCtx.createLinearGradient(x1, y1, x2, y2);
           if (isThinking) {
-            grad.addColorStop(0, "rgba(167, 139, 250, 0.65)");
-            grad.addColorStop(1, "rgba(224, 231, 255, 0.85)");
+            grad.addColorStop(0, "rgba(167, 139, 250, 0.75)");
+            grad.addColorStop(1, "rgba(224, 231, 255, 0.95)");
           } else {
             grad.addColorStop(0, l1.aura);
             grad.addColorStop(1, l2.aura);
           }
           neuralCtx.strokeStyle = grad;
-          neuralCtx.lineWidth = isThinking ? 1.2 : 0.85;
+          neuralCtx.lineWidth = isThinking ? 1.4 : 0.85;
           neuralCtx.shadowColor = isThinking ? "#a78bfa" : "#38bdf8";
-          neuralCtx.shadowBlur = isThinking ? 5 : 2;
+          neuralCtx.shadowBlur = isThinking ? 6 : 2;
         } else {
-          // Subtle background structural pathway
+          // Subtle resting structural pathway
           neuralCtx.strokeStyle = "rgba(56, 189, 248, 0.04)";
           neuralCtx.lineWidth = 0.5;
           neuralCtx.shadowBlur = 0;
@@ -818,8 +930,10 @@ function drawNeuralNetwork() {
   }
   neuralCtx.shadowBlur = 0;
 
-  // 3. Synaptic Energy Pulses (Active Feed-Forward Wave)
-  neuralPulses.forEach(p => {
+  // 3. Synaptic Energy Pulses (Fires actively during thinking and gently during standby)
+  const activePulseCount = isThinking ? neuralPulses.length : (isSpeaking ? 8 : 4);
+  for (let idx = 0; idx < activePulseCount; idx++) {
+    const p = neuralPulses[idx];
     p.progress += p.speed * speedMult;
     if (p.progress >= 1.0) {
       p.progress = 0;
@@ -843,13 +957,13 @@ function drawNeuralNetwork() {
 
     neuralCtx.save();
     neuralCtx.shadowColor = isThinking ? "#f3e8ff" : p.hue;
-    neuralCtx.shadowBlur = isThinking ? 10 : 7;
+    neuralCtx.shadowBlur = isThinking ? 10 : 5;
     neuralCtx.fillStyle = isThinking ? "#ffffff" : p.hue;
     neuralCtx.beginPath();
-    neuralCtx.arc(px, py, isThinking ? 2.6 : 2.0, 0, Math.PI * 2);
+    neuralCtx.arc(px, py, isThinking ? 2.6 : 1.8, 0, Math.PI * 2);
     neuralCtx.fill();
     neuralCtx.restore();
-  });
+  }
 
   // 4. Transformer Architecture Nodes
   let hoveredNodeInfo = null;
@@ -1627,9 +1741,7 @@ async function triggerPhoneCall() {
 
   try {
     await invoke("dial_phone_call", { number: numToCall });
-    if (visorJarvisText) {
-      visorJarvisText.textContent = `Placing direct call to ${numToCall} on phone.`;
-    }
+    showJarvisFeedback(`Placing direct call to ${numToCall} on phone.`, "call");
   } catch (err) {
     console.error("[Call Error]", err);
     if (dialerStatusMsg) {
@@ -1651,10 +1763,15 @@ btnDialerCall?.addEventListener("click", triggerPhoneCall);
 btnDialerLink?.addEventListener("click", async () => {
   try {
     await invoke("end_phone_call");
-    if (dialerStatusMsg) dialerStatusMsg.textContent = "Call terminated on connected phone.";
-    if (visorJarvisText) visorJarvisText.textContent = "Call terminated.";
+    currentDialNumber = "";
+    updateDialerDisplay();
+    if (dialerStatusMsg) dialerStatusMsg.textContent = "Call terminated. Keypad cleared.";
+    showJarvisFeedback("Call terminated, sir.");
   } catch (e) {
-    if (dialerStatusMsg) dialerStatusMsg.textContent = "Unable to end call.";
+    currentDialNumber = "";
+    updateDialerDisplay();
+    if (dialerStatusMsg) dialerStatusMsg.textContent = "Call ended.";
+    showJarvisFeedback("Call ended.");
   }
 });
 
@@ -1819,7 +1936,7 @@ btnQrLaunch?.addEventListener("click", async () => {
             clearInterval(qrPollInterval);
             qrPollInterval = null;
             if (syncStatusText) syncStatusText.textContent = `✓ UPLINK ESTABLISHED: ${res.model}`;
-            if (visorJarvisText) visorJarvisText.textContent = `New mobile uplink established with ${res.model}. Direct calling online.`;
+            showJarvisFeedback(`New mobile uplink established with ${res.model}. Direct calling online.`);
             speakResponse(`Mobile uplink established with ${res.model}.`);
             pollBluetoothWatch();
             setTimeout(closePhoneSyncModal, 2000);
@@ -1838,7 +1955,7 @@ btnAutoDetect?.addEventListener("click", async () => {
     const res = await invoke("auto_sync_phone");
     if (res && res.is_connected) {
       if (syncStatusText) syncStatusText.textContent = `SYNC COMPLETE: ${res.model} [${res.endpoint}]`;
-      if (visorJarvisText) visorJarvisText.textContent = `Uplink established with ${res.model}. Direct calling online.`;
+      showJarvisFeedback(`Uplink established with ${res.model}. Direct calling online.`);
       speakResponse(`Mobile uplink established with ${res.model}.`);
       pollBluetoothWatch();
       setTimeout(closePhoneSyncModal, 1800);
@@ -1901,11 +2018,11 @@ function setSystemState(state) {
   // Update Visor Beacon and Status Bar
   if (visorBeaconDot) {
     if (state === "thinking") {
-      visorBeaconDot.className = "visor-beacon-dot thinking";
+      visorBeaconDot.className = "visor-jarvis-dot thinking";
     } else if (state === "speaking") {
-      visorBeaconDot.className = "visor-beacon-dot speaking";
+      visorBeaconDot.className = "visor-jarvis-dot speaking";
     } else {
-      visorBeaconDot.className = "visor-beacon-dot";
+      visorBeaconDot.className = "visor-jarvis-dot";
     }
   }
 
@@ -1932,10 +2049,14 @@ function setSystemState(state) {
   if (visorMicBtn) {
     if (state === "listening") {
       visorMicBtn.classList.add("listening");
+      visorMicBtn.classList.remove("muted");
       if (visorMicText) visorMicText.textContent = "LISTENING";
     } else {
       visorMicBtn.classList.remove("listening");
-      if (visorMicText) visorMicText.textContent = "VOICE READY";
+      if (voiceMutedByUser) {
+        visorMicBtn.classList.add("muted");
+      }
+      if (visorMicText) visorMicText.textContent = voiceMutedByUser ? "MUTED" : "VOICE READY";
     }
   }
 
@@ -2003,12 +2124,13 @@ function speakResponse(text) {
 // -------------------------------------------------------------
 // EXECUTE USER DIRECTIVE (Queen Model as Brain + Admin Execution)
 // -------------------------------------------------------------
-async function processDirective(prompt) {
+async function processDirective(prompt, shouldOpenInput = false) {
   const clean = prompt.trim();
   if (!clean) return;
 
-  // Ensure input bar is visible when directive is being handled
-  openInputBar();
+  if (shouldOpenInput) {
+    openInputBar();
+  }
 
   // Fast-Path: Direct Phone Keypad / Dialer Matrix (100% Direct - No Microsoft Phone Link)
   const lowerDirective = clean.toLowerCase();
@@ -2026,16 +2148,8 @@ async function processDirective(prompt) {
     lowerDirective === "open keypad" ||
     lowerDirective === "call keypad"
   ) {
-    if (visorUserLine && visorUserText) {
-      visorUserText.textContent = `"${clean}"`;
-      visorUserLine.style.display = "flex";
-    }
     const replyMsg = "Opening holographic call matrix, sir.";
-    if (visorJarvisText) visorJarvisText.textContent = replyMsg;
-    if (visorActionTag && visorActionDesc) {
-      visorActionDesc.textContent = "open_direct_dialer";
-      visorActionTag.style.display = "inline-flex";
-    }
+    showJarvisFeedback(replyMsg, "open_dialer");
     openPhoneKeypad();
     speakResponse(replyMsg);
     setSystemState("idle");
@@ -2044,13 +2158,13 @@ async function processDirective(prompt) {
 
   // Fast-Path: End Call / Hang Up
   if (/^(?:end\s+call|cut\s+call|hang\s*up|disconnect\s+call|stop\s+call)$/i.test(clean)) {
-    if (visorUserLine && visorUserText) {
-      visorUserText.textContent = `"${clean}"`;
-      visorUserLine.style.display = "flex";
-    }
-    await invoke("end_phone_call");
-    const replyMsg = "Call ended, Sir.";
-    if (visorJarvisText) visorJarvisText.textContent = replyMsg;
+    try {
+      await invoke("end_phone_call");
+    } catch (e) {}
+    currentDialNumber = "";
+    updateDialerDisplay();
+    const replyMsg = "Call ended, sir. Keypad cleared.";
+    showJarvisFeedback(replyMsg, "end_call");
     speakResponse(replyMsg);
     setSystemState("idle");
     return;
@@ -2078,33 +2192,18 @@ async function processDirective(prompt) {
     }
 
     if (/^[\d\+\*#]+$/.test(numToDial) && numToDial.length >= 3) {
-      if (visorUserLine && visorUserText) {
-        visorUserText.textContent = `"${clean}"`;
-        visorUserLine.style.display = "flex";
-      }
       currentDialNumber = numToDial;
       updateDialerDisplay();
       await invoke("dial_phone_call", { number: currentDialNumber });
       const replyMsg = `Dialing ${target} directly on your phone.`;
-      if (visorJarvisText) visorJarvisText.textContent = replyMsg;
+      showJarvisFeedback(replyMsg, "dial_call");
       speakResponse(replyMsg);
       setSystemState("idle");
       return;
     }
   }
 
-  // 1. Show user instruction on Holographic Visor
-  if (visorUserLine && visorUserText) {
-    visorUserText.textContent = `"${clean}"`;
-    visorUserLine.style.display = "flex";
-  }
-  if (visorJarvisText) {
-    visorJarvisText.textContent = "Thinking... Analyzing directive with Queen neural model.";
-  }
-  if (visorActionTag) {
-    visorActionTag.style.display = "none";
-  }
-
+  showJarvisFeedback("Thinking... Analyzing directive with Queen neural model.", null, true);
   setSystemState("thinking");
 
   try {
@@ -2139,14 +2238,8 @@ async function processDirective(prompt) {
       realTokenRegistry = [...promptTokens, "→", ...replyTokens];
     }
 
-    // 4. Update Visor dialogue text and action executed badge
-    if (visorJarvisText) {
-      visorJarvisText.textContent = res.reply || "Directive executed, sir.";
-    }
-    if (res.action && visorActionTag && visorActionDesc) {
-      visorActionDesc.textContent = res.action;
-      visorActionTag.style.display = "inline-flex";
-    }
+    // 4. Update feedback
+    showJarvisFeedback(res.reply || "Directive executed, sir.", res.action);
 
     // 5. Vocalize response
     speakResponse(res.reply);
@@ -2155,9 +2248,7 @@ async function processDirective(prompt) {
     refreshSystemTelemetry();
   } catch (err) {
     console.warn("Directive processing error:", err);
-    if (visorJarvisText) {
-      visorJarvisText.textContent = `Directive error: ${err}`;
-    }
+    showJarvisFeedback(`Directive error: ${err}`);
     setSystemState("idle");
   }
 }
@@ -2169,7 +2260,7 @@ function submitVisorDirective() {
   const val = visorCmdInput?.value?.trim();
   if (val) {
     visorCmdInput.value = "";
-    processDirective(val);
+    processDirective(val, true);
   }
 }
 
@@ -2178,7 +2269,6 @@ visorCommandForm?.addEventListener("submit", (e) => {
   submitVisorDirective();
 });
 
-const visorExecBtn = document.getElementById("visor-exec-btn");
 visorExecBtn?.addEventListener("click", (e) => {
   e.preventDefault();
   submitVisorDirective();
@@ -2204,16 +2294,34 @@ btnDockCall?.addEventListener("click", (e) => {
   openPhoneKeypad();
 });
 
-btnDockMail?.addEventListener("click", async () => {
-  await processDirective("open outlook");
+btnDockMail?.addEventListener("click", async (e) => {
+  e.preventDefault();
+  try {
+    await invoke("run_direct_action", { action: "open_app", target: "outlook" });
+    showJarvisFeedback("Opening Outlook, sir.", "open_outlook");
+  } catch (err) {
+    console.warn("Mail error:", err);
+  }
 });
 
-btnDockWhatsapp?.addEventListener("click", async () => {
-  await processDirective("open whatsapp");
+btnDockWhatsapp?.addEventListener("click", async (e) => {
+  e.preventDefault();
+  try {
+    await invoke("run_direct_action", { action: "open_app", target: "whatsapp" });
+    showJarvisFeedback("Opening WhatsApp, sir.", "open_whatsapp");
+  } catch (err) {
+    console.warn("WhatsApp error:", err);
+  }
 });
 
-btnDockMusic?.addEventListener("click", async () => {
-  await processDirective("open spotify");
+btnDockMusic?.addEventListener("click", async (e) => {
+  e.preventDefault();
+  try {
+    await invoke("run_direct_action", { action: "open_app", target: "spotify" });
+    showJarvisFeedback("Launching Spotify, sir.", "open_spotify");
+  } catch (err) {
+    console.warn("Spotify error:", err);
+  }
 });
 
 // Single Unified Globe Icon for All 3 AI Functions (Search, Screen, Actions)
@@ -2367,19 +2475,11 @@ async function handleVoiceDirective(rawText) {
   if (visorCmdInput) {
     visorCmdInput.value = "";
   }
-  if (visorUserText) {
-    visorUserText.textContent = `"${normalized}"`;
-  }
-  if (visorUserLine) {
-    visorUserLine.style.display = "flex";
-  }
-  if (visorJarvisText) {
-    visorJarvisText.textContent = `Voice directive received: "${normalized}" — Processing...`;
-  }
+  showJarvisFeedback(`"${normalized}"`, null, true);
 
   isProcessingDirective = true;
   try {
-    await processDirective(normalized);
+    await processDirective(normalized, true);
   } finally {
     isProcessingDirective = false;
   }
@@ -2464,7 +2564,7 @@ async function startWhisperRecording() {
           if (text && text.trim().length > 0) {
             console.log("[Groq Whisper STT]:", text);
             if (visorCmdInput) visorCmdInput.value = "";
-            processDirective(text.trim());
+            processDirective(text.trim(), true);
           }
         } catch (err) {
           console.warn("[Groq Whisper STT] Error:", err);
@@ -2476,7 +2576,11 @@ async function startWhisperRecording() {
     };
     mediaRecorder.start();
     isGroqWhisperRecording = true;
-    if (visorMicBtn) visorMicBtn.classList.add("listening");
+    if (visorMicBtn) {
+      visorMicBtn.classList.remove("muted");
+      visorMicBtn.classList.add("listening");
+      visorMicBtn.title = "Microphone Active (Click to Mute)";
+    }
     if (visorCmdInput) visorCmdInput.placeholder = "Listening... Speak now...";
   } catch (err) {
     console.warn("[Groq Whisper] getUserMedia notice:", err);
@@ -2494,41 +2598,46 @@ function stopWhisperRecording() {
 }
 
 async function handleMicButtonClick() {
-  if (isGroqWhisperRecording) {
-    stopWhisperRecording();
-  } else {
+  if (voiceMutedByUser || (!isVoiceListening && !isGroqWhisperRecording)) {
+    // Unmute
+    voiceMutedByUser = false;
+    isVoiceListening = true;
+    isListening = true;
+    if (visorMicBtn) {
+      visorMicBtn.classList.remove("muted");
+      visorMicBtn.classList.add("listening");
+      visorMicBtn.title = "Microphone Active (Click to Mute)";
+    }
+    setSystemState("listening");
+    showJarvisFeedback("Microphone active. Listening for your directive...");
+    try { await invoke("set_voice_listening", { active: true }); } catch (e) {}
     await startWhisperRecording();
+  } else {
+    // Mute
+    voiceMutedByUser = true;
+    isVoiceListening = false;
+    isListening = false;
+    if (visorMicBtn) {
+      visorMicBtn.classList.add("muted");
+      visorMicBtn.classList.remove("listening");
+      visorMicBtn.title = "Microphone Muted (Click to Unmute)";
+    }
+    setSystemState("idle");
+    showJarvisFeedback("Microphone muted. Click mic to unmute, sir.");
+    try { await invoke("set_voice_listening", { active: false }); } catch (e) {}
+    stopWhisperRecording();
   }
 }
 
 async function toggleVoiceListener() {
-  if (isVoiceListening && !voiceMutedByUser) {
-    voiceMutedByUser = true;
-    isVoiceListening = false;
-    isListening = false;
-    setSystemState("idle");
-    if (visorMicText) visorMicText.textContent = "VOICE MUTED";
-    if (visorMicBtn) visorMicBtn.classList.remove("listening");
-    if (visorJarvisText) visorJarvisText.textContent = "Voice listening muted. Click mic to unmute, sir.";
-    try { await invoke("set_voice_listening", { active: false }); } catch (e) {}
-  } else {
-    voiceMutedByUser = false;
-    isVoiceListening = true;
-    isListening = true;
-    setSystemState("listening");
-    if (visorMicText) visorMicText.textContent = "LISTENING...";
-    if (visorMicBtn) visorMicBtn.classList.add("listening");
-    if (visorJarvisText) visorJarvisText.textContent = "Listening for your voice directive, sir...";
-    try { await invoke("set_voice_listening", { active: true }); } catch (e) {}
-    startTauriVoiceListener();
-  }
+  await handleMicButtonClick();
 }
 
 function startWebSpeechFallback() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
     if (visorMicText) visorMicText.textContent = "VOICE READY";
-    if (visorJarvisText) visorJarvisText.textContent = "Microphone ready. Type or speak your instruction.";
+    showJarvisFeedback("Microphone ready. Type or speak your instruction.");
     return;
   }
 

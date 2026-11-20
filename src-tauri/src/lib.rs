@@ -1696,14 +1696,19 @@ Rules:
 
     let groq_key = get_groq_api_key();
 
-    // Priority candidates: 4 Groq models + 1 Local Ollama failsafe
-    let candidates = vec![
+    // Priority candidates: ordered with the active model first
+    let active_mod = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| "qwen/qwen3.8-27b".to_string());
+    let mut candidates = vec![
         ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32),
         ("openai/gpt-oss-120b", "GROQ LPU", "120B", "FP16 LPU", 131072u32),
         ("allam-2-7b", "GROQ LPU", "7B", "FP16 LPU", 8192u32),
         ("openai/gpt-oss-20b", "GROQ LPU", "20B", "FP16 LPU", 131072u32),
         ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32),
     ];
+    if let Some(pos) = candidates.iter().position(|c| c.0 == active_mod) {
+        let chosen = candidates.remove(pos);
+        candidates.insert(0, chosen);
+    }
 
     for (model_id, provider, param_size, quant, ctx_len) in candidates {
         let is_groq = provider == "GROQ LPU";
@@ -2331,6 +2336,87 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
 }
 
 #[tauri::command]
+fn switch_ai_model(model_id: String, state: tauri::State<'_, AppState>) -> Result<AvailableModelInfo, String> {
+    let clean_id = model_id.trim().to_string();
+    if let Ok(mut active) = state.active_model_id.lock() {
+        *active = clean_id.clone();
+    }
+    
+    let has_groq = !get_groq_api_key().is_empty();
+    let is_ollama = clean_id.contains("qwen3.5") || clean_id.contains("sysbrain");
+    
+    if let Ok(mut mm) = state.model_metrics.lock() {
+        mm.name = clean_id.clone();
+        match clean_id.as_str() {
+            "qwen/qwen3.8-27b" => {
+                mm.parameter_size = "27B".to_string();
+                mm.quantization = "FP16 LPU".to_string();
+                mm.context_length = 131072;
+                mm.eval_tokens_per_sec = 267.0;
+                mm.is_loaded = has_groq;
+            }
+            "openai/gpt-oss-120b" => {
+                mm.parameter_size = "120B".to_string();
+                mm.quantization = "FP16 LPU".to_string();
+                mm.context_length = 131072;
+                mm.eval_tokens_per_sec = 393.0;
+                mm.is_loaded = has_groq;
+            }
+            "allam-2-7b" => {
+                mm.parameter_size = "7B".to_string();
+                mm.quantization = "FP16 LPU".to_string();
+                mm.context_length = 8192;
+                mm.eval_tokens_per_sec = 580.0;
+                mm.is_loaded = has_groq;
+            }
+            "openai/gpt-oss-20b" => {
+                mm.parameter_size = "20B".to_string();
+                mm.quantization = "FP16 LPU".to_string();
+                mm.context_length = 131072;
+                mm.eval_tokens_per_sec = 436.0;
+                mm.is_loaded = has_groq;
+            }
+            _id if is_ollama => {
+                mm.name = "qwen3.5:2b (LOCAL)".to_string();
+                mm.parameter_size = "1.9B".to_string();
+                mm.quantization = "Q8_0".to_string();
+                mm.context_length = 262144;
+                mm.eval_tokens_per_sec = 13.5;
+                mm.is_loaded = true;
+            }
+            _ => {
+                mm.is_loaded = true;
+            }
+        }
+    }
+
+    let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
+    let def_stats = ModelRuntimeStats::default();
+    let stats = stats_map.get(&clean_id).unwrap_or(&def_stats);
+
+    let info = AvailableModelInfo {
+        id: clean_id.clone(),
+        display_name: match clean_id.as_str() {
+            "qwen/qwen3.8-27b" => "QWEN 3.8 27B".to_string(),
+            "openai/gpt-oss-120b" => "GPT-OSS 120B".to_string(),
+            "allam-2-7b" => "ALLAM 2 7B".to_string(),
+            "openai/gpt-oss-20b" => "GPT-OSS 20B".to_string(),
+            _ => "QWEN 3.5 2B (LOCAL)".to_string(),
+        },
+        provider: if is_ollama { "LOCAL OLLAMA".to_string() } else { "GROQ LPU".to_string() },
+        status: "ACTIVE".to_string(),
+        priority: 1,
+        context_window: if is_ollama { "256K".to_string() } else if clean_id == "allam-2-7b" { "8K".to_string() } else { "131K".to_string() },
+        tokens_used: stats.tokens_used,
+        speed_tok_s: if stats.speed_tok_s > 0.0 { stats.speed_tok_s } else { if is_ollama { 13.5 } else { 267.0 } },
+        latency_ms: if stats.latency_ms > 0 { stats.latency_ms } else { if is_ollama { 1200 } else { 267 } },
+        is_active: true,
+    };
+
+    Ok(info)
+}
+
+#[tauri::command]
 fn run_direct_action(action: String, target: String) -> Result<String, String> {
     execute_system_action(&action, &target)
 }
@@ -2391,6 +2477,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             ask_jarvis,
+            switch_ai_model,
             run_direct_action,
             get_system_telemetry,
             get_bluetooth_watch_status,
