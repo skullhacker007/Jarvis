@@ -279,6 +279,7 @@ function updateMicUI(hasMic) {
       visorMicBtn.classList.remove("listening");
       visorMicBtn.title = "No Microphone Detected";
     }
+    stopContinuousVoiceRecognition();
     if (recognition) {
       try { recognition.stop(); } catch (e) {}
     }
@@ -296,13 +297,14 @@ function updateMicUI(hasMic) {
         visorMicBtn.classList.remove("muted");
         visorMicBtn.title = isVoiceListening ? "Microphone Active (Click to Mute)" : "Voice Input (Click to Listen)";
       }
-      if (!isVoiceListening) {
+      if (!isVoiceListening || !isContinuousVoiceActive) {
         isVoiceListening = true;
         isListening = true;
         setSystemState("listening");
         if (visorMicText) visorMicText.textContent = "LISTENING...";
         if (visorMicBtn) visorMicBtn.classList.add("listening");
         startTauriVoiceListener();
+        startContinuousVoiceRecognition();
       }
     }
   }
@@ -2089,6 +2091,7 @@ function setSystemState(state) {
 function speakResponse(text) {
   if (!("speechSynthesis" in window) || !text) {
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+    resumeListeningIfAllowed();
     return;
   }
 
@@ -2111,12 +2114,26 @@ function speakResponse(text) {
   utterance.onend = () => {
     isSpeakingTTS = false;
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+    setTimeout(() => {
+      resumeListeningIfAllowed();
+    }, 350);
   };
 
   utterance.onerror = () => {
     isSpeakingTTS = false;
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+    resumeListeningIfAllowed();
   };
+
+  // Fallback safety: ensure speaking state doesn't hang if browser drops speech event
+  const safetyTimeout = Math.max(3000, clean.length * 90);
+  setTimeout(() => {
+    if (isSpeakingTTS) {
+      isSpeakingTTS = false;
+      setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+      resumeListeningIfAllowed();
+    }
+  }, safetyTimeout);
 
   window.speechSynthesis.speak(utterance);
 }
@@ -2249,7 +2266,8 @@ async function processDirective(prompt, shouldOpenInput = false) {
   } catch (err) {
     console.warn("Directive processing error:", err);
     showJarvisFeedback(`Directive error: ${err}`);
-    setSystemState("idle");
+    setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+    resumeListeningIfAllowed();
   }
 }
 
@@ -2482,6 +2500,9 @@ async function handleVoiceDirective(rawText) {
     await processDirective(normalized, true);
   } finally {
     isProcessingDirective = false;
+    if (!isSpeakingTTS) {
+      resumeListeningIfAllowed();
+    }
   }
 }
 
@@ -2536,69 +2557,313 @@ async function runContinuousListenLoop() {
   }
 }
 
+// -------------------------------------------------------------
+// CONTINUOUS REAL-TIME VOICE ACTIVITY DETECTION (VAD) & GROQ WHISPER STT
+// -------------------------------------------------------------
+let mediaStream = null;
+let audioContext = null;
+let analyser = null;
+let vadInterval = null;
 let mediaRecorder = null;
 let audioChunks = [];
 let isGroqWhisperRecording = false;
+let isVadSpeaking = false;
+let hasSpokenInCycle = false;
+let vadSpeechStartTime = 0;
+let vadSilenceStartTime = 0;
+let vadConsecutiveSpeechFrames = 0;
+let vadNoiseFloor = 0.008;
+let cycleStartTime = 0;
+let isWhisperTranscribing = false;
+let isContinuousVoiceActive = false;
 
-async function startWhisperRecording() {
+async function initAudioEngine() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioChunks = [];
-    mediaRecorder = new MediaRecorder(stream);
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) audioChunks.push(e.data);
-    };
-    mediaRecorder.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
-      if (audioChunks.length === 0) return;
-      const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Data = reader.result;
-        try {
-          if (visorCmdInput) visorCmdInput.placeholder = "Processing voice with Groq Whisper...";
-          const text = await invoke("transcribe_audio_groq", {
-            audioBase64: base64Data,
-            mimeType: "audio/webm",
-          });
-          if (text && text.trim().length > 0) {
-            console.log("[Groq Whisper STT]:", text);
-            if (visorCmdInput) visorCmdInput.value = "";
-            processDirective(text.trim(), true);
-          }
-        } catch (err) {
-          console.warn("[Groq Whisper STT] Error:", err);
-        } finally {
-          if (visorCmdInput) visorCmdInput.placeholder = "Give an instruction or ask anything...";
+    if (!mediaStream || !mediaStream.active) {
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
         }
-      };
-      reader.readAsDataURL(audioBlob);
-    };
-    mediaRecorder.start();
+      });
+    }
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      if (!audioContext || audioContext.state === "closed") {
+        audioContext = new AudioCtx();
+      }
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+      if (!analyser && mediaStream) {
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.2;
+        source.connect(analyser);
+      }
+    }
+    return true;
+  } catch (err) {
+    console.warn("[Voice Engine] Microphone initialization notice:", err);
+    return false;
+  }
+}
+
+function startUtteranceRecording() {
+  if (!mediaStream || !mediaStream.active) return;
+  if (voiceMutedByUser || !isVoiceListening || isSpeakingTTS || isProcessingDirective || isWhisperTranscribing) {
+    return;
+  }
+
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    try {
+      mediaRecorder.onstop = null;
+      mediaRecorder.stop();
+    } catch (e) {}
+  }
+
+  audioChunks = [];
+  let mimeType = "audio/webm";
+  if (typeof MediaRecorder.isTypeSupported === "function") {
+    if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+      mimeType = "audio/webm;codecs=opus";
+    } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+      mimeType = "audio/webm";
+    }
+  }
+
+  try {
+    mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : {});
+  } catch (e) {
+    mediaRecorder = new MediaRecorder(mediaStream);
+  }
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) {
+      audioChunks.push(e.data);
+    }
+  };
+
+  mediaRecorder.onstop = async () => {
+    const recordedChunks = [...audioChunks];
+    audioChunks = [];
+
+    if (hasSpokenInCycle && recordedChunks.length > 0 && !voiceMutedByUser) {
+      hasSpokenInCycle = false;
+      const audioBlob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType || "audio/webm" });
+      if (audioBlob.size > 2000) {
+        await processAudioBlobWithWhisper(audioBlob);
+        return;
+      }
+    }
+    hasSpokenInCycle = false;
+    resumeListeningIfAllowed();
+  };
+
+  hasSpokenInCycle = false;
+  isVadSpeaking = false;
+  vadSpeechStartTime = 0;
+  vadSilenceStartTime = 0;
+  vadConsecutiveSpeechFrames = 0;
+  cycleStartTime = Date.now();
+
+  try {
+    mediaRecorder.start(100);
     isGroqWhisperRecording = true;
+  } catch (err) {
+    console.warn("[Voice Engine] mediaRecorder.start notice:", err);
+  }
+}
+
+function checkVadTick() {
+  if (!analyser || voiceMutedByUser || !isVoiceListening || isSpeakingTTS || isProcessingDirective || isWhisperTranscribing) {
+    if (isVadSpeaking) {
+      isVadSpeaking = false;
+      hasSpokenInCycle = false;
+    }
+    return;
+  }
+
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+  analyser.getByteTimeDomainData(dataArray);
+
+  let sumSquares = 0.0;
+  for (let i = 0; i < bufferLength; i++) {
+    const norm = (dataArray[i] - 128) / 128.0;
+    sumSquares += norm * norm;
+  }
+  const rms = Math.sqrt(sumSquares / bufferLength);
+
+  if (!isVadSpeaking) {
+    vadNoiseFloor = vadNoiseFloor * 0.96 + rms * 0.04;
+  }
+
+  const threshold = Math.max(0.022, vadNoiseFloor * 2.2);
+  const now = Date.now();
+
+  if (rms > threshold) {
+    vadConsecutiveSpeechFrames++;
+    if (vadConsecutiveSpeechFrames >= 3) {
+      if (!isVadSpeaking) {
+        isVadSpeaking = true;
+        hasSpokenInCycle = true;
+        vadSpeechStartTime = now;
+        vadSilenceStartTime = 0;
+        if (visorCmdInput && (!visorCmdInput.value || visorCmdInput.value.trim() === "")) {
+          visorCmdInput.placeholder = "Listening... Speak directive...";
+        }
+        if (visorMicBtn) {
+          visorMicBtn.classList.add("listening");
+        }
+      } else {
+        vadSilenceStartTime = 0;
+      }
+    }
+  } else {
+    vadConsecutiveSpeechFrames = 0;
+
+    if (isVadSpeaking) {
+      if (vadSilenceStartTime === 0) {
+        vadSilenceStartTime = now;
+      }
+
+      const silenceDuration = now - vadSilenceStartTime;
+      const speechDuration = now - vadSpeechStartTime;
+
+      // Automatic command trigger:
+      // When user finishes speaking (pauses for >= 750ms after speaking at least 300ms, or after 8s continuous speech):
+      if ((silenceDuration >= 750 && speechDuration >= 300) || speechDuration >= 8000) {
+        console.log(`[VAD] Automatic speech completion detected (${speechDuration}ms speech, ${silenceDuration}ms pause). Transcribing directive...`);
+        isVadSpeaking = false;
+        vadSilenceStartTime = 0;
+        vadConsecutiveSpeechFrames = 0;
+
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+      }
+    } else {
+      // Idle cycle: if silence exceeds 4.5 seconds, recycle recorder so audio buffer remains compact
+      if (mediaRecorder && mediaRecorder.state === "recording" && (now - cycleStartTime > 4500)) {
+        hasSpokenInCycle = false;
+        mediaRecorder.stop();
+      }
+    }
+  }
+}
+
+async function processAudioBlobWithWhisper(audioBlob) {
+  if (isWhisperTranscribing || voiceMutedByUser) return;
+  isWhisperTranscribing = true;
+
+  try {
+    if (visorCmdInput && (!visorCmdInput.value || visorCmdInput.value.trim() === "")) {
+      visorCmdInput.placeholder = "Processing voice directive with Groq Whisper...";
+    }
+    showJarvisFeedback("Processing voice directive with Groq Whisper...", null, true);
+
+    const base64Data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(audioBlob);
+    });
+
+    const text = await invoke("transcribe_audio_groq", {
+      audioBase64: base64Data,
+      mimeType: mediaRecorder?.mimeType || "audio/webm",
+    });
+
+    if (text && text.trim().length > 0) {
+      console.log("[Groq Whisper STT Transcribed]:", text);
+      await handleVoiceDirective(text.trim());
+    } else {
+      showJarvisFeedback("Standing by for your directive, sir.");
+    }
+  } catch (err) {
+    console.warn("[Groq Whisper STT] Error:", err);
+  } finally {
+    isWhisperTranscribing = false;
+    if (visorCmdInput && (!visorCmdInput.value || visorCmdInput.value.trim() === "")) {
+      visorCmdInput.placeholder = "Give an instruction or ask anything...";
+    }
+    if (!isSpeakingTTS && !isProcessingDirective) {
+      resumeListeningIfAllowed();
+    }
+  }
+}
+
+function resumeListeningIfAllowed() {
+  if (isVoiceListening && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective && !isWhisperTranscribing) {
+    setSystemState("listening");
     if (visorMicBtn) {
       visorMicBtn.classList.remove("muted");
       visorMicBtn.classList.add("listening");
       visorMicBtn.title = "Microphone Active (Click to Mute)";
     }
-    if (visorCmdInput) visorCmdInput.placeholder = "Listening... Speak now...";
-  } catch (err) {
-    console.warn("[Groq Whisper] getUserMedia notice:", err);
-    toggleVoiceListener();
+    if (visorMicText) {
+      visorMicText.textContent = "LISTENING";
+    }
+    startUtteranceRecording();
   }
 }
 
-function stopWhisperRecording() {
+async function startContinuousVoiceRecognition() {
+  if (voiceMutedByUser) return;
+  isVoiceListening = true;
+  isListening = true;
+  isContinuousVoiceActive = true;
+  setSystemState("listening");
+
+  const streamOk = await initAudioEngine();
+  if (!streamOk) {
+    console.warn("[Voice] Falling back to WebSpeech");
+    startWebSpeechFallback();
+    return;
+  }
+
+  if (!vadInterval) {
+    vadInterval = setInterval(checkVadTick, 35);
+  }
+
+  startUtteranceRecording();
+}
+
+function stopContinuousVoiceRecognition() {
+  isContinuousVoiceActive = false;
+  isVadSpeaking = false;
+  hasSpokenInCycle = false;
+  vadSpeechStartTime = 0;
+  vadSilenceStartTime = 0;
+  vadConsecutiveSpeechFrames = 0;
+
+  if (vadInterval) {
+    clearInterval(vadInterval);
+    vadInterval = null;
+  }
+
   if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    mediaRecorder.stop();
-    isGroqWhisperRecording = false;
-    if (visorMicBtn) visorMicBtn.classList.remove("listening");
-    if (visorCmdInput) visorCmdInput.placeholder = "Give an instruction or ask anything...";
+    try {
+      mediaRecorder.onstop = null;
+      mediaRecorder.stop();
+    } catch (e) {}
+  }
+
+  isGroqWhisperRecording = false;
+  if (visorMicBtn) {
+    visorMicBtn.classList.remove("listening");
+  }
+  if (visorCmdInput && (!visorCmdInput.value || visorCmdInput.value.trim() === "")) {
+    visorCmdInput.placeholder = "Give an instruction or ask anything...";
   }
 }
 
 async function handleMicButtonClick() {
-  if (voiceMutedByUser || (!isVoiceListening && !isGroqWhisperRecording)) {
+  if (voiceMutedByUser || !isVoiceListening) {
     // Unmute
     voiceMutedByUser = false;
     isVoiceListening = true;
@@ -2611,7 +2876,7 @@ async function handleMicButtonClick() {
     setSystemState("listening");
     showJarvisFeedback("Microphone active. Listening for your directive...");
     try { await invoke("set_voice_listening", { active: true }); } catch (e) {}
-    await startWhisperRecording();
+    await startContinuousVoiceRecognition();
   } else {
     // Mute
     voiceMutedByUser = true;
@@ -2625,7 +2890,7 @@ async function handleMicButtonClick() {
     setSystemState("idle");
     showJarvisFeedback("Microphone muted. Click mic to unmute, sir.");
     try { await invoke("set_voice_listening", { active: false }); } catch (e) {}
-    stopWhisperRecording();
+    stopContinuousVoiceRecognition();
   }
 }
 
