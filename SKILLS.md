@@ -90,6 +90,28 @@ Powered by real-time intelligence feeds (Google News RSS & Wikipedia APIs):
 - Studio-grade cloud speech recognition operating at <200ms latency.
 - Accessible via the Visor Microphone button (Push-to-Talk) alongside the silent offline Windows speech worker.
 
+### 8. Developer Agent (`write_code_jarvis`)
+Powered by `qwen/qwen3.8-27b` on Groq LPU with local `qwen3.5:2b` failsafe:
+- Generates complete, modern, production-grade source code (React, Python, JavaScript, HTML, algorithms, etc.).
+- Automatically detects target editor, focusing or launching **Notepad** (or **VS Code**).
+- Injects clean code directly into the active editor using native Win32 clipboard paste (`Ctrl+V`) with zero dropped characters or escaping issues.
+- Triggered by voice or text:
+  - *"open notepad and write code"*
+  - *"open notepad and write a react code"*
+  - *"write a react code"*
+  - *"write python script in vs code"*
+  - *"type hello world in notepad"*
+
+### 9. System Agent: Complete Desktop, Media, Mouse & Keyboard Automation
+Provides full hands-free voice control across Windows without touching keyboard or mouse:
+- **Media Controller**: Global play/pause, next track, previous track, stop (`play`, `pause`, `resume`, `play music`, `next song`, `previous song`, `stop music`).
+- **Mouse & Scrolling**: Real-time wheel scrolling (`scroll down`, `scroll up`, `scroll to top`, `scroll to bottom`), left click, right click, double click.
+- **Browser & Tabs**: New tab (`Ctrl+T`), close tab (`Ctrl+W`), reopen tab (`Ctrl+Shift+T`), switch tabs (`Ctrl+Tab`), refresh (`F5`), back/forward (`Alt+Left`/`Alt+Right`).
+- **Keyboard Shortcuts**: Save (`Ctrl+S`), copy (`Ctrl+C`), paste (`Ctrl+V`), select all (`Ctrl+A`), undo (`Ctrl+Z`), redo (`Ctrl+Y`), enter, escape, backspace, tab.
+- **Window Management**: Maximize, minimize, restore, snap left (`Win+Left`), snap right (`Win+Right`), switch window (`Alt+Tab`), close window (`Alt+F4`).
+- **Direct Typing**: Dictates and pastes text into any active field (`type [text]`).
+- **App Switching**: Focus any running window (`focus [app]`, `switch to [app]`).
+
 ---
 
 ## 🔌 How to Add New Skills

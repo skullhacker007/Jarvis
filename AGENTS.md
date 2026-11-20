@@ -67,8 +67,20 @@ flowchart TD
 3. **Sentinel Agent (System Telemetry & Security)** - **ACTIVE**:
    - *Role*: Continuous background monitoring of hardware health (CPU, 64GB RAM, Network I/O, WinMM mic).
 
-4. **Developer Agent (Code & Tool Automation)** - *Planned*:
-   - *Role*: Manages git workflows, test suites, and PR automation directly from voice instructions.
+4. **Developer Agent (Code Generation & Automatic Editor Typing)** - **ACTIVE**:
+   - *Role*: Live code synthesis (React, Python, JavaScript, HTML, algorithms) and direct injection into target editors (Notepad, VS Code) via native Win32 clipboard paste.
+   - *Model*: `qwen/qwen3.8-27b` on Groq LPU (with local `qwen3.5:2b` failsafe).
+   - *Trigger*: *"open notepad and write code"*, *"open notepad and write a react code"*, *"write react code"*, *"write python script in vs code"*.
+
+5. **System Agent (Complete Windows, Media, Mouse & Keyboard Automation)** - **ACTIVE**:
+   - *Role*: End-to-end hands-free desktop control without touching mouse or keyboard:
+     - **Media Controller**: Global play/pause, next track, previous track, stop (`VK_MEDIA_PLAY_PAUSE`, `VK_MEDIA_NEXT_TRACK`, `VK_MEDIA_PREV_TRACK`).
+     - **Scroll & Mouse Controller**: Real-time wheel scrolling (up/down/top/bottom), left click, right click, double click.
+     - **Keyboard & Shortcuts**: Ctrl+S (Save), Ctrl+C (Copy), Ctrl+V (Paste), Ctrl+A (Select All), Ctrl+Z (Undo), Ctrl+Y (Redo), Enter, Escape, Backspace, Tab.
+     - **Browser & Tabs**: Ctrl+T (New tab), Ctrl+W (Close tab), Ctrl+Shift+T (Reopen tab), Ctrl+Tab (Next tab), Ctrl+Shift+Tab (Previous tab), F5 (Refresh), Alt+Left (Back), Alt+Right (Forward).
+     - **Window Management**: Maximize, minimize, restore, snap left, snap right, switch window (Alt+Tab), close window (Alt+F4).
+     - **Direct Typing**: Voice dictation typing into any active window or text field.
+   - *Trigger*: Voice directives: *"play"*, *"pause"*, *"next song"*, *"scroll down"*, *"click"*, *"new tab"*, *"close tab"*, *"save"*, *"type [text]"*, *"maximize"*, etc.
 
 ---
 

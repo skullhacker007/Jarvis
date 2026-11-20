@@ -2359,95 +2359,62 @@ function normalizeVoiceTranscription(raw) {
   if (!text) return "";
   const lower = text.toLowerCase().replace(/[.,!?;:]/g, "").trim();
 
-  // 1. Direct phonetic corrections for "open notepad" / "notepad"
-  // Handles: "or a lot", "or a lot of", "all a lot", "or not bad", "open not bad", "open note pad", etc.
+  // 1. Preserve rich multi-word instructions (Developer Agent, System Agent, Search, Vision)
+  const isActionPhrase = /\b(?:write|type|generate|create|build|code|script|component|function|search|google|who|what|why|how|inspect|look|explain|debug|scroll|click|tab|window|save|copy|paste|select|undo|redo|enter|escape|play|pause|resume|skip|next|previous|stop|mute|volume|lock)\b/i.test(lower) ||
+                         lower.includes(" and ") || lower.includes(" in ") || lower.includes(" to ");
+
+  // 2. Media Controls: direct pass-through
   if (
-    lower === "or a lot" ||
-    lower === "or a lot of" ||
-    lower === "all a lot" ||
-    lower === "or not bad" ||
-    lower === "open not bad" ||
-    lower === "open note pad" ||
-    lower === "note pad" ||
-    lower === "notepad" ||
-    lower === "open note" ||
-    lower === "hope and notepad" ||
-    lower === "open knot pad"
+    lower === "play" || lower === "pause" || lower === "resume" ||
+    lower === "play music" || lower === "pause music" || lower === "stop music" ||
+    lower === "next" || lower === "next song" || lower === "next track" || lower === "skip" || lower === "skip song" ||
+    lower === "previous" || lower === "previous song" || lower === "previous track" || lower === "last song"
+  ) {
+    return lower;
+  }
+
+  // 3. Desktop Navigation & Action phrases: pass directly through
+  if (
+    lower === "scroll down" || lower === "scroll up" || lower === "click" || lower === "right click" ||
+    lower === "double click" || lower === "new tab" || lower === "close tab" || lower === "next tab" ||
+    lower === "previous tab" || lower === "refresh" || lower === "reload" || lower === "save" ||
+    lower === "copy" || lower === "paste" || lower === "select all" || lower === "undo" || lower === "redo" ||
+    lower === "maximize" || lower === "minimize" || lower === "restore" || lower === "snap left" ||
+    lower === "snap right" || lower === "switch window" || lower === "close window" || lower === "enter" ||
+    lower === "escape"
+  ) {
+    return lower;
+  }
+
+  // 4. If this is an action phrase (e.g. "open notepad and write react code"), DO NOT collapse to "open notepad"!
+  if (isActionPhrase) {
+    if (lower.startsWith("hope and ") || lower.startsWith("hope in ")) {
+      return text.replace(/^hope (?:and|in)/i, "open");
+    }
+    return text;
+  }
+
+  // 5. Standalone App Shortcuts & Phonetic Corrections (only when said on their own)
+  if (
+    lower === "or a lot" || lower === "or a lot of" || lower === "all a lot" ||
+    lower === "or not bad" || lower === "open not bad" || lower === "open note pad" ||
+    lower === "note pad" || lower === "notepad" || lower === "open note" ||
+    lower === "hope and notepad" || lower === "open knot pad"
   ) {
     return "open notepad";
   }
 
-  // Regex check for notepad
-  if (/\b(?:notepad|note\s*pad|not\s*bad)\b/i.test(lower)) {
-    if (/\b(?:close|kill|terminate|stop)\b/i.test(lower)) {
-      return "close notepad";
-    }
-    return "open notepad";
-  }
-
-  // 2. Calculator
-  if (/\b(?:calculator|calculate|calc)\b/i.test(lower)) {
-    if (/\b(?:close|kill|terminate|stop)\b/i.test(lower)) return "close calc";
-    return "open calc";
-  }
-
-  // 3. Code / VS Code
-  if (/\b(?:vs\s*code|visual\s*studio|west\s*code|west\s*coast)\b/i.test(lower) || lower === "code") {
-    if (/\b(?:close|kill|terminate|stop)\b/i.test(lower)) return "close code";
-    return "open vs code";
-  }
-
-  // 4. Phone / Call
-  if (/\b(?:phone|call|cellular|dialer|keypad)\b/i.test(lower)) {
-    if (/\b(?:keypad|dialer)\b/i.test(lower)) return "open dialer";
-    return "open phone";
-  }
-
-  // 5. Chrome / Browser
-  if (/\b(?:chrome|browser|google\s*chrome|brower)\b/i.test(lower)) {
-    if (/\b(?:close|kill|terminate|stop)\b/i.test(lower)) return "close chrome";
-    return "open chrome";
-  }
-
-  // 6. Terminal / CMD
-  if (/\b(?:terminal|command\s*prompt|powershell|cmd)\b/i.test(lower)) {
-    return "open terminal";
-  }
-
-  // 7. Task Manager
-  if (/\b(?:task\s*manager|taskmgr)\b/i.test(lower)) {
-    return "open taskmgr";
-  }
-
-  // 8. Spotify / Music
-  if (/\b(?:spotify|music|song|songs)\b/i.test(lower)) {
-    return "open spotify";
-  }
-
-  // 9. WhatsApp
-  if (/\b(?:whatsapp|whats\s*app)\b/i.test(lower)) {
-    return "open whatsapp";
-  }
-
-  // 10. Weather
-  if (/\b(?:weather|temperature|forecast|climate)\b/i.test(lower)) {
-    return "weather";
-  }
-
-  // 11. Time / Clock
-  if (/\b(?:time|clock)\b/i.test(lower)) {
-    return "time";
-  }
-
-  // 12. Date
-  if (/\b(?:date|today)\b/i.test(lower)) {
-    return "date";
-  }
-
-  // 13. Screenshot
-  if (/\b(?:screenshot|screen\s*shot|capture\s*screen)\b/i.test(lower)) {
-    return "take screenshot";
-  }
+  if (lower === "calculator" || lower === "calc") return "open calc";
+  if (lower === "vs code" || lower === "vscode" || lower === "visual studio" || lower === "code") return "open vs code";
+  if (lower === "spotify" || lower === "music") return "play music";
+  if (lower === "chrome" || lower === "browser" || lower === "google chrome") return "open chrome";
+  if (lower === "terminal" || lower === "command prompt" || lower === "powershell" || lower === "cmd") return "open terminal";
+  if (lower === "task manager" || lower === "taskmgr") return "open taskmgr";
+  if (lower === "whatsapp" || lower === "whats app") return "open whatsapp";
+  if (lower === "weather" || lower === "temperature" || lower === "climate") return "weather";
+  if (lower === "time" || lower === "clock") return "time";
+  if (lower === "date" || lower === "today") return "date";
+  if (lower === "screenshot" || lower === "screen shot" || lower === "capture screen") return "screenshot";
 
   return text;
 }

@@ -268,6 +268,281 @@ mod win32_apps {
     }
 }
 
+#[cfg(windows)]
+pub mod win32_system_agent {
+    use std::ffi::c_void;
+
+    type HWND = *mut c_void;
+    type BOOL = i32;
+    type UINT = u32;
+    type HANDLE = *mut c_void;
+    type HGLOBAL = *mut c_void;
+
+    const CF_UNICODETEXT: UINT = 13;
+    const GMEM_MOVEABLE: UINT = 0x0002;
+
+    pub const KEYEVENTF_KEYUP: u32 = 0x0002;
+
+    // Mouse flags
+    pub const MOUSEEVENTF_LEFTDOWN: u32 = 0x0002;
+    pub const MOUSEEVENTF_LEFTUP: u32 = 0x0004;
+    pub const MOUSEEVENTF_RIGHTDOWN: u32 = 0x0008;
+    pub const MOUSEEVENTF_RIGHTUP: u32 = 0x0010;
+    pub const MOUSEEVENTF_WHEEL: u32 = 0x0800;
+
+    // Virtual keys
+    pub const VK_BACK: u8 = 0x08;
+    pub const VK_TAB: u8 = 0x09;
+    pub const VK_RETURN: u8 = 0x0D;
+    pub const VK_SHIFT: u8 = 0x10;
+    pub const VK_CONTROL: u8 = 0x11;
+    pub const VK_MENU: u8 = 0x12; // Alt
+    pub const VK_ESCAPE: u8 = 0x1B;
+    pub const VK_LEFT: u8 = 0x25;
+    pub const VK_UP: u8 = 0x26;
+    pub const VK_RIGHT: u8 = 0x27;
+    pub const VK_DOWN: u8 = 0x28;
+    pub const VK_LWIN: u8 = 0x5B;
+    pub const VK_F4: u8 = 0x73;
+    pub const VK_F5: u8 = 0x74;
+    pub const VK_VOLUME_MUTE: u8 = 0xAD;
+    pub const VK_VOLUME_DOWN: u8 = 0xAE;
+    pub const VK_VOLUME_UP: u8 = 0xAF;
+    pub const VK_MEDIA_NEXT_TRACK: u8 = 0xB0;
+    pub const VK_MEDIA_PREV_TRACK: u8 = 0xB1;
+    pub const VK_MEDIA_STOP: u8 = 0xB2;
+    pub const VK_MEDIA_PLAY_PAUSE: u8 = 0xB3;
+
+    unsafe extern "system" {
+        fn OpenClipboard(hWndNewOwner: HWND) -> BOOL;
+        fn CloseClipboard() -> BOOL;
+        fn EmptyClipboard() -> BOOL;
+        fn SetClipboardData(uFormat: UINT, hMem: HANDLE) -> HANDLE;
+        fn GlobalAlloc(uFlags: UINT, dwBytes: usize) -> HGLOBAL;
+        fn GlobalLock(hMem: HGLOBAL) -> *mut c_void;
+        fn GlobalUnlock(hMem: HGLOBAL) -> BOOL;
+        fn keybd_event(bVk: u8, bScan: u8, dwFlags: u32, dwExtraInfo: usize);
+        fn mouse_event(dwFlags: u32, dx: u32, dy: u32, dwData: u32, dwExtraInfo: usize);
+        fn GetForegroundWindow() -> HWND;
+        fn ShowWindow(hWnd: HWND, nCmdShow: i32) -> BOOL;
+    }
+
+    pub fn media_play_pause() {
+        unsafe {
+            keybd_event(VK_MEDIA_PLAY_PAUSE, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            keybd_event(VK_MEDIA_PLAY_PAUSE, 0, KEYEVENTF_KEYUP, 0);
+        }
+    }
+
+    pub fn media_next() {
+        unsafe {
+            keybd_event(VK_MEDIA_NEXT_TRACK, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            keybd_event(VK_MEDIA_NEXT_TRACK, 0, KEYEVENTF_KEYUP, 0);
+        }
+    }
+
+    pub fn media_prev() {
+        unsafe {
+            keybd_event(VK_MEDIA_PREV_TRACK, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            keybd_event(VK_MEDIA_PREV_TRACK, 0, KEYEVENTF_KEYUP, 0);
+        }
+    }
+
+    pub fn media_stop() {
+        unsafe {
+            keybd_event(VK_MEDIA_STOP, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            keybd_event(VK_MEDIA_STOP, 0, KEYEVENTF_KEYUP, 0);
+        }
+    }
+
+    pub fn volume_mute() {
+        unsafe {
+            keybd_event(VK_VOLUME_MUTE, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            keybd_event(VK_VOLUME_MUTE, 0, KEYEVENTF_KEYUP, 0);
+        }
+    }
+
+    pub fn volume_up() {
+        unsafe {
+            for _ in 0..4 {
+                keybd_event(VK_VOLUME_UP, 0, 0, 0);
+                std::thread::sleep(std::time::Duration::from_millis(15));
+                keybd_event(VK_VOLUME_UP, 0, KEYEVENTF_KEYUP, 0);
+            }
+        }
+    }
+
+    pub fn volume_down() {
+        unsafe {
+            for _ in 0..4 {
+                keybd_event(VK_VOLUME_DOWN, 0, 0, 0);
+                std::thread::sleep(std::time::Duration::from_millis(15));
+                keybd_event(VK_VOLUME_DOWN, 0, KEYEVENTF_KEYUP, 0);
+            }
+        }
+    }
+
+    pub fn scroll(delta: i32) {
+        unsafe {
+            mouse_event(MOUSEEVENTF_WHEEL, 0, 0, delta as u32, 0);
+        }
+    }
+
+    pub fn click_left() {
+        unsafe {
+            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+        }
+    }
+
+    pub fn click_right() {
+        unsafe {
+            mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+        }
+    }
+
+    pub fn double_click() {
+        click_left();
+        std::thread::sleep(std::time::Duration::from_millis(90));
+        click_left();
+    }
+
+    pub fn send_key_combo_2(mod_vk: u8, key_vk: u8) {
+        unsafe {
+            keybd_event(mod_vk, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            keybd_event(key_vk, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            keybd_event(key_vk, 0, KEYEVENTF_KEYUP, 0);
+            keybd_event(mod_vk, 0, KEYEVENTF_KEYUP, 0);
+        }
+    }
+
+    pub fn send_key_combo_3(mod1: u8, mod2: u8, key: u8) {
+        unsafe {
+            keybd_event(mod1, 0, 0, 0);
+            keybd_event(mod2, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            keybd_event(key, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            keybd_event(key, 0, KEYEVENTF_KEYUP, 0);
+            keybd_event(mod2, 0, KEYEVENTF_KEYUP, 0);
+            keybd_event(mod1, 0, KEYEVENTF_KEYUP, 0);
+        }
+    }
+
+    pub fn send_single_key(key: u8) {
+        unsafe {
+            keybd_event(key, 0, 0, 0);
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            keybd_event(key, 0, KEYEVENTF_KEYUP, 0);
+        }
+    }
+
+    pub fn maximize_active_window() {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if !hwnd.is_null() {
+                ShowWindow(hwnd, 3); // SW_MAXIMIZE
+            }
+        }
+    }
+
+    pub fn minimize_active_window() {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if !hwnd.is_null() {
+                ShowWindow(hwnd, 6); // SW_MINIMIZE
+            }
+        }
+    }
+
+    pub fn restore_active_window() {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if !hwnd.is_null() {
+                ShowWindow(hwnd, 9); // SW_RESTORE
+            }
+        }
+    }
+
+    pub fn paste_text(text: &str) -> Result<(), String> {
+        let utf16: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let bytes = utf16.len() * 2;
+
+        unsafe {
+            let h_mem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+            if h_mem.is_null() {
+                return Err("Failed to allocate global memory for clipboard".into());
+            }
+
+            let p_mem = GlobalLock(h_mem);
+            if p_mem.is_null() {
+                return Err("Failed to lock global memory".into());
+            }
+
+            std::ptr::copy_nonoverlapping(utf16.as_ptr() as *const u8, p_mem as *mut u8, bytes);
+            GlobalUnlock(h_mem);
+
+            let mut opened = false;
+            for _ in 0..6 {
+                if OpenClipboard(std::ptr::null_mut()) != 0 {
+                    opened = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(30));
+            }
+
+            if !opened {
+                return Err("Could not open Windows clipboard".into());
+            }
+
+            EmptyClipboard();
+            SetClipboardData(CF_UNICODETEXT, h_mem);
+            CloseClipboard();
+
+            std::thread::sleep(std::time::Duration::from_millis(80));
+
+            // Press Ctrl+V
+            send_key_combo_2(VK_CONTROL, 0x56);
+        }
+
+        Ok(())
+    }
+}
+
+pub use win32_system_agent as win32_clipboard;
+
+#[cfg(not(windows))]
+pub mod win32_system_agent {
+    pub fn media_play_pause() {}
+    pub fn media_next() {}
+    pub fn media_prev() {}
+    pub fn media_stop() {}
+    pub fn volume_mute() {}
+    pub fn volume_up() {}
+    pub fn volume_down() {}
+    pub fn scroll(_delta: i32) {}
+    pub fn click_left() {}
+    pub fn click_right() {}
+    pub fn double_click() {}
+    pub fn send_key_combo_2(_mod_vk: u8, _key_vk: u8) {}
+    pub fn send_key_combo_3(_mod1: u8, _mod2: u8, _key: u8) {}
+    pub fn send_single_key(_key: u8) {}
+    pub fn maximize_active_window() {}
+    pub fn minimize_active_window() {}
+    pub fn restore_active_window() {}
+    pub fn paste_text(_text: &str) -> Result<(), String> { Ok(()) }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ModelMetrics {
     pub name: String,
@@ -1098,7 +1373,7 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
                 .spawn();
             Ok("Computer locked.".to_string())
         }
-        "minimize_all" | "minimize" => {
+        "minimize_all" | "show_desktop" => {
             let _ = silent_command("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", "(New-Object -ComObject Shell.Application).MinimizeAll()"])
                 .output();
@@ -1127,6 +1402,185 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", "Start-Process 'ms-screenclip:'"])
                 .spawn();
             Ok("Opened Screen Snip tool.".to_string())
+        }
+        "media_play" | "media_play_pause" | "play" | "pause" | "resume" | "toggle_play" => {
+            #[cfg(windows)]
+            win32_system_agent::media_play_pause();
+            Ok("Toggled media playback.".to_string())
+        }
+        "media_next" | "next_track" | "next_song" | "skip" => {
+            #[cfg(windows)]
+            win32_system_agent::media_next();
+            Ok("Skipped to next track.".to_string())
+        }
+        "media_prev" | "prev_track" | "previous_song" | "previous_track" => {
+            #[cfg(windows)]
+            win32_system_agent::media_prev();
+            Ok("Skipped to previous track.".to_string())
+        }
+        "media_stop" | "stop_music" => {
+            #[cfg(windows)]
+            win32_system_agent::media_stop();
+            Ok("Media playback stopped.".to_string())
+        }
+        "scroll_down" => {
+            #[cfg(windows)]
+            win32_system_agent::scroll(-480);
+            Ok("Scrolled down.".to_string())
+        }
+        "scroll_up" => {
+            #[cfg(windows)]
+            win32_system_agent::scroll(480);
+            Ok("Scrolled up.".to_string())
+        }
+        "scroll_bottom" => {
+            #[cfg(windows)]
+            win32_system_agent::scroll(-1440);
+            Ok("Scrolled to bottom.".to_string())
+        }
+        "scroll_top" => {
+            #[cfg(windows)]
+            win32_system_agent::scroll(1440);
+            Ok("Scrolled to top.".to_string())
+        }
+        "click" | "click_left" => {
+            #[cfg(windows)]
+            win32_system_agent::click_left();
+            Ok("Left click executed.".to_string())
+        }
+        "click_right" | "right_click" => {
+            #[cfg(windows)]
+            win32_system_agent::click_right();
+            Ok("Right click executed.".to_string())
+        }
+        "double_click" => {
+            #[cfg(windows)]
+            win32_system_agent::double_click();
+            Ok("Double click executed.".to_string())
+        }
+        "new_tab" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x54);
+            Ok("Opened new browser tab.".to_string())
+        }
+        "close_tab" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x57);
+            Ok("Closed active tab.".to_string())
+        }
+        "reopen_tab" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x54);
+            Ok("Reopened closed tab.".to_string())
+        }
+        "next_tab" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x09);
+            Ok("Switched to next tab.".to_string())
+        }
+        "prev_tab" | "previous_tab" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x09);
+            Ok("Switched to previous tab.".to_string())
+        }
+        "refresh" | "refresh_page" => {
+            #[cfg(windows)]
+            win32_system_agent::send_single_key(win32_system_agent::VK_F5);
+            Ok("Refreshed page.".to_string())
+        }
+        "browser_back" | "go_back" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_LEFT);
+            Ok("Navigated back.".to_string())
+        }
+        "browser_forward" | "go_forward" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_RIGHT);
+            Ok("Navigated forward.".to_string())
+        }
+        "save" | "save_file" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x53);
+            Ok("File saved.".to_string())
+        }
+        "copy" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x43);
+            Ok("Copied to clipboard.".to_string())
+        }
+        "paste" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x56);
+            Ok("Clipboard pasted.".to_string())
+        }
+        "select_all" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x41);
+            Ok("Selected all.".to_string())
+        }
+        "undo" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x5A);
+            Ok("Undo executed.".to_string())
+        }
+        "redo" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x59);
+            Ok("Redo executed.".to_string())
+        }
+        "maximize" => {
+            #[cfg(windows)]
+            win32_system_agent::maximize_active_window();
+            Ok("Maximized active window.".to_string())
+        }
+        "minimize" => {
+            #[cfg(windows)]
+            win32_system_agent::minimize_active_window();
+            Ok("Minimized active window.".to_string())
+        }
+        "restore" => {
+            #[cfg(windows)]
+            win32_system_agent::restore_active_window();
+            Ok("Restored active window.".to_string())
+        }
+        "snap_left" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_LEFT);
+            Ok("Snapped window left.".to_string())
+        }
+        "snap_right" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_RIGHT);
+            Ok("Snapped window right.".to_string())
+        }
+        "switch_window" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_TAB);
+            Ok("Switched window.".to_string())
+        }
+        "close_window" => {
+            #[cfg(windows)]
+            win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_F4);
+            Ok("Closed active window.".to_string())
+        }
+        "press_enter" => {
+            #[cfg(windows)]
+            win32_system_agent::send_single_key(win32_system_agent::VK_RETURN);
+            Ok("Enter sent.".to_string())
+        }
+        "press_escape" => {
+            #[cfg(windows)]
+            win32_system_agent::send_single_key(win32_system_agent::VK_ESCAPE);
+            Ok("Escape sent.".to_string())
+        }
+        "write_code" | "type_code" | "type" => {
+            #[cfg(windows)]
+            {
+                let _ = win32_system_agent::paste_text(clean_target);
+                Ok("Text injected into active window.".to_string())
+            }
+            #[cfg(not(windows))]
+            Ok("Typing simulated.".to_string())
         }
         _ => Err(format!("Unknown action: {}", action)),
     }
@@ -1237,6 +1691,696 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
             model_name: MODEL_NAME.to_string(),
             token_words: vec!["screenshot".into(), "→".into(), "Opening".into(), "screen".into(), "capture".into()],
         });
+    }
+
+    // -------------------------------------------------------------
+    // SYSTEM AGENT: Instant Desktop, Media, Mouse & Keyboard Fast-Paths
+    // -------------------------------------------------------------
+    // 1. Media Controller
+    if lower == "play" || lower == "resume" || lower == "play music" || lower == "pause" || lower == "pause music" || lower == "toggle play" || lower == "stop music" {
+        #[cfg(windows)]
+        {
+            if lower == "play music" {
+                // Ensure Spotify is launched/focused if play music was requested specifically
+                let _ = execute_system_action("open_app", "spotify");
+                std::thread::sleep(std::time::Duration::from_millis(400));
+            }
+            win32_system_agent::media_play_pause();
+        }
+        let reply = if lower.contains("pause") { "Media paused, sir." } else { "Media playback toggled, sir." };
+        return Some(JarvisResponse {
+            reply: reply.into(),
+            action: Some("🎵 Media Play/Pause".into()),
+            command: Some("VK_MEDIA_PLAY_PAUSE".into()),
+            output: Some("Media play/pause toggled.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["media".into(), "play".into()],
+        });
+    }
+
+    if lower == "next" || lower == "next song" || lower == "next track" || lower == "skip" || lower == "skip song" {
+        #[cfg(windows)]
+        win32_system_agent::media_next();
+        return Some(JarvisResponse {
+            reply: "Next track, sir.".into(),
+            action: Some("🎵 Next Track".into()),
+            command: Some("VK_MEDIA_NEXT_TRACK".into()),
+            output: Some("Skipped to next track.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["next".into(), "track".into()],
+        });
+    }
+
+    if lower == "previous" || lower == "previous song" || lower == "previous track" || lower == "last song" {
+        #[cfg(windows)]
+        win32_system_agent::media_prev();
+        return Some(JarvisResponse {
+            reply: "Previous track, sir.".into(),
+            action: Some("🎵 Previous Track".into()),
+            command: Some("VK_MEDIA_PREV_TRACK".into()),
+            output: Some("Returned to previous track.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["previous".into(), "track".into()],
+        });
+    }
+
+    // 2. Mouse & Scroll Controller
+    if lower == "scroll down" || lower == "scroll down a bit" || lower == "page down" {
+        #[cfg(windows)]
+        win32_system_agent::scroll(-480);
+        return Some(JarvisResponse {
+            reply: "Scrolled down, sir.".into(),
+            action: Some("🖱️ Scroll Down".into()),
+            command: Some("mouse_event WHEEL -480".into()),
+            output: Some("Scrolled down.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["scroll".into(), "down".into()],
+        });
+    }
+
+    if lower == "scroll up" || lower == "scroll up a bit" || lower == "page up" {
+        #[cfg(windows)]
+        win32_system_agent::scroll(480);
+        return Some(JarvisResponse {
+            reply: "Scrolled up, sir.".into(),
+            action: Some("🖱️ Scroll Up".into()),
+            command: Some("mouse_event WHEEL +480".into()),
+            output: Some("Scrolled up.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["scroll".into(), "up".into()],
+        });
+    }
+
+    if lower == "scroll to bottom" || lower == "scroll all the way down" {
+        #[cfg(windows)]
+        win32_system_agent::scroll(-1440);
+        return Some(JarvisResponse {
+            reply: "Scrolled to bottom, sir.".into(),
+            action: Some("🖱️ Scroll Bottom".into()),
+            command: Some("mouse_event WHEEL -1440".into()),
+            output: Some("Scrolled to bottom.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["scroll".into(), "bottom".into()],
+        });
+    }
+
+    if lower == "scroll to top" || lower == "scroll all the way up" {
+        #[cfg(windows)]
+        win32_system_agent::scroll(1440);
+        return Some(JarvisResponse {
+            reply: "Scrolled to top, sir.".into(),
+            action: Some("🖱️ Scroll Top".into()),
+            command: Some("mouse_event WHEEL +1440".into()),
+            output: Some("Scrolled to top.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["scroll".into(), "top".into()],
+        });
+    }
+
+    if lower == "click" || lower == "left click" {
+        #[cfg(windows)]
+        win32_system_agent::click_left();
+        return Some(JarvisResponse {
+            reply: "Clicked, sir.".into(),
+            action: Some("🖱️ Mouse Click".into()),
+            command: Some("mouse_event LEFT_CLICK".into()),
+            output: Some("Left click executed.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 3,
+            total_tokens: 4,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["click".into()],
+        });
+    }
+
+    if lower == "right click" {
+        #[cfg(windows)]
+        win32_system_agent::click_right();
+        return Some(JarvisResponse {
+            reply: "Right clicked, sir.".into(),
+            action: Some("🖱️ Right Click".into()),
+            command: Some("mouse_event RIGHT_CLICK".into()),
+            output: Some("Right click executed.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["right".into(), "click".into()],
+        });
+    }
+
+    if lower == "double click" {
+        #[cfg(windows)]
+        win32_system_agent::double_click();
+        return Some(JarvisResponse {
+            reply: "Double clicked, sir.".into(),
+            action: Some("🖱️ Double Click".into()),
+            command: Some("mouse_event DOUBLE_CLICK".into()),
+            output: Some("Double click executed.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["double".into(), "click".into()],
+        });
+    }
+
+    // 3. Browser & Tab Controller
+    if lower == "new tab" || lower == "open new tab" || lower == "open tab" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x54);
+        return Some(JarvisResponse {
+            reply: "New tab opened, sir.".into(),
+            action: Some("🌐 New Tab".into()),
+            command: Some("Ctrl + T".into()),
+            output: Some("New tab created.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["new".into(), "tab".into()],
+        });
+    }
+
+    if lower == "close tab" || lower == "close this tab" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x57);
+        return Some(JarvisResponse {
+            reply: "Active tab closed, sir.".into(),
+            action: Some("🌐 Close Tab".into()),
+            command: Some("Ctrl + W".into()),
+            output: Some("Active tab closed.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["close".into(), "tab".into()],
+        });
+    }
+
+    if lower == "reopen tab" || lower == "undo close tab" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x54);
+        return Some(JarvisResponse {
+            reply: "Reopened closed tab, sir.".into(),
+            action: Some("🌐 Reopen Tab".into()),
+            command: Some("Ctrl + Shift + T".into()),
+            output: Some("Reopened previous tab.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["reopen".into(), "tab".into()],
+        });
+    }
+
+    if lower == "next tab" || lower == "switch tab" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x09);
+        return Some(JarvisResponse {
+            reply: "Switched to next tab, sir.".into(),
+            action: Some("🌐 Next Tab".into()),
+            command: Some("Ctrl + Tab".into()),
+            output: Some("Switched to next tab.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["next".into(), "tab".into()],
+        });
+    }
+
+    if lower == "previous tab" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x09);
+        return Some(JarvisResponse {
+            reply: "Switched to previous tab, sir.".into(),
+            action: Some("🌐 Previous Tab".into()),
+            command: Some("Ctrl + Shift + Tab".into()),
+            output: Some("Switched to previous tab.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["previous".into(), "tab".into()],
+        });
+    }
+
+    if lower == "refresh" || lower == "refresh page" || lower == "reload" || lower == "reload page" {
+        #[cfg(windows)]
+        win32_system_agent::send_single_key(win32_system_agent::VK_F5);
+        return Some(JarvisResponse {
+            reply: "Refreshed page, sir.".into(),
+            action: Some("🌐 Refresh".into()),
+            command: Some("F5".into()),
+            output: Some("Page refreshed.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 3,
+            total_tokens: 4,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["refresh".into()],
+        });
+    }
+
+    if lower == "go back" || lower == "back" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_LEFT);
+        return Some(JarvisResponse {
+            reply: "Navigated back, sir.".into(),
+            action: Some("🌐 Go Back".into()),
+            command: Some("Alt + Left".into()),
+            output: Some("Navigated back.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 3,
+            total_tokens: 4,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["go".into(), "back".into()],
+        });
+    }
+
+    if lower == "go forward" || lower == "forward" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_RIGHT);
+        return Some(JarvisResponse {
+            reply: "Navigated forward, sir.".into(),
+            action: Some("🌐 Go Forward".into()),
+            command: Some("Alt + Right".into()),
+            output: Some("Navigated forward.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 3,
+            total_tokens: 4,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["go".into(), "forward".into()],
+        });
+    }
+
+    // 4. Keyboard Shortcuts
+    if lower == "save" || lower == "save file" || lower == "save this" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x53);
+        return Some(JarvisResponse {
+            reply: "File saved, sir.".into(),
+            action: Some("💾 Save File".into()),
+            command: Some("Ctrl + S".into()),
+            output: Some("Saved active file.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 3,
+            total_tokens: 4,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["save".into()],
+        });
+    }
+
+    if lower == "copy" || lower == "copy this" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x43);
+        return Some(JarvisResponse {
+            reply: "Copied, sir.".into(),
+            action: Some("📋 Copy".into()),
+            command: Some("Ctrl + C".into()),
+            output: Some("Copied to clipboard.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 3,
+            total_tokens: 4,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["copy".into()],
+        });
+    }
+
+    if lower == "paste" || lower == "paste this" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x56);
+        return Some(JarvisResponse {
+            reply: "Pasted, sir.".into(),
+            action: Some("📋 Paste".into()),
+            command: Some("Ctrl + V".into()),
+            output: Some("Clipboard pasted.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 3,
+            total_tokens: 4,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["paste".into()],
+        });
+    }
+
+    if lower == "select all" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x41);
+        return Some(JarvisResponse {
+            reply: "Selected all, sir.".into(),
+            action: Some("🔤 Select All".into()),
+            command: Some("Ctrl + A".into()),
+            output: Some("Selected all items.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 3,
+            total_tokens: 5,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["select".into(), "all".into()],
+        });
+    }
+
+    if lower == "undo" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x5A);
+        return Some(JarvisResponse {
+            reply: "Undone, sir.".into(),
+            action: Some("↩️ Undo".into()),
+            command: Some("Ctrl + Z".into()),
+            output: Some("Undo executed.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 3,
+            total_tokens: 4,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["undo".into()],
+        });
+    }
+
+    if lower == "redo" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x59);
+        return Some(JarvisResponse {
+            reply: "Redone, sir.".into(),
+            action: Some("↪️ Redo".into()),
+            command: Some("Ctrl + Y".into()),
+            output: Some("Redo executed.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 3,
+            total_tokens: 4,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["redo".into()],
+        });
+    }
+
+    if lower == "press enter" || lower == "hit enter" || lower == "enter" {
+        #[cfg(windows)]
+        win32_system_agent::send_single_key(win32_system_agent::VK_RETURN);
+        return Some(JarvisResponse {
+            reply: "Enter key sent, sir.".into(),
+            action: Some("⌨️ Enter".into()),
+            command: Some("VK_RETURN".into()),
+            output: Some("Enter key sent.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 4,
+            total_tokens: 5,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["enter".into()],
+        });
+    }
+
+    if lower == "press escape" || lower == "escape" {
+        #[cfg(windows)]
+        win32_system_agent::send_single_key(win32_system_agent::VK_ESCAPE);
+        return Some(JarvisResponse {
+            reply: "Escape pressed, sir.".into(),
+            action: Some("⌨️ Escape".into()),
+            command: Some("VK_ESCAPE".into()),
+            output: Some("Escape key sent.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 4,
+            total_tokens: 5,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["escape".into()],
+        });
+    }
+
+    if lower == "press backspace" || lower == "backspace" {
+        #[cfg(windows)]
+        win32_system_agent::send_single_key(win32_system_agent::VK_BACK);
+        return Some(JarvisResponse {
+            reply: "Backspace pressed, sir.".into(),
+            action: Some("⌨️ Backspace".into()),
+            command: Some("VK_BACK".into()),
+            output: Some("Backspace sent.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 4,
+            total_tokens: 5,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["backspace".into()],
+        });
+    }
+
+    if lower == "press tab" || lower == "tab" {
+        #[cfg(windows)]
+        win32_system_agent::send_single_key(win32_system_agent::VK_TAB);
+        return Some(JarvisResponse {
+            reply: "Tab key sent, sir.".into(),
+            action: Some("⌨️ Tab".into()),
+            command: Some("VK_TAB".into()),
+            output: Some("Tab key sent.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 1,
+            eval_tokens: 4,
+            total_tokens: 5,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["tab".into()],
+        });
+    }
+
+    // 5. Window Controls
+    if lower == "maximize" || lower == "maximize window" || lower == "full screen" {
+        #[cfg(windows)]
+        win32_system_agent::maximize_active_window();
+        return Some(JarvisResponse {
+            reply: "Window maximized, sir.".into(),
+            action: Some("🗖 Maximize".into()),
+            command: Some("SW_MAXIMIZE".into()),
+            output: Some("Active window maximized.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["maximize".into(), "window".into()],
+        });
+    }
+
+    if lower == "minimize" || lower == "minimize window" {
+        #[cfg(windows)]
+        win32_system_agent::minimize_active_window();
+        return Some(JarvisResponse {
+            reply: "Window minimized, sir.".into(),
+            action: Some("🗕 Minimize".into()),
+            command: Some("SW_MINIMIZE".into()),
+            output: Some("Active window minimized.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["minimize".into(), "window".into()],
+        });
+    }
+
+    if lower == "restore window" || lower == "restore" {
+        #[cfg(windows)]
+        win32_system_agent::restore_active_window();
+        return Some(JarvisResponse {
+            reply: "Window restored, sir.".into(),
+            action: Some("🗗 Restore".into()),
+            command: Some("SW_RESTORE".into()),
+            output: Some("Active window restored.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["restore".into(), "window".into()],
+        });
+    }
+
+    if lower == "snap left" || lower == "window left" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_LEFT);
+        return Some(JarvisResponse {
+            reply: "Window snapped to left, sir.".into(),
+            action: Some("◧ Snap Left".into()),
+            command: Some("Win + Left".into()),
+            output: Some("Snapped window left.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 5,
+            total_tokens: 7,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["snap".into(), "left".into()],
+        });
+    }
+
+    if lower == "snap right" || lower == "window right" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_LWIN, win32_system_agent::VK_RIGHT);
+        return Some(JarvisResponse {
+            reply: "Window snapped to right, sir.".into(),
+            action: Some("◨ Snap Right".into()),
+            command: Some("Win + Right".into()),
+            output: Some("Snapped window right.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 5,
+            total_tokens: 7,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["snap".into(), "right".into()],
+        });
+    }
+
+    if lower == "switch window" || lower == "next window" || lower == "alt tab" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_TAB);
+        return Some(JarvisResponse {
+            reply: "Switched window, sir.".into(),
+            action: Some("🔀 Switch Window".into()),
+            command: Some("Alt + Tab".into()),
+            output: Some("Switched to next window.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["switch".into(), "window".into()],
+        });
+    }
+
+    if lower == "close window" || lower == "close this window" || lower == "close this" {
+        #[cfg(windows)]
+        win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_F4);
+        return Some(JarvisResponse {
+            reply: "Closed active window, sir.".into(),
+            action: Some("❌ Close Window".into()),
+            command: Some("Alt + F4".into()),
+            output: Some("Closed active window.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 2,
+            eval_tokens: 4,
+            total_tokens: 6,
+            tokens_per_sec: 25.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["close".into(), "window".into()],
+        });
+    }
+
+    // 6. Direct Typing into Active Window
+    if lower.starts_with("type ") {
+        let text_to_type = prompt.trim_start()[5..].trim();
+        if !text_to_type.is_empty() {
+            #[cfg(windows)]
+            let _ = win32_system_agent::paste_text(text_to_type);
+            return Some(JarvisResponse {
+                reply: format!("Typed '{}', sir.", text_to_type),
+                action: Some("⌨️ Type Text".into()),
+                command: Some(format!("paste_text: {}", text_to_type)),
+                output: Some(format!("Typed: {}", text_to_type)),
+                latency_ms: start.elapsed().as_millis(),
+                prompt_tokens: 4,
+                eval_tokens: 5,
+                total_tokens: 9,
+                tokens_per_sec: 25.0,
+                model_name: MODEL_NAME.to_string(),
+                token_words: vec!["type".into(), "→".into(), text_to_type.into()],
+            });
+        }
+    }
+
+    // 7. Focus / Switch to specific window
+    if lower.starts_with("focus ") || lower.starts_with("switch to ") {
+        let app_target = lower.trim_start_matches("focus ").trim_start_matches("switch to ").trim();
+        if !app_target.is_empty() {
+            let res = execute_system_action("focus_app", app_target);
+            let ok_msg = res.unwrap_or_else(|_| format!("Switched to {}", app_target));
+            return Some(JarvisResponse {
+                reply: format!("Focused {}, sir.", app_target),
+                action: Some(format!("⚡ Focus {}", app_target)),
+                command: Some(format!("focus_window: {}", app_target)),
+                output: Some(ok_msg),
+                latency_ms: start.elapsed().as_millis(),
+                prompt_tokens: 3,
+                eval_tokens: 4,
+                total_tokens: 7,
+                tokens_per_sec: 25.0,
+                model_name: MODEL_NAME.to_string(),
+                token_words: vec!["focus".into(), "→".into(), app_target.into()],
+            });
+        }
     }
 
     None
@@ -1563,6 +2707,205 @@ async fn handle_screen_vision(
     })
 }
 
+// -------------------------------------------------------------
+// Developer Agent: Code Generation & Automatic Editor Typing
+// -------------------------------------------------------------
+async fn handle_developer_code(
+    prompt: &str,
+    state: &tauri::State<'_, AppState>,
+    start_time: Instant,
+) -> Result<JarvisResponse, String> {
+    let lower_prompt = prompt.to_lowercase();
+
+    // Determine target editor: VS Code or Notepad
+    let (target_app_name, open_app_exe) = if lower_prompt.contains("vs code") || lower_prompt.contains("vscode") || lower_prompt.contains("visual studio code") {
+        ("VS Code", "code")
+    } else {
+        ("Notepad", "notepad")
+    };
+
+    // 1. Ensure target application is open and brought to foreground
+    #[cfg(windows)]
+    {
+        let focused = win32_apps::focus_window(open_app_exe);
+        if !focused {
+            let _ = execute_system_action("open_app", open_app_exe);
+            tokio::time::sleep(Duration::from_millis(700)).await;
+            win32_apps::focus_window(open_app_exe);
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+
+    // 2. Query Developer Agent (Groq LPU or Local Ollama Failsafe)
+    let groq_key = get_groq_api_key();
+    let client = reqwest::Client::new();
+    let mut generated_code = String::new();
+    let mut used_model = "qwen/qwen3.8-27b".to_string();
+    let mut prompt_tokens = 0u32;
+    let mut eval_tokens = 0u32;
+    let mut tokens_per_sec = 265.0f32;
+
+    let dev_system_prompt = r#"You are J.A.R.V.I.S. Developer Agent.
+The user wants you to generate code to be typed directly into their editor (Notepad or VS Code).
+CRITICAL RULES:
+1. Output ONLY the raw source code.
+2. Do NOT output markdown code fences (NO ```jsx, NO ```js, NO ```).
+3. Do NOT include greetings, intro text, conversational filler, or explanations.
+4. If asked for React, write a complete, modern React functional component with state and hooks.
+5. Provide complete, fully functional, clean, production-ready code ready to run."#;
+
+    if !groq_key.is_empty() {
+        let groq_payload = serde_json::json!({
+            "model": "qwen/qwen3.8-27b",
+            "messages": [
+                { "role": "system", "content": dev_system_prompt },
+                { "role": "user", "content": prompt }
+            ],
+            "temperature": 0.1,
+            "max_tokens": 1500
+        });
+
+        if let Ok(resp) = client
+            .post(GROQ_CHAT_URL)
+            .header("Authorization", format!("Bearer {}", groq_key))
+            .header("Content-Type", "application/json")
+            .timeout(Duration::from_millis(8000))
+            .json(&groq_payload)
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(json_val) = resp.json::<serde_json::Value>().await {
+                    if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
+                        generated_code = content.trim().to_string();
+                        prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as u32;
+                        eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(0) as u32;
+                        let ctime = json_val["usage"]["completion_time"].as_f64().unwrap_or(0.0);
+                        if ctime > 0.0 {
+                            tokens_per_sec = (eval_tokens as f32) / (ctime as f32);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Failsafe backup to Local Ollama if Groq failed or was unavailable
+    if generated_code.is_empty() {
+        used_model = "qwen3.5:2b (LOCAL)".to_string();
+        let ollama_payload = serde_json::json!({
+            "model": "qwen3.5:2b",
+            "messages": [
+                { "role": "system", "content": dev_system_prompt },
+                { "role": "user", "content": prompt }
+            ],
+            "think": false,
+            "options": {
+                "temperature": 0.1,
+                "num_predict": 800,
+                "num_thread": 10
+            },
+            "keep_alive": "-1",
+            "stream": false
+        });
+
+        if let Ok(resp) = client
+            .post(OLLAMA_CHAT_URL)
+            .timeout(Duration::from_secs(16))
+            .json(&ollama_payload)
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(json_val) = resp.json::<serde_json::Value>().await {
+                    if let Some(content) = json_val["message"]["content"].as_str() {
+                        generated_code = content.trim().to_string();
+                        eval_tokens = json_val["eval_count"].as_u64().unwrap_or(0) as u32;
+                        prompt_tokens = json_val["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
+                        let dur = json_val["eval_duration"].as_u64().unwrap_or(0);
+                        if dur > 0 {
+                            tokens_per_sec = eval_tokens as f32 / (dur as f32 / 1_000_000_000.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Strip markdown code fences if model included them
+    let mut clean_code = generated_code.as_str().trim();
+    if clean_code.starts_with("```") {
+        if let Some(idx) = clean_code.find('\n') {
+            clean_code = &clean_code[idx + 1..];
+        }
+    }
+    if clean_code.ends_with("```") {
+        clean_code = clean_code.trim_end_matches("```").trim_end();
+    }
+    let clean_code = clean_code.trim();
+
+    // 3. Re-focus editor and paste code
+    #[cfg(windows)]
+    {
+        if !clean_code.is_empty() {
+            win32_apps::focus_window(open_app_exe);
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            let _ = win32_clipboard::paste_text(clean_code);
+        }
+    }
+
+    let latency_ms = start_time.elapsed().as_millis();
+    let total_tokens = prompt_tokens + eval_tokens;
+
+    if let Ok(mut mm) = state.model_metrics.lock() {
+        mm.name = used_model.clone();
+        mm.eval_tokens_per_sec = tokens_per_sec;
+        mm.last_eval_count = eval_tokens;
+        mm.last_prompt_eval_count = prompt_tokens;
+        mm.last_latency_ms = latency_ms;
+        mm.is_loaded = true;
+    }
+    if let Ok(mut stats) = state.model_stats.lock() {
+        let entry = stats.entry(used_model.clone()).or_default();
+        entry.tokens_used += total_tokens as u64;
+        entry.speed_tok_s = tokens_per_sec;
+        entry.latency_ms = latency_ms;
+    }
+
+    let reply = if clean_code.is_empty() {
+        "I was unable to synthesize the code at this moment, sir.".to_string()
+    } else if lower_prompt.contains("react") {
+        format!("I have written the React component into {}, sir.", target_app_name)
+    } else {
+        format!("Code written into {}, sir.", target_app_name)
+    };
+
+    let mut words: Vec<String> = prompt.split_whitespace().map(|s| s.to_string()).collect();
+    words.push("→".to_string());
+    for w in reply.split_whitespace() {
+        words.push(w.to_string());
+    }
+
+    Ok(JarvisResponse {
+        reply: reply.clone(),
+        action: Some(format!("⚡ Developer Agent: Code Injected into {}", target_app_name)),
+        command: Some(format!("Target: {} | Lines: {}", target_app_name, clean_code.lines().count())),
+        output: Some(clean_code.to_string()),
+        latency_ms,
+        prompt_tokens,
+        eval_tokens,
+        total_tokens,
+        tokens_per_sec,
+        model_name: used_model,
+        token_words: words,
+    })
+}
+
+#[tauri::command]
+async fn write_code_jarvis(prompt: String, state: tauri::State<'_, AppState>) -> Result<JarvisResponse, String> {
+    handle_developer_code(&prompt, &state, Instant::now()).await
+}
+
 #[tauri::command]
 async fn transcribe_audio_groq(audio_base64: String, mime_type: Option<String>) -> Result<String, String> {
     use base64::Engine;
@@ -1682,6 +3025,34 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>) -> Result
        lower_prompt.starts_with("latest news") ||
        lower_prompt.starts_with("stock price") {
         return handle_web_search(prompt_clean, &state, start_time).await;
+    }
+
+    // 3. Developer Agent: Code generation & automatic editor typing directives
+    let has_write_or_type = lower_prompt.contains("write ")
+        || lower_prompt.contains("type ")
+        || lower_prompt.contains("generate ")
+        || lower_prompt.contains("create ")
+        || lower_prompt.starts_with("write")
+        || lower_prompt.starts_with("type");
+
+    let has_code_subject = lower_prompt.contains("code")
+        || lower_prompt.contains("react")
+        || lower_prompt.contains("python")
+        || lower_prompt.contains("javascript")
+        || lower_prompt.contains("js")
+        || lower_prompt.contains("ts")
+        || lower_prompt.contains("typescript")
+        || lower_prompt.contains("html")
+        || lower_prompt.contains("css")
+        || lower_prompt.contains("component")
+        || lower_prompt.contains("function")
+        || lower_prompt.contains("script")
+        || lower_prompt.contains("program")
+        || lower_prompt.contains("algorithm")
+        || lower_prompt.contains("hello world");
+
+    if (has_write_or_type && has_code_subject) || (lower_prompt.contains("notepad") && (lower_prompt.contains("write") || lower_prompt.contains("type"))) {
+        return handle_developer_code(prompt_clean, &state, start_time).await;
     }
 
     // Query Auto-Failover Multi-Model Fleet (Groq LPUs + Local Ollama Failsafe)
@@ -2493,7 +3864,8 @@ pub fn run() {
             set_voice_listening,
             transcribe_audio_groq,
             web_search_jarvis,
-            inspect_screen_jarvis
+            inspect_screen_jarvis,
+            write_code_jarvis
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2557,6 +3929,36 @@ mod tests {
         let (action4, target4, _) = parse_model_output(r#"{"action":"open_app","target":"vs code","reply":"Opening Code."}"#, "open vs code");
         assert_eq!(action4, "open_app");
         assert_eq!(target4, "code");
+    }
+
+    #[test]
+    fn test_win32_clipboard_paste() {
+        let code_sample = "const App = () => <h1>Hello React from JARVIS</h1>;";
+        let res = win32_clipboard::paste_text(code_sample);
+        assert!(res.is_ok(), "Failed to set clipboard: {:?}", res);
+    }
+
+    #[test]
+    fn test_system_agent_fast_path() {
+        let res_play = check_fast_path("play");
+        assert!(res_play.is_some(), "check_fast_path('play') should return Some");
+        let res_p = res_play.unwrap();
+        assert_eq!(res_p.reply, "Media playback toggled, sir.");
+
+        let res_pause = check_fast_path("pause");
+        assert!(res_pause.is_some(), "check_fast_path('pause') should return Some");
+
+        let res_next = check_fast_path("next song");
+        assert!(res_next.is_some(), "check_fast_path('next song') should return Some");
+
+        let res_scroll = check_fast_path("scroll down");
+        assert!(res_scroll.is_some(), "check_fast_path('scroll down') should return Some");
+
+        let res_newtab = check_fast_path("new tab");
+        assert!(res_newtab.is_some(), "check_fast_path('new tab') should return Some");
+
+        let res_save = check_fast_path("save");
+        assert!(res_save.is_some(), "check_fast_path('save') should return Some");
     }
 
     #[test]
