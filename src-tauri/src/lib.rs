@@ -7,7 +7,6 @@ use sysinfo::{Networks, System};
 
 const OLLAMA_CHAT_URL: &str = "http://127.0.0.1:11434/api/chat";
 const OLLAMA_PS_URL: &str = "http://127.0.0.1:11434/api/ps";
-const OLLAMA_TAGS_URL: &str = "http://127.0.0.1:11434/api/tags";
 const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL_NAME: &str = "qwen3.5:2b";
 
