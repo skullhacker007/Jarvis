@@ -135,21 +135,38 @@ const btnDockCall = document.getElementById("btn-dock-call");
 const btnDockMail = document.getElementById("btn-dock-mail");
 const btnDockWhatsapp = document.getElementById("btn-dock-whatsapp");
 const btnDockMusic = document.getElementById("btn-dock-music");
+const btnDockSearch = document.getElementById("btn-dock-search");
 
-// Holographic Subtitle Visor & Directive HUD DOM
-const visorBeaconDot = document.getElementById("visor-beacon-dot");
-const visorStatusLabel = document.getElementById("visor-status-label");
-const visorMicIndicator = document.getElementById("visor-mic-indicator");
-const visorMicText = document.getElementById("visor-mic-text");
-const visorUserLine = document.getElementById("visor-user-line");
-const visorUserText = document.getElementById("visor-user-text");
-const visorJarvisLine = document.getElementById("visor-jarvis-line");
-const visorJarvisText = document.getElementById("visor-jarvis-text");
-const visorActionTag = document.getElementById("visor-action-tag");
-const visorActionDesc = document.getElementById("visor-action-desc");
+// Compact Floating Input Bar (Mic - Textfield - Exec)
+const visorContainer = document.getElementById("holographic-visor-container");
 const visorCommandForm = document.getElementById("visor-command-form");
 const visorCmdInput = document.getElementById("visor-cmd-input");
 const visorMicBtn = document.getElementById("visor-mic-btn");
+
+function openInputBar() {
+  if (visorContainer) {
+    visorContainer.classList.remove("visor-collapsed");
+    btnDockSearch?.classList.add("active");
+    setTimeout(() => visorCmdInput?.focus(), 50);
+  }
+}
+
+function closeInputBar() {
+  if (visorContainer) {
+    visorContainer.classList.add("visor-collapsed");
+    btnDockSearch?.classList.remove("active");
+  }
+}
+
+function toggleInputBar() {
+  if (visorContainer) {
+    if (visorContainer.classList.contains("visor-collapsed")) {
+      openInputBar();
+    } else {
+      closeInputBar();
+    }
+  }
+}
 
 // Canvases
 const cpuCanvas = document.getElementById("cpu-graph-canvas");
@@ -197,6 +214,10 @@ const ramHistory = Array.from({ length: 35 }, (_, i) => Math.round(25 + Math.sin
 const netHistory = Array.from({ length: 35 }, (_, i) => Math.round(16 + Math.sin(i * 0.5) * 8 + (Math.random() * 5)));
 
 // State
+let isVoiceListening = false;
+let voiceMutedByUser = false;
+let isSpeakingTTS = false;
+let isProcessingDirective = false;
 let isAudioActive = false;
 let synthesisVoices = [];
 let recognition = null;
@@ -212,13 +233,22 @@ function updateMicUI(hasMic) {
   if (!hasPhysicalMic) {
     isAudioActive = false;
     isListening = false;
+    isVoiceListening = false;
+    setSystemState("idle");
+    if (visorMicText) visorMicText.textContent = "NO MIC";
+    if (visorMicBtn) visorMicBtn.classList.remove("listening");
     if (recognition) {
       try { recognition.stop(); } catch (e) {}
     }
   } else {
-    if (!isAudioActive) {
-      isAudioActive = true;
-      startVoiceListener();
+    isAudioActive = true;
+    if (!voiceMutedByUser && !isVoiceListening) {
+      isVoiceListening = true;
+      isListening = true;
+      setSystemState("listening");
+      if (visorMicText) visorMicText.textContent = "LISTENING...";
+      if (visorMicBtn) visorMicBtn.classList.add("listening");
+      startTauriVoiceListener();
     }
   }
 }
@@ -1937,7 +1967,7 @@ function setSystemState(state) {
 // -------------------------------------------------------------
 function speakResponse(text) {
   if (!("speechSynthesis" in window) || !text) {
-    setSystemState(isListening ? "listening" : "idle");
+    setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
     return;
   }
 
@@ -1953,15 +1983,18 @@ function speakResponse(text) {
   if (voice) utterance.voice = voice;
 
   utterance.onstart = () => {
+    isSpeakingTTS = true;
     setSystemState("speaking");
   };
 
   utterance.onend = () => {
-    setSystemState(isListening ? "listening" : "idle");
+    isSpeakingTTS = false;
+    setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
   };
 
   utterance.onerror = () => {
-    setSystemState(isListening ? "listening" : "idle");
+    isSpeakingTTS = false;
+    setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
   };
 
   window.speechSynthesis.speak(utterance);
@@ -1973,6 +2006,9 @@ function speakResponse(text) {
 async function processDirective(prompt) {
   const clean = prompt.trim();
   if (!clean) return;
+
+  // Ensure input bar is visible when directive is being handled
+  openInputBar();
 
   // Fast-Path: Direct Phone Keypad / Dialer Matrix (100% Direct - No Microsoft Phone Link)
   const lowerDirective = clean.toLowerCase();
@@ -2157,11 +2193,11 @@ visorCmdInput?.addEventListener("keydown", (e) => {
 
 visorMicBtn?.addEventListener("click", (e) => {
   e.preventDefault();
-  toggleVoiceListener();
+  handleMicButtonClick();
 });
 
 // -------------------------------------------------------------
-// BORDERLESS APP DOCK REAL LAUNCHERS (PHONE, OUTLOOK, WHATSAPP, SPOTIFY)
+// BORDERLESS APP DOCK REAL LAUNCHERS (PHONE, OUTLOOK, WHATSAPP, SPOTIFY, GLOBE AI)
 // -------------------------------------------------------------
 btnDockCall?.addEventListener("click", (e) => {
   e.preventDefault();
@@ -2178,6 +2214,18 @@ btnDockWhatsapp?.addEventListener("click", async () => {
 
 btnDockMusic?.addEventListener("click", async () => {
   await processDirective("open spotify");
+});
+
+// Single Unified Globe Icon for All 3 AI Functions (Search, Screen, Actions)
+btnDockSearch?.addEventListener("click", (e) => {
+  e.preventDefault();
+  toggleInputBar();
+});
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeInputBar();
+  }
 });
 
 function normalizeVoiceTranscription(raw) {
@@ -2279,68 +2327,206 @@ function normalizeVoiceTranscription(raw) {
 }
 
 // -------------------------------------------------------------
-// PHYSICAL MICROPHONE & SPEECH RECOGNITION CONTROLLER
+// PHYSICAL MICROPHONE & HIGH-PERFORMANCE VOICE DIRECTIVE CONTROLLER
 // -------------------------------------------------------------
-let isVoiceActive = false;
+let isTauriListeningStarted = false;
+let isListenLoopRunning = false;
+let lastProcessedVoice = "";
+let lastProcessedTime = 0;
 
-async function toggleVoiceListener() {
-  if (isVoiceActive) {
-    isVoiceActive = false;
-    setSystemState("idle");
-    if (visorMicText) visorMicText.textContent = "VOICE READY";
-    if (visorMicBtn) visorMicBtn.classList.remove("listening");
+async function handleVoiceDirective(rawText) {
+  if (!isVoiceListening || voiceMutedByUser) {
+    console.log("[Voice] Ignored because voice is muted:", rawText);
+    return;
+  }
+  if (isSpeakingTTS) {
+    console.log("[Voice] Ignored because Jarvis is currently speaking TTS:", rawText);
+    return;
+  }
+  if (isProcessingDirective) {
+    console.log("[Voice] Directive currently executing, ignoring:", rawText);
     return;
   }
 
-  isVoiceActive = true;
-  setSystemState("listening");
-  if (visorMicText) visorMicText.textContent = "LISTENING...";
-  if (visorMicBtn) visorMicBtn.classList.add("listening");
-  if (visorJarvisText) visorJarvisText.textContent = "Listening for your voice directive, sir...";
+  const clean = (rawText || "").trim();
+  if (!clean) return;
 
-  // 1. Primary: Native Windows System.Speech Engine via Rust Tauri IPC (100% Silent & Fast)
-  const nativeInvoke = getTauriInvoke();
-  if (nativeInvoke) {
-    try {
-      const recognized = await invoke("listen_mic");
-      isVoiceActive = false;
-      if (visorMicBtn) visorMicBtn.classList.remove("listening");
-      if (visorMicText) visorMicText.textContent = "VOICE READY";
+  const now = Date.now();
+  if (clean.toLowerCase() === lastProcessedVoice.toLowerCase() && (now - lastProcessedTime) < 2000) {
+    return;
+  }
+  lastProcessedVoice = clean;
+  lastProcessedTime = now;
 
-      const cleanText = (recognized || "").trim();
-      if (cleanText.length > 0) {
-        const normalized = normalizeVoiceTranscription(cleanText);
-        // Explicitly display what voice input heard into text field so user can verify
-        if (visorCmdInput) {
-          visorCmdInput.value = normalized;
-          visorCmdInput.focus();
-        }
-        if (visorUserText) {
-          visorUserText.textContent = `"${normalized}"`;
-        }
-        if (visorUserLine) {
-          visorUserLine.style.display = "flex";
-        }
-        if (visorJarvisText) {
-          visorJarvisText.textContent = `Voice directive received: "${normalized}" — Processing...`;
-        }
-        await processDirective(normalized);
-      } else {
-        setSystemState("idle");
-        if (visorJarvisText) visorJarvisText.textContent = "Standing by for your directive, sir.";
-      }
-      return;
-    } catch (err) {
-      console.warn("Native mic error:", err);
-    }
+  const normalized = normalizeVoiceTranscription(clean);
+  if (!normalized) return;
+
+  console.log(`[JARVIS Directive Triggered]: "${clean}" -> "${normalized}"`);
+  openInputBar();
+
+  if (visorCmdInput) {
+    visorCmdInput.value = "";
+  }
+  if (visorUserText) {
+    visorUserText.textContent = `"${normalized}"`;
+  }
+  if (visorUserLine) {
+    visorUserLine.style.display = "flex";
+  }
+  if (visorJarvisText) {
+    visorJarvisText.textContent = `Voice directive received: "${normalized}" — Processing...`;
   }
 
-  // 2. Fallback: WebSpeech API (when running in Chromium browser)
+  isProcessingDirective = true;
+  try {
+    await processDirective(normalized);
+  } finally {
+    isProcessingDirective = false;
+  }
+}
+
+async function startTauriVoiceListener() {
+  const nativeInvoke = getTauriInvoke();
+  if (!nativeInvoke) {
+    startWebSpeechFallback();
+    return;
+  }
+
+  if (isTauriListeningStarted) return;
+  isTauriListeningStarted = true;
+
+  // 1. Primary: Event-driven instant speech reception from Rust background worker
+  try {
+    if (window.__TAURI__?.event?.listen) {
+      await window.__TAURI__.event.listen("jarvis://voice_directive", (event) => {
+        handleVoiceDirective(event.payload);
+      });
+      console.log("[Tauri Voice] Event listener hooked to jarvis://voice_directive");
+    } else if (window.__TAURI_INTERNALS__?.listen) {
+      await window.__TAURI_INTERNALS__.listen("jarvis://voice_directive", (event) => {
+        handleVoiceDirective(event.payload);
+      });
+      console.log("[Tauri Voice] Internals event listener hooked to jarvis://voice_directive");
+    }
+  } catch (e) {
+    console.warn("[Tauri Voice] Event listener hook notice:", e);
+  }
+
+  // 2. Secondary: Resilient background recognition loop via listen_mic IPC
+  runContinuousListenLoop();
+}
+
+async function runContinuousListenLoop() {
+  if (isListenLoopRunning) return;
+  isListenLoopRunning = true;
+
+  while (true) {
+    if (isVoiceListening && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective) {
+      try {
+        const text = await invoke("listen_mic");
+        if (text && text.trim().length > 0) {
+          handleVoiceDirective(text.trim());
+        }
+      } catch (err) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    } else {
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+}
+
+let mediaRecorder = null;
+let audioChunks = [];
+let isGroqWhisperRecording = false;
+
+async function startWhisperRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      if (audioChunks.length === 0) return;
+      const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Data = reader.result;
+        try {
+          if (visorCmdInput) visorCmdInput.placeholder = "Processing voice with Groq Whisper...";
+          const text = await invoke("transcribe_audio_groq", {
+            audioBase64: base64Data,
+            mimeType: "audio/webm",
+          });
+          if (text && text.trim().length > 0) {
+            console.log("[Groq Whisper STT]:", text);
+            if (visorCmdInput) visorCmdInput.value = "";
+            processDirective(text.trim());
+          }
+        } catch (err) {
+          console.warn("[Groq Whisper STT] Error:", err);
+        } finally {
+          if (visorCmdInput) visorCmdInput.placeholder = "Give an instruction or ask anything...";
+        }
+      };
+      reader.readAsDataURL(audioBlob);
+    };
+    mediaRecorder.start();
+    isGroqWhisperRecording = true;
+    if (visorMicBtn) visorMicBtn.classList.add("listening");
+    if (visorCmdInput) visorCmdInput.placeholder = "Listening... Speak now...";
+  } catch (err) {
+    console.warn("[Groq Whisper] getUserMedia notice:", err);
+    toggleVoiceListener();
+  }
+}
+
+function stopWhisperRecording() {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    mediaRecorder.stop();
+    isGroqWhisperRecording = false;
+    if (visorMicBtn) visorMicBtn.classList.remove("listening");
+    if (visorCmdInput) visorCmdInput.placeholder = "Give an instruction or ask anything...";
+  }
+}
+
+async function handleMicButtonClick() {
+  if (isGroqWhisperRecording) {
+    stopWhisperRecording();
+  } else {
+    await startWhisperRecording();
+  }
+}
+
+async function toggleVoiceListener() {
+  if (isVoiceListening && !voiceMutedByUser) {
+    voiceMutedByUser = true;
+    isVoiceListening = false;
+    isListening = false;
+    setSystemState("idle");
+    if (visorMicText) visorMicText.textContent = "VOICE MUTED";
+    if (visorMicBtn) visorMicBtn.classList.remove("listening");
+    if (visorJarvisText) visorJarvisText.textContent = "Voice listening muted. Click mic to unmute, sir.";
+    try { await invoke("set_voice_listening", { active: false }); } catch (e) {}
+  } else {
+    voiceMutedByUser = false;
+    isVoiceListening = true;
+    isListening = true;
+    setSystemState("listening");
+    if (visorMicText) visorMicText.textContent = "LISTENING...";
+    if (visorMicBtn) visorMicBtn.classList.add("listening");
+    if (visorJarvisText) visorJarvisText.textContent = "Listening for your voice directive, sir...";
+    try { await invoke("set_voice_listening", { active: true }); } catch (e) {}
+    startTauriVoiceListener();
+  }
+}
+
+function startWebSpeechFallback() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
-    isVoiceActive = false;
-    setSystemState("idle");
-    if (visorMicBtn) visorMicBtn.classList.remove("listening");
     if (visorMicText) visorMicText.textContent = "VOICE READY";
     if (visorJarvisText) visorJarvisText.textContent = "Microphone ready. Type or speak your instruction.";
     return;
@@ -2352,16 +2538,9 @@ async function toggleVoiceListener() {
 
   try {
     recognition = new SpeechRec();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = false;
     recognition.lang = "en-US";
-
-    recognition.onstart = () => {
-      isVoiceActive = true;
-      setSystemState("listening");
-    };
-
-    recognition.maxAlternatives = 5;
 
     recognition.onresult = (event) => {
       let final = "";
@@ -2370,59 +2549,24 @@ async function toggleVoiceListener() {
           final += event.results[i][0].transcript;
         }
       }
-
-      // Check all alternatives for known speech commands (like notepad, calc, phone, etc.)
-      let bestCandidate = final;
-      try {
-        if (event.results?.[event.resultIndex]) {
-          for (let j = 0; j < event.results[event.resultIndex].length; j++) {
-            const cand = event.results[event.resultIndex][j].transcript;
-            const norm = normalizeVoiceTranscription(cand);
-            if (norm !== cand.trim()) {
-              bestCandidate = norm;
-              break;
-            }
-          }
-        }
-      } catch (e) {}
-
-      if (bestCandidate) {
-        const cleanFinal = bestCandidate.trim();
-        if (cleanFinal) {
-          const normalized = normalizeVoiceTranscription(cleanFinal);
-          if (visorCmdInput) {
-            visorCmdInput.value = normalized;
-            visorCmdInput.focus();
-          }
-          if (visorUserText) visorUserText.textContent = `"${normalized}"`;
-          if (visorUserLine) visorUserLine.style.display = "flex";
-          processDirective(normalized);
-        }
+      if (final && final.trim()) {
+        handleVoiceDirective(final.trim());
       }
     };
 
     recognition.onerror = (e) => {
-      console.warn("Speech recognition notice:", e);
-      isVoiceActive = false;
-      setSystemState("idle");
-      if (visorMicBtn) visorMicBtn.classList.remove("listening");
-      if (visorMicText) visorMicText.textContent = "VOICE READY";
+      console.warn("[WebSpeech] Notice:", e);
     };
 
     recognition.onend = () => {
-      isVoiceActive = false;
-      if (visorMicBtn) visorMicBtn.classList.remove("listening");
-      if (visorMicText) visorMicText.textContent = "VOICE READY";
-      setSystemState("idle");
+      if (isVoiceListening && !voiceMutedByUser) {
+        try { recognition.start(); } catch (e) {}
+      }
     };
 
     recognition.start();
   } catch (err) {
-    console.warn("Voice listener start failed:", err);
-    isVoiceActive = false;
-    if (visorMicBtn) visorMicBtn.classList.remove("listening");
-    if (visorMicText) visorMicText.textContent = "VOICE READY";
-    setSystemState("idle");
+    console.warn("[WebSpeech] Start failed:", err);
   }
 }
 

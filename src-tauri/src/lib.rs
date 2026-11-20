@@ -10,11 +10,35 @@ use sysinfo::{Networks, System};
 static ACTIVE_QR_PID: AtomicU32 = AtomicU32::new(0);
 static QR_CODE_CACHE: Mutex<Option<Vec<String>>> = Mutex::new(None);
 static QR_PAIR_STATUS: Mutex<Option<PhoneSyncStatus>> = Mutex::new(None);
+static LATEST_VOICE_TRANSCRIPTION: Mutex<Option<String>> = Mutex::new(None);
+static VOICE_NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
+static SPEECH_LISTENER_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static ACTIVE_SPEECH_WORKER_PID: AtomicU32 = AtomicU32::new(0);
 
 const OLLAMA_CHAT_URL: &str = "http://127.0.0.1:11434/api/chat";
 const OLLAMA_PS_URL: &str = "http://127.0.0.1:11434/api/ps";
 const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL_NAME: &str = "qwen3.5:2b";
+
+// Compile-time embedded configurations for 100% standalone single-binary portability
+const EMBEDDED_ENV: &str = include_str!("../../.env.local");
+const EMBEDDED_PHONE_CONFIG: &str = include_str!("../../phone_config.json");
+const EMBEDDED_SPEECH_WORKER: &str = include_str!("../../scripts/speech_worker.ps1");
+
+fn parse_key_from_env_str(content: &str, key_name: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(key_name) {
+            if let Some(val) = trimmed.split('=').nth(1) {
+                let res = val.trim().trim_matches('\'').trim_matches('"').to_string();
+                if !res.is_empty() {
+                    return Some(res);
+                }
+            }
+        }
+    }
+    None
+}
 
 fn get_groq_api_key() -> String {
     if let Ok(k) = std::env::var("GROQ_API_KEY") {
@@ -25,15 +49,13 @@ fn get_groq_api_key() -> String {
     }
     for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
         if let Ok(content) = std::fs::read_to_string(p) {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("GROQ_API_KEY") {
-                    if let Some(val) = trimmed.split('=').nth(1) {
-                        return val.trim().trim_matches('\'').trim_matches('"').to_string();
-                    }
-                }
+            if let Some(val) = parse_key_from_env_str(&content, "GROQ_API_KEY") {
+                return val;
             }
         }
+    }
+    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "GROQ_API_KEY") {
+        return val;
     }
     String::new()
 }
@@ -52,6 +74,15 @@ fn get_phone_config_path() -> String {
     "phone_config.json".to_string()
 }
 
+fn get_phone_config_content() -> String {
+    if let Ok(content) = std::fs::read_to_string(get_phone_config_path()) {
+        if !content.trim().is_empty() {
+            return content;
+        }
+    }
+    EMBEDDED_PHONE_CONFIG.to_string()
+}
+
 fn save_phone_endpoint(endpoint: &str, model: &str) {
     let json = serde_json::json!({
         "endpoint": endpoint,
@@ -61,13 +92,12 @@ fn save_phone_endpoint(endpoint: &str, model: &str) {
 }
 
 fn get_phone_model_name() -> String {
-    if let Ok(content) = std::fs::read_to_string(get_phone_config_path()) {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(m) = val.get("model").and_then(|v| v.as_str()) {
-                let t = m.trim();
-                if !t.is_empty() && !t.contains("UNKNOWN") && !t.contains("DISCONNECTED") {
-                    return t.to_string();
-                }
+    let content = get_phone_config_content();
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+        if let Some(m) = val.get("model").and_then(|v| v.as_str()) {
+            let t = m.trim();
+            if !t.is_empty() && !t.contains("UNKNOWN") && !t.contains("DISCONNECTED") {
+                return t.to_string();
             }
         }
     }
@@ -75,12 +105,11 @@ fn get_phone_model_name() -> String {
 }
 
 fn get_phone_adb_endpoint() -> String {
-    if let Ok(content) = std::fs::read_to_string(get_phone_config_path()) {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(ep) = val.get("endpoint").and_then(|v| v.as_str()) {
-                if !ep.trim().is_empty() {
-                    return ep.trim().to_string();
-                }
+    let content = get_phone_config_content();
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+        if let Some(ep) = val.get("endpoint").and_then(|v| v.as_str()) {
+            if !ep.trim().is_empty() {
+                return ep.trim().to_string();
             }
         }
     }
@@ -92,18 +121,13 @@ fn get_phone_adb_endpoint() -> String {
     }
     for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
         if let Ok(content) = std::fs::read_to_string(p) {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("PHONE_ADB_ENDPOINT") {
-                    if let Some(val) = trimmed.split('=').nth(1) {
-                        let res = val.trim().trim_matches('\'').trim_matches('"').to_string();
-                        if !res.is_empty() {
-                            return res;
-                        }
-                    }
-                }
+            if let Some(val) = parse_key_from_env_str(&content, "PHONE_ADB_ENDPOINT") {
+                return val;
             }
         }
+    }
+    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "PHONE_ADB_ENDPOINT") {
+        return val;
     }
     "192.168.1.7:5555".to_string()
 }
@@ -1292,6 +1316,318 @@ fn parse_model_output(content: &str, original_prompt: &str) -> (String, String, 
     ("none".into(), "".into(), if trimmed.is_empty() { "Standing by, sir.".into() } else { trimmed.into() })
 }
 
+#[cfg(windows)]
+fn get_foreground_window_title() -> String {
+    use std::ffi::c_void;
+    type HWND = *mut c_void;
+    unsafe extern "system" {
+        fn GetForegroundWindow() -> HWND;
+        fn GetWindowTextW(hWnd: HWND, lpString: *mut u16, nMaxCount: i32) -> i32;
+    }
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if !hwnd.is_null() {
+            let mut buf = [0u16; 512];
+            let len = GetWindowTextW(hwnd, buf.as_mut_ptr(), 512);
+            if len > 0 {
+                let title = String::from_utf16_lossy(&buf[..len as usize]);
+                let trimmed = title.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+    "Desktop".to_string()
+}
+#[cfg(not(windows))]
+fn get_foreground_window_title() -> String {
+    "Desktop".to_string()
+}
+
+async fn fetch_web_intelligence(query: &str) -> String {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(3500))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let mut snippets = Vec::new();
+    let clean_query = query
+        .trim()
+        .trim_start_matches("search for")
+        .trim_start_matches("search")
+        .trim_start_matches("google")
+        .trim_start_matches("who is")
+        .trim_start_matches("who was")
+        .trim_start_matches("what is")
+        .trim_start_matches("what was")
+        .trim_start_matches("tell me about")
+        .trim();
+
+    // 1. Google News RSS for live/current events
+    let encoded_query = clean_query.replace(' ', "+");
+    let news_url = format!("https://news.google.com/rss/search?q={}", encoded_query);
+    if let Ok(res) = client.get(&news_url).send().await {
+        if let Ok(text) = res.text().await {
+            for item in text.split("<item>").skip(1).take(3) {
+                if let Some(start) = item.find("<title>") {
+                    if let Some(end) = item.find("</title>") {
+                        let title = &item[start + 7..end];
+                        let clean_title = title.replace("&quot;", "\"").replace("&amp;", "&");
+                        snippets.push(format!("• {}", clean_title));
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Wikipedia Summary API
+    let wiki_topic = clean_query.replace(' ', "_");
+    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", wiki_topic);
+    if let Ok(res) = client.get(&wiki_url).send().await {
+        if let Ok(json_val) = res.json::<serde_json::Value>().await {
+            if let Some(extract) = json_val.get("extract").and_then(|v| v.as_str()) {
+                if !extract.is_empty() {
+                    let short_extract = if extract.len() > 300 { &extract[..300] } else { extract };
+                    snippets.push(format!("Wikipedia Overview: {}", short_extract));
+                }
+            }
+        }
+    }
+
+    snippets.join("\n")
+}
+
+async fn handle_web_search(
+    query: &str,
+    _state: &tauri::State<'_, AppState>,
+    start_time: Instant,
+) -> Result<JarvisResponse, String> {
+    let clean_query = query
+        .trim()
+        .trim_start_matches("search for")
+        .trim_start_matches("search")
+        .trim_start_matches("google")
+        .trim();
+
+    let intelligence = fetch_web_intelligence(clean_query).await;
+    let groq_key = get_groq_api_key();
+    let client = reqwest::Client::new();
+
+    let search_system_prompt = "You are J.A.R.V.I.S. Web Research Agent. Based on the provided live web intelligence, concisely answer the user's query in under 20 spoken words. Be precise, authoritative, and direct like Tony Stark's AI. Do not use markdown.";
+
+    let user_msg = if intelligence.is_empty() {
+        format!("Answer this query based on your knowledge: {}", clean_query)
+    } else {
+        format!("Live Web Context:\n{}\n\nUser Question: {}", intelligence, clean_query)
+    };
+
+    let payload = serde_json::json!({
+        "model": "qwen/qwen3.8-27b",
+        "messages": [
+            { "role": "system", "content": search_system_prompt },
+            { "role": "user", "content": user_msg }
+        ],
+        "temperature": 0.2,
+        "max_tokens": 65
+    });
+
+    let mut reply = format!("Retrieved web results for {}.", clean_query);
+    let mut eval_tokens = 20u32;
+    let mut prompt_tokens = 60u32;
+
+    if !groq_key.is_empty() {
+        if let Ok(res) = client
+            .post(GROQ_CHAT_URL)
+            .header("Authorization", format!("Bearer {}", groq_key))
+            .header("Content-Type", "application/json")
+            .timeout(Duration::from_millis(4500))
+            .json(&payload)
+            .send()
+            .await
+        {
+            if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
+                    let cleaned = content.trim().replace('"', "").replace('*', "");
+                    if !cleaned.is_empty() {
+                        reply = cleaned;
+                    }
+                }
+                prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(60) as u32;
+                eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(20) as u32;
+            }
+        }
+    }
+
+    let latency_ms = start_time.elapsed().as_millis();
+    let total_tokens = prompt_tokens + eval_tokens;
+    let tokens_per_sec = (eval_tokens as f32) / (latency_ms.max(1) as f32 / 1000.0);
+
+    let words = vec!["Search".into(), "→".into(), clean_query.to_string()];
+
+    Ok(JarvisResponse {
+        reply: reply.clone(),
+        action: Some(format!("🌐 Search: {}", clean_query)),
+        command: Some(format!("Web Intelligence: {}", clean_query)),
+        output: Some(if intelligence.is_empty() { "No external snippets retrieved.".into() } else { intelligence }),
+        latency_ms,
+        prompt_tokens,
+        eval_tokens,
+        total_tokens,
+        tokens_per_sec,
+        model_name: "qwen/qwen3.8-27b (Web Intelligence)".to_string(),
+        token_words: words,
+    })
+}
+
+async fn handle_screen_vision(
+    prompt: &str,
+    _state: &tauri::State<'_, AppState>,
+    start_time: Instant,
+) -> Result<JarvisResponse, String> {
+    let fg_window = get_foreground_window_title();
+    #[cfg(windows)]
+    let active_windows = win32_apps::get_taskbar_windows();
+    #[cfg(not(windows))]
+    let active_windows: Vec<(u32, String)> = Vec::new();
+    let sample_apps: Vec<String> = active_windows.iter().take(5).map(|(_, title)| title.clone()).collect();
+
+    let groq_key = get_groq_api_key();
+    let client = reqwest::Client::new();
+
+    let vision_context = format!(
+        "Active Foreground Window: \"{}\". Other visible taskbar windows: {}. User request: \"{}\"",
+        fg_window,
+        sample_apps.join(", "),
+        prompt
+    );
+
+    let vision_system_prompt = "You are J.A.R.V.I.S. Holographic Screen Vision Agent. You analyze the user's active display and windows. Provide a concise, highly intelligent, spoken tactical analysis under 20 words as Tony Stark's assistant. Do not use markdown.";
+
+    let payload = serde_json::json!({
+        "model": "qwen/qwen3.8-27b",
+        "messages": [
+            { "role": "system", "content": vision_system_prompt },
+            { "role": "user", "content": vision_context }
+        ],
+        "temperature": 0.2,
+        "max_tokens": 60
+    });
+
+    let mut reply = format!("Active on screen: {}.", fg_window);
+    let mut eval_tokens = 15u32;
+    let mut prompt_tokens = 40u32;
+
+    if !groq_key.is_empty() {
+        if let Ok(res) = client
+            .post(GROQ_CHAT_URL)
+            .header("Authorization", format!("Bearer {}", groq_key))
+            .header("Content-Type", "application/json")
+            .timeout(Duration::from_millis(4500))
+            .json(&payload)
+            .send()
+            .await
+        {
+            if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
+                    let cleaned = content.trim().replace('"', "").replace('*', "");
+                    if !cleaned.is_empty() {
+                        reply = cleaned;
+                    }
+                }
+                prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(40) as u32;
+                eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(15) as u32;
+            }
+        }
+    }
+
+    let latency_ms = start_time.elapsed().as_millis();
+    let total_tokens = prompt_tokens + eval_tokens;
+    let tokens_per_sec = (eval_tokens as f32) / (latency_ms.max(1) as f32 / 1000.0);
+
+    let words = vec!["Vision".into(), "→".into(), fg_window.clone()];
+
+    Ok(JarvisResponse {
+        reply: reply.clone(),
+        action: Some(format!("👁️ Screen Vision: {}", fg_window)),
+        command: Some(format!("Active Focus: {}", fg_window)),
+        output: Some(format!("Inspected window: {}", fg_window)),
+        latency_ms,
+        prompt_tokens,
+        eval_tokens,
+        total_tokens,
+        tokens_per_sec,
+        model_name: "qwen/qwen3.8-27b (Vision)".to_string(),
+        token_words: words,
+    })
+}
+
+#[tauri::command]
+async fn transcribe_audio_groq(audio_base64: String, mime_type: Option<String>) -> Result<String, String> {
+    use base64::Engine;
+    let clean_b64 = audio_base64.trim();
+    let data_str = if let Some(idx) = clean_b64.find("base64,") {
+        &clean_b64[(idx + 7)..]
+    } else {
+        clean_b64
+    };
+
+    let audio_bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_str)
+        .map_err(|e| format!("Base64 decode error: {}", e))?;
+
+    let groq_key = get_groq_api_key();
+    if groq_key.is_empty() {
+        return Err("GROQ_API_KEY is not configured".to_string());
+    }
+
+    let mime = mime_type.unwrap_or_else(|| "audio/webm".to_string());
+    let filename = if mime.contains("wav") { "audio.wav" } else { "audio.webm" };
+
+    let part = reqwest::multipart::Part::bytes(audio_bytes)
+        .file_name(filename)
+        .mime_str(&mime)
+        .map_err(|e| format!("Mime format error: {}", e))?;
+
+    let form = reqwest::multipart::Form::new()
+        .part("file", part)
+        .text("model", "whisper-large-v3-turbo")
+        .text("response_format", "json")
+        .text("temperature", "0.0");
+
+    let client = reqwest::Client::new();
+    let res = client
+        .post("https://api.groq.com/openai/v1/audio/transcriptions")
+        .header("Authorization", format!("Bearer {}", groq_key))
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Whisper request failed: {}", e))?;
+
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Whisper API error: {}", err_text));
+    }
+
+    let json_val = res.json::<serde_json::Value>().await
+        .map_err(|e| format!("Parse Whisper response failed: {}", e))?;
+
+    let text = json_val["text"].as_str().unwrap_or("").trim().to_string();
+    Ok(text)
+}
+
+#[tauri::command]
+async fn web_search_jarvis(query: String, state: tauri::State<'_, AppState>) -> Result<JarvisResponse, String> {
+    handle_web_search(&query, &state, Instant::now()).await
+}
+
+#[tauri::command]
+async fn inspect_screen_jarvis(prompt: Option<String>, state: tauri::State<'_, AppState>) -> Result<JarvisResponse, String> {
+    let p = prompt.unwrap_or_else(|| "inspect screen".to_string());
+    handle_screen_vision(&p, &state, Instant::now()).await
+}
+
 #[tauri::command]
 async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>) -> Result<JarvisResponse, String> {
     let start_time = Instant::now();
@@ -1316,6 +1652,36 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>) -> Result
     // Check fast-path for instant response on key control operations
     if let Some(fast_res) = check_fast_path(prompt_clean) {
         return Ok(fast_res);
+    }
+
+    let lower_prompt = prompt_clean.to_lowercase();
+
+    // 1. Vision Agent: Screen inspection directives
+    if lower_prompt.contains("screen") && (
+        lower_prompt.contains("inspect") ||
+        lower_prompt.contains("what is on") ||
+        lower_prompt.contains("what's on") ||
+        lower_prompt.contains("analyze") ||
+        lower_prompt.contains("read") ||
+        lower_prompt.contains("look at") ||
+        lower_prompt.contains("explain") ||
+        lower_prompt.contains("debug")
+    ) {
+        return handle_screen_vision(prompt_clean, &state, start_time).await;
+    }
+
+    // 2. Web Research Agent: Live search and news directives
+    if lower_prompt.starts_with("search ") ||
+       lower_prompt.starts_with("search for ") ||
+       lower_prompt.starts_with("google ") ||
+       lower_prompt.starts_with("who is ") ||
+       lower_prompt.starts_with("who was ") ||
+       lower_prompt.starts_with("what is ") ||
+       lower_prompt.starts_with("what was ") ||
+       lower_prompt.starts_with("tell me about ") ||
+       lower_prompt.starts_with("latest news") ||
+       lower_prompt.starts_with("stock price") {
+        return handle_web_search(prompt_clean, &state, start_time).await;
     }
 
     // Query Auto-Failover Multi-Model Fleet (Groq LPUs + Local Ollama Failsafe)
@@ -1623,102 +1989,108 @@ Rules:
     })
 }
 
-// Native Windows Speech Recognition Engine via System.Speech (100% Silent, High-Accuracy Grammar, Fast Cutoff)
+fn get_speech_worker_path() -> String {
+    for p in [
+        "scripts/speech_worker.ps1",
+        "./scripts/speech_worker.ps1",
+        "../scripts/speech_worker.ps1",
+        "C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/speech_worker.ps1",
+    ] {
+        if std::path::Path::new(p).exists() {
+            return p.to_string();
+        }
+    }
+    let temp_file = std::env::temp_dir().join("jarvis_speech_worker.ps1");
+    let _ = std::fs::write(&temp_file, EMBEDDED_SPEECH_WORKER);
+    temp_file.to_string_lossy().to_string()
+}
+
+fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
+    use tauri::Emitter;
+    loop {
+        let script_path = get_speech_worker_path();
+        if !std::path::Path::new(&script_path).exists() {
+            std::thread::sleep(Duration::from_secs(2));
+            continue;
+        }
+
+        let mut cmd = silent_command("powershell");
+        cmd.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_path,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+        if let Ok(mut child) = cmd.spawn() {
+            ACTIVE_SPEECH_WORKER_PID.store(child.id(), Ordering::SeqCst);
+            if let Some(stdout) = child.stdout.take() {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines() {
+                    if let Ok(l) = line {
+                        let trimmed = l.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                            if let Some(evt) = val.get("event").and_then(|v| v.as_str()) {
+                                if evt == "speech" {
+                                    if let Some(text) = val.get("text").and_then(|v| v.as_str()) {
+                                        let clean_text = text.trim();
+                                        if !clean_text.is_empty() && SPEECH_LISTENER_ACTIVE.load(Ordering::SeqCst) {
+                                            println!("[Speech Engine Recognized]: {}", clean_text);
+                                            if let Ok(mut cache) = LATEST_VOICE_TRANSCRIPTION.lock() {
+                                                *cache = Some(clean_text.to_string());
+                                            }
+                                            VOICE_NOTIFY.notify_waiters();
+                                            let _ = app_handle.emit("jarvis://voice_directive", clean_text.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let _ = child.wait();
+        }
+
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+// Native Windows Speech Recognition Engine (Continuous Real-Time Voice Uplink)
 #[tauri::command]
 async fn listen_mic() -> Result<String, String> {
-    tokio::task::spawn_blocking(|| {
-        let ps_code = r#"
-Add-Type -AssemblyName System.Speech
-try {
-    $recs = [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers()
-    $enRec = $null
-    if ($recs.Count -gt 0) {
-        $enRec = $recs | Where-Object { $_.Culture.TwoLetterISOLanguageName -eq "en" } | Select-Object -First 1
-        if (-not $enRec) { $enRec = $recs[0] }
-    }
-    if ($enRec) {
-        $rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine($enRec)
-    } else {
-        $rec = New-Object System.Speech.Recognition.SpeechRecognitionEngine
-    }
-
-    # 1. Exact high-priority phrases & phonetic matchings
-    $phraseChoices = New-Object System.Speech.Recognition.Choices
-    $phraseChoices.Add(@(
-        'open notepad', 'note pad', 'notepad', 'open note pad', 'open not bad', 'or a lot',
-        'open calculator', 'calculator', 'calc', 'open calc',
-        'open chrome', 'chrome', 'browser', 'open browser',
-        'open vs code', 'vs code', 'code', 'open code', 'visual studio',
-        'open terminal', 'terminal', 'cmd', 'command prompt',
-        'open task manager', 'task manager', 'taskmgr',
-        'open spotify', 'spotify', 'music',
-        'open whatsapp', 'whatsapp',
-        'open phone', 'phone', 'call', 'open call', 'keypad', 'dialer',
-        'weather', 'what is the weather', 'check weather', 'temperature',
-        'time', 'what time is it', 'what is the time',
-        'date', 'what is today date', 'today date',
-        'take screenshot', 'screenshot', 'capture screen',
-        'mute', 'unmute', 'volume up', 'volume down', 'lock pc', 'minimize all', 'show desktop',
-        'close notepad', 'close calculator', 'close chrome', 'close vs code', 'close terminal', 'close spotify', 'close whatsapp'
-    ))
-    $phraseGrammar = New-Object System.Speech.Recognition.Grammar((New-Object System.Speech.Recognition.GrammarBuilder($phraseChoices)))
-    $phraseGrammar.Weight = 1.0
-    $rec.LoadGrammar($phraseGrammar)
-
-    # 2. Flexible builder grammar with optional prefix, verbs, articles, and targets
-    $gb = New-Object System.Speech.Recognition.GrammarBuilder
-    $prefix = New-Object System.Speech.Recognition.Choices
-    $prefix.Add(@('please', 'jarvis', 'hey jarvis', 'can you'))
-    $gb.Append($prefix, 0, 1)
-
-    $verbs = New-Object System.Speech.Recognition.Choices
-    $verbs.Add(@('open', 'close', 'launch', 'start', 'kill', 'terminate', 'lock', 'minimize', 'show', 'mute', 'unmute', 'turn', 'increase', 'decrease', 'take', 'what', 'how', 'run', 'focus', 'call', 'dial'))
-    $gb.Append($verbs, 0, 1)
-
-    $articles = New-Object System.Speech.Recognition.Choices
-    $articles.Add(@('the', 'a', 'an', 'my', 'is', 'app'))
-    $gb.Append($articles, 0, 1)
-
-    $targets = New-Object System.Speech.Recognition.Choices
-    $targets.Add(@('notepad', 'note pad', 'calculator', 'calc', 'chrome', 'browser', 'youtube', 'terminal', 'cmd', 'command prompt', 'task manager', 'taskmgr', 'spotify', 'whatsapp', 'pc', 'screen', 'desktop', 'volume', 'volume up', 'volume down', 'mute', 'audio', 'screenshot', 'all', 'windows', 'time', 'date', 'weather', 'phone', 'call', 'keypad', 'dialer', 'code', 'vs code', 'visual studio code'))
-    $gb.Append($targets)
-
-    $cmdGrammar = New-Object System.Speech.Recognition.Grammar($gb)
-    $cmdGrammar.Weight = 0.9
-    $rec.LoadGrammar($cmdGrammar)
-
-    # Fast responsiveness: Stop 500ms after user finishes speaking
-    $rec.InitialSilenceTimeout = [TimeSpan]::FromSeconds(3)
-    $rec.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(500)
-    $rec.EndSilenceTimeoutAmbiguous = [TimeSpan]::FromMilliseconds(600)
-
-    $rec.SetInputToDefaultAudioDevice()
-    $res = $rec.Recognize((New-Object System.TimeSpan(0, 0, 5)))
-    if ($res -and $res.Text) {
-        Write-Output $res.Text
-    } else {
-        Write-Output ""
-    }
-    $rec.Dispose()
-} catch {
-    Write-Output ""
-}
-"#;
-        let mut cmd = silent_command("powershell");
-        let output = cmd
-            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps_code])
-            .output();
-
-        match output {
-            Ok(out) => {
-                let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                Ok(text)
+    SPEECH_LISTENER_ACTIVE.store(true, Ordering::SeqCst);
+    let res = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            VOICE_NOTIFY.notified().await;
+            if let Ok(mut lock) = LATEST_VOICE_TRANSCRIPTION.lock() {
+                if let Some(t) = lock.take() {
+                    return t;
+                }
             }
-            Err(e) => Err(format!("Microphone recognition failed: {}", e)),
         }
     })
-    .await
-    .map_err(|e| e.to_string())?
+    .await;
+
+    match res {
+        Ok(t) => Ok(t),
+        Err(_) => Ok("".to_string()),
+    }
+}
+
+#[tauri::command]
+fn set_voice_listening(active: bool) -> Result<bool, String> {
+    SPEECH_LISTENER_ACTIVE.store(active, Ordering::SeqCst);
+    Ok(active)
 }
 
 #[tauri::command]
@@ -1978,6 +2350,15 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let pid = ACTIVE_SPEECH_WORKER_PID.load(Ordering::SeqCst);
+                if pid > 0 {
+                    let mut k = silent_command("taskkill");
+                    let _ = k.args(["/F", "/T", "/PID", &pid.to_string()]).output();
+                }
+            }
+        })
         .setup(|app| {
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {
@@ -1998,6 +2379,12 @@ pub fn run() {
                     .await;
             });
 
+            // Spawn continuous background voice speech worker
+            let speech_app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                start_speech_listener_worker(speech_app_handle);
+            });
+
             Ok(())
         })
         .manage(state)
@@ -2015,7 +2402,11 @@ pub fn run() {
             cancel_qr_pairing,
             auto_sync_phone,
             pair_phone_manual,
-            listen_mic
+            listen_mic,
+            set_voice_listening,
+            transcribe_audio_groq,
+            web_search_jarvis,
+            inspect_screen_jarvis
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

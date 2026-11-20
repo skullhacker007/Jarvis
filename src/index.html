@@ -377,52 +377,12 @@
       </div>
 
       <!-- ========================================================= -->
-      <!-- CENTER LOWER: HOLOGRAPHIC SUBTITLE VISOR & DIRECTIVE HUD -->
+      <!-- COMPACT FLOATING INPUT PILL (MIC - TEXTFIELD - EXEC)      -->
       <!-- ========================================================= -->
-      <div class="holographic-visor-container" id="holographic-visor-container">
-        <!-- Visor Header Bar -->
-        <div class="visor-top-bar">
-          <div class="visor-status-group">
-            <span class="visor-beacon-dot" id="visor-beacon-dot"></span>
-            <span class="visor-status-label" id="visor-status-label">QUEEN NEURAL CORE // ONLINE</span>
-            <span class="visor-mode-badge" id="visor-mode-badge">ADMIN ACCESS</span>
-          </div>
-          <div class="visor-mic-indicator" id="visor-mic-indicator">
-            <span class="mic-wave-bar"></span>
-            <span class="mic-wave-bar"></span>
-            <span class="mic-wave-bar"></span>
-            <span class="mic-wave-bar"></span>
-            <span class="visor-mic-text" id="visor-mic-text">VOICE READY</span>
-          </div>
-        </div>
-
-        <!-- Visor Dialogue Screen -->
-        <div class="visor-screen" id="visor-screen">
-          <!-- User Dialogue Line -->
-          <div class="visor-line user-line" id="visor-user-line" style="display: none;">
-            <span class="visor-actor">USER</span>
-            <span class="visor-arrow">›</span>
-            <span class="visor-text" id="visor-user-text">--</span>
-          </div>
-
-          <!-- Jarvis Dialogue Line -->
-          <div class="visor-line jarvis-line" id="visor-jarvis-line">
-            <span class="visor-actor jarvis-actor">JARVIS</span>
-            <span class="visor-arrow">›</span>
-            <span class="visor-text" id="visor-jarvis-text">Standing by for your directive, sir. Queen neural core active with administrator privileges.</span>
-          </div>
-
-          <!-- Dynamic Action Execution Badge -->
-          <div class="visor-action-tag" id="visor-action-tag" style="display: none;">
-            <span class="action-icon">⚡</span>
-            <span class="action-desc" id="visor-action-desc">READY</span>
-          </div>
-        </div>
-
-        <!-- Visor Interactive Command & Voice Bar -->
+      <div class="holographic-input-bar visor-collapsed" id="holographic-visor-container">
         <form class="visor-command-form" id="visor-command-form" autocomplete="off">
-          <!-- Voice Mic Toggle Button -->
-          <button type="button" class="visor-mic-btn" id="visor-mic-btn" title="Click to toggle Voice Recognition">
+          <!-- Voice Mic Button (Clean Subtle Cyan, No Harsh Blinking) -->
+          <button type="button" class="visor-mic-btn" id="visor-mic-btn" title="Voice Input (Groq Whisper)">
             <svg class="visor-mic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -430,10 +390,9 @@
             </svg>
           </button>
 
-          <!-- Directive Text Input -->
+          <!-- Input Textfield (Pure input, clean & dynamic) -->
           <div class="visor-input-box">
-            <span class="visor-prompt-prefix">›</span>
-            <input type="text" id="visor-cmd-input" class="visor-cmd-input" placeholder="Give an instruction (e.g. 'open notepad', 'open chrome', 'lock pc')..." spellcheck="false" />
+            <input type="text" id="visor-cmd-input" class="visor-cmd-input" placeholder="Give an instruction or ask anything..." spellcheck="false" autocomplete="off" />
           </div>
 
           <!-- Execute Button -->
@@ -450,7 +409,6 @@
       <!-- BOTTOM: BORDERLESS APP LAUNCHERS DOCK                     -->
       <!-- ========================================================= -->
       <div class="bottom-dock-container">
-        <!-- Completely Borderless Floating App Icons Dock -->
         <div class="app-icons-dock">
           <!-- 1. PHONE (Direct Call via Wi-Fi ADB) -->
           <button class="dock-app-item" id="btn-dock-call" title="Call (Direct Phone Dialer)">
@@ -490,6 +448,19 @@
               </svg>
             </div>
           </button>
+
+          <!-- 5. UNIFIED GLOBE (All 3 AI Capabilities: Web Search, Screen Vision, System Actions) -->
+          <button class="dock-app-item" id="btn-dock-search" title="J.A.R.V.I.S. Directive Input (Toggle)">
+            <div class="dock-icon-box dock-icon-ai">
+              <svg class="dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="2" y1="12" x2="22" y2="12"/>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+              </svg>
+            </div>
+          </button>
+        </div>
+      </div>
         </div>
       </div>
     </div>

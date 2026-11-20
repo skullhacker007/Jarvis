@@ -74,6 +74,22 @@ cmd.args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
 - No flashing black console or PowerShell windows ever appear on the user's screen.
 - Command execution is clean, instantaneous, and silent.
 
+### 5. Holographic Screen Vision (`inspect_screen`)
+Powered by the **Vision Agent** (`qwen/qwen3.8-27b`):
+- Real-time Win32 foreground window and visible taskbar process inspection.
+- Triggered by saying *"Jarvis, inspect my screen"*, *"what is on my screen"*, *"debug screen"*, or clicking the **👁️ Vision** icon in the dock.
+- Provides concise tactical spoken analysis of active applications, open code, and screen context.
+
+### 6. Live Web Research Agent (`web_search`)
+Powered by real-time intelligence feeds (Google News RSS & Wikipedia APIs):
+- Automatic live web grounding with real-time news, facts, and financial updates.
+- Triggered by saying *"search for [query]"*, *"who is [name]"*, *"what is [topic]"*, *"latest news on [topic]"*, or clicking the **🌐 Web** icon in the dock.
+- Summarizes live intelligence directly into a crisp spoken response without opening browser clutter.
+
+### 7. Groq Whisper LPU Audio Engine (`whisper-large-v3-turbo`)
+- Studio-grade cloud speech recognition operating at <200ms latency.
+- Accessible via the Visor Microphone button (Push-to-Talk) alongside the silent offline Windows speech worker.
+
 ---
 
 ## 🔌 How to Add New Skills

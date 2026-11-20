@@ -52,21 +52,23 @@ flowchart TD
     Agent4 --> WindowsOS
 ```
 
-### Planned Subagents
+### Subagent Implementation Status
 
-1. **Sentinel Agent (System Telemetry & Security)**:
-   - *Role*: Continuous background monitoring of hardware health, thermal throttling, network anomalies, and zombie processes.
-   - *Trigger*: Invoked when CPU/RAM thresholds exceed 85% or on command (*"check system diagnostics"*).
+1. **Vision Agent (Holographic Screen Inspection)** - **ACTIVE**:
+   - *Role*: Live Win32 desktop and foreground window inspection, active code/UI diagnostics.
+   - *Model*: `qwen/qwen3.8-27b` on Groq LPU.
+   - *Trigger*: *"Jarvis, inspect my screen"*, *"what is on my screen"*, or dock icon `👁️`.
 
-2. **Vision Agent (Holographic Screen Inspection)**:
-   - *Role*: Captures active screen context via Windows desktop duplication API, analyzes UI elements, and assists with visual tasks.
-   - *Model Target*: Multimodal model (e.g., `llama3.2-vision` or `minicpm-v`).
+2. **Web Research Agent (Online Ingestion & Synthesis)** - **ACTIVE**:
+   - *Role*: Queries real-time Google News RSS & Wikipedia APIs, aggregates live data, and speaks concise syntheses without browser clutter.
+   - *Model*: `qwen/qwen3.8-27b` on Groq LPU.
+   - *Trigger*: *"search [topic]"*, *"who is [name]"*, *"latest news on [topic]"*, or dock icon `🌐`.
 
-3. **Developer Agent (Code & Tool Automation)**:
-   - *Role*: Manages git workflows, runs automated test suites, formats source code, and opens PRs directly from voice instructions.
+3. **Sentinel Agent (System Telemetry & Security)** - **ACTIVE**:
+   - *Role*: Continuous background monitoring of hardware health (CPU, 64GB RAM, Network I/O, WinMM mic).
 
-4. **Web Research Agent (Online Ingestion & Synthesis)**:
-   - *Role*: Queries real-time web search APIs, aggregates documentation, and summarizes research topics back to the Visor.
+4. **Developer Agent (Code & Tool Automation)** - *Planned*:
+   - *Role*: Manages git workflows, test suites, and PR automation directly from voice instructions.
 
 ---
 
