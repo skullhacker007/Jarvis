@@ -381,7 +381,7 @@ async function refreshSystemTelemetry() {
     if (cpuPercentLabel) cpuPercentLabel.textContent = `${cpuVal}%`;
     cpuHistory.shift();
     cpuHistory.push(cpuVal);
-    drawSparkline(cpuCanvas, cpuCtx, cpuHistory, "#00f2fe", "rgba(0, 242, 254, 0.16)", 100);
+    drawSparkline(cpuCanvas, cpuCtx, cpuHistory, "#38bdf8", "rgba(56, 189, 248, 0.12)", 100);
 
     // 3. RAM (Real physical 64 GB load)
     const ramGb = telem.ram_used_gb.toFixed(1);
@@ -391,7 +391,7 @@ async function refreshSystemTelemetry() {
     if (ramMeterFill) ramMeterFill.style.width = `${Math.min(100, ramPct)}%`;
     ramHistory.shift();
     ramHistory.push(ramPct);
-    drawSparkline(ramCanvas, ramCtx, ramHistory, "#4facfe", "rgba(79, 172, 254, 0.16)", 100);
+    drawSparkline(ramCanvas, ramCtx, ramHistory, "#60a5fa", "rgba(96, 165, 250, 0.12)", 100);
 
     // 4. Network I/O (Real adapter bandwidth)
     const rx = telem.net_rx_kb > 1024 ? `${(telem.net_rx_kb / 1024).toFixed(1)} MB/s` : `${Math.round(telem.net_rx_kb)} KB/s`;
@@ -400,7 +400,7 @@ async function refreshSystemTelemetry() {
     const netSum = Math.min(100, Math.round((telem.net_rx_kb + telem.net_tx_kb) / 10));
     netHistory.shift();
     netHistory.push(netSum);
-    drawSparkline(netCanvas, netCtx, netHistory, "#00e676", "rgba(0, 230, 118, 0.14)", 100);
+    drawSparkline(netCanvas, netCtx, netHistory, "#34d399", "rgba(52, 211, 153, 0.12)", 100);
 
     // 5. Real Model & Token Activity Telemetry (100% Dynamic Fleet Telemetry)
     if (telem.model_metrics) {
@@ -669,11 +669,11 @@ setInterval(fetchLocalWeather, 300000); // 5 min refresh
 // REAL-TIME TRANSFORMER NEURAL NETWORK ENGINE (QWEN 3.5 2B ARCHITECTURE)
 // -------------------------------------------------------------
 const transformerLayers = [
-  { name: "EMBED", count: 6, tag: "d=2048", color: "#00f2fe", aura: "rgba(0, 242, 254, 0.45)" },
-  { name: "ATTN-1", count: 8, tag: "8 Heads", color: "#38bdf8", aura: "rgba(56, 189, 248, 0.45)" },
-  { name: "FFN/MLP", count: 10, tag: "d=6144", color: "#c084fc", aura: "rgba(192, 132, 252, 0.55)" },
-  { name: "ATTN-2", count: 8, tag: "24 Blocks", color: "#a855f7", aura: "rgba(168, 85, 247, 0.45)" },
-  { name: "LOGITS", count: 6, tag: "248K Vocab", color: "#00e676", aura: "rgba(0, 230, 118, 0.45)" }
+  { name: "EMBED", count: 6, tag: "d=2048", color: "#38bdf8", aura: "rgba(56, 189, 248, 0.35)" },
+  { name: "ATTN-1", count: 8, tag: "8 Heads", color: "#60a5fa", aura: "rgba(96, 165, 250, 0.35)" },
+  { name: "FFN/MLP", count: 10, tag: "d=6144", color: "#a78bfa", aura: "rgba(167, 139, 250, 0.40)" },
+  { name: "ATTN-2", count: 8, tag: "24 Blocks", color: "#c084fc", aura: "rgba(192, 132, 252, 0.35)" },
+  { name: "LOGITS", count: 6, tag: "248K Vocab", color: "#34d399", aura: "rgba(52, 211, 153, 0.35)" }
 ];
 
 let neuralPulses = [];
@@ -684,7 +684,7 @@ for (let i = 0; i < 28; i++) {
     speed: 0.012 + Math.random() * 0.022,
     fromIdx: 0,
     toIdx: 0,
-    hue: Math.random() > 0.35 ? "#00f2fe" : "#c084fc"
+    hue: Math.random() > 0.35 ? "#38bdf8" : "#a78bfa"
   });
 }
 
@@ -731,7 +731,7 @@ function drawNeuralNetwork() {
 
   // 1. Subtle Background Guide Grid (Holographic HUD Coordinate Plane)
   neuralCtx.save();
-  neuralCtx.strokeStyle = "rgba(0, 242, 254, 0.03)";
+  neuralCtx.strokeStyle = "rgba(56, 189, 248, 0.03)";
   neuralCtx.lineWidth = 1;
   for (let y = 26; y < h - 16; y += 22) {
     neuralCtx.beginPath();
@@ -761,19 +761,19 @@ function drawNeuralNetwork() {
           // Luminous active attention beam
           const grad = neuralCtx.createLinearGradient(x1, y1, x2, y2);
           if (isThinking) {
-            grad.addColorStop(0, "rgba(192, 132, 252, 0.75)");
-            grad.addColorStop(1, "rgba(243, 232, 255, 0.9)");
+            grad.addColorStop(0, "rgba(167, 139, 250, 0.65)");
+            grad.addColorStop(1, "rgba(224, 231, 255, 0.85)");
           } else {
             grad.addColorStop(0, l1.aura);
             grad.addColorStop(1, l2.aura);
           }
           neuralCtx.strokeStyle = grad;
-          neuralCtx.lineWidth = isThinking ? 1.3 : 0.95;
-          neuralCtx.shadowColor = isThinking ? "#c084fc" : "#00f2fe";
-          neuralCtx.shadowBlur = isThinking ? 6 : 3;
+          neuralCtx.lineWidth = isThinking ? 1.2 : 0.85;
+          neuralCtx.shadowColor = isThinking ? "#a78bfa" : "#38bdf8";
+          neuralCtx.shadowBlur = isThinking ? 5 : 2;
         } else {
           // Subtle background structural pathway
-          neuralCtx.strokeStyle = "rgba(0, 242, 254, 0.055)";
+          neuralCtx.strokeStyle = "rgba(56, 189, 248, 0.04)";
           neuralCtx.lineWidth = 0.5;
           neuralCtx.shadowBlur = 0;
         }
@@ -797,7 +797,7 @@ function drawNeuralNetwork() {
       const toLayer = transformerLayers[p.layer + 1];
       p.fromIdx = Math.floor(Math.random() * fromLayer.count);
       p.toIdx = Math.floor(Math.random() * toLayer.count);
-      p.hue = Math.random() > 0.35 ? "#00f2fe" : "#c084fc";
+      p.hue = Math.random() > 0.35 ? "#38bdf8" : "#a78bfa";
     }
 
     const fromLayer = transformerLayers[p.layer];
@@ -887,10 +887,10 @@ function drawNeuralNetwork() {
   if (hoveredNodeInfo) {
     const { x, y, layer, index } = hoveredNodeInfo;
     neuralCtx.save();
-    neuralCtx.strokeStyle = "#00f2fe";
+    neuralCtx.strokeStyle = "#38bdf8";
     neuralCtx.lineWidth = 1;
-    neuralCtx.shadowColor = "#00f2fe";
-    neuralCtx.shadowBlur = 8;
+    neuralCtx.shadowColor = "#38bdf8";
+    neuralCtx.shadowBlur = 6;
     
     // Crosshair corners
     const s = 8;
@@ -912,12 +912,12 @@ function drawNeuralNetwork() {
     const tipX = Math.min(w - textW - 12, Math.max(10, x - textW / 2));
     const tipY = y > h / 2 ? y - 14 : y + 20;
 
-    neuralCtx.fillStyle = "rgba(0, 16, 28, 0.9)";
+    neuralCtx.fillStyle = "rgba(6, 14, 28, 0.92)";
     neuralCtx.fillRect(tipX - 4, tipY - 8, textW + 8, 12);
-    neuralCtx.strokeStyle = "rgba(0, 242, 254, 0.5)";
+    neuralCtx.strokeStyle = "rgba(56, 189, 248, 0.4)";
     neuralCtx.strokeRect(tipX - 4, tipY - 8, textW + 8, 12);
 
-    neuralCtx.fillStyle = "#00f2fe";
+    neuralCtx.fillStyle = "#38bdf8";
     neuralCtx.textAlign = "left";
     neuralCtx.fillText(tipText, tipX, tipY);
     neuralCtx.restore();
@@ -992,10 +992,10 @@ function setWatchPairedState(paired, meta = {}) {
     }
     if (pairedLabel) {
       pairedLabel.textContent = ". Paired";
-      pairedLabel.style.color = "#00e676";
+      pairedLabel.style.color = "#34d399";
     }
-    if (syncDot) syncDot.style.background = "#00e676";
-    if (watchIcon) watchIcon.style.stroke = "#00e676";
+    if (syncDot) syncDot.style.background = "#34d399";
+    if (watchIcon) watchIcon.style.stroke = "#34d399";
     if (heartSvg) heartSvg.classList.remove("idle");
     if (bioStatus) {
       bioStatus.textContent = "ACTIVE";
@@ -1183,9 +1183,9 @@ function drawBlueprintModel() {
 
   // Soft atmospheric scan beam
   const scanGrad = blueprintCtx.createLinearGradient(0, scanY - 14, 0, scanY + 14);
-  scanGrad.addColorStop(0, "rgba(0, 242, 254, 0)");
-  scanGrad.addColorStop(0.5, "rgba(0, 242, 254, 0.20)");
-  scanGrad.addColorStop(1, "rgba(0, 242, 254, 0)");
+  scanGrad.addColorStop(0, "rgba(56, 189, 248, 0)");
+  scanGrad.addColorStop(0.5, "rgba(56, 189, 248, 0.16)");
+  scanGrad.addColorStop(1, "rgba(56, 189, 248, 0)");
   blueprintCtx.fillStyle = scanGrad;
   blueprintCtx.fillRect(0, scanY - 14, w, 28);
 
@@ -1193,10 +1193,10 @@ function drawBlueprintModel() {
   blueprintCtx.beginPath();
   blueprintCtx.moveTo(0, scanY);
   blueprintCtx.lineTo(w, scanY);
-  blueprintCtx.strokeStyle = "rgba(0, 242, 254, 0.75)";
+  blueprintCtx.strokeStyle = "rgba(56, 189, 248, 0.75)";
   blueprintCtx.lineWidth = 1.0;
-  blueprintCtx.shadowColor = "#00f2fe";
-  blueprintCtx.shadowBlur = 6;
+  blueprintCtx.shadowColor = "#38bdf8";
+  blueprintCtx.shadowBlur = 4;
   blueprintCtx.stroke();
   blueprintCtx.shadowBlur = 0;
 
@@ -1301,10 +1301,10 @@ function drawEcgWaveform() {
     for (let i = 1; i < ecgPoints.length; i++) {
       ecgCtx.lineTo(ecgPoints[i].x, ecgPoints[i].y);
     }
-    ecgCtx.strokeStyle = "#00e676";
+    ecgCtx.strokeStyle = "#34d399";
     ecgCtx.lineWidth = 1.8;
-    ecgCtx.shadowColor = "#00e676";
-    ecgCtx.shadowBlur = 6;
+    ecgCtx.shadowColor = "#34d399";
+    ecgCtx.shadowBlur = 4;
     ecgCtx.stroke();
 
     const head = ecgPoints[ecgPoints.length - 1];
@@ -1312,8 +1312,8 @@ function drawEcgWaveform() {
       ecgCtx.beginPath();
       ecgCtx.arc(head.x, head.y, 2.6, 0, Math.PI * 2);
       ecgCtx.fillStyle = "#ffffff";
-      ecgCtx.shadowColor = "#00e676";
-      ecgCtx.shadowBlur = 8;
+      ecgCtx.shadowColor = "#34d399";
+      ecgCtx.shadowBlur = 6;
       ecgCtx.fill();
     }
     ecgCtx.shadowBlur = 0;
@@ -1394,8 +1394,8 @@ function updateWatchDeviceList(devices) {
         <div class="w-dev-info">
           <span class="w-dev-name">${dev.name}</span>
           ${isPhone ? '<span class="w-dev-badge" style="color:#38bdf8;background:rgba(56,189,248,0.15)">PHONE</span>' : ''}
-          ${isWatch ? '<span class="w-dev-badge" style="color:#00e676;background:rgba(0,230,118,0.15)">WATCH</span>' : ''}
-          ${isConn ? '<span class="w-dev-badge" style="color:#00e676;background:rgba(0,230,118,0.25)">CONNECTED</span>' : ''}
+          ${isWatch ? '<span class="w-dev-badge" style="color:#34d399;background:rgba(52,211,153,0.15)">WATCH</span>' : ''}
+          ${isConn ? '<span class="w-dev-badge" style="color:#34d399;background:rgba(52,211,153,0.25)">CONNECTED</span>' : ''}
         </div>
         <button class="w-dev-btn" data-dev-name="${dev.name}" data-is-conn="${isConn}" data-is-watch="${isWatch}">
           ${isConn ? (isWatch ? 'DISCONNECT WATCH' : 'CONNECTED') : 'PAIR / CONNECT'}
