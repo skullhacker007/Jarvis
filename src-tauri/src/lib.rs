@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
@@ -24,7 +25,7 @@ const EMBEDDED_PHONE_CONFIG: &str = include_str!("../../phone_config.json");
 const EMBEDDED_SPEECH_WORKER: &str = include_str!("../../scripts/speech_worker.ps1");
 
 // =============================================================
-// PHASE 2: PERSISTENT MEMORY MODULE (RAG & CONTEXT STORE)
+// PHASE 2: PERSISTENT VECTOR MEMORY MODULE (HYBRID RAG & COSINE STORE)
 // =============================================================
 pub mod jarvis_memory {
     use serde::{Deserialize, Serialize};
@@ -38,6 +39,43 @@ pub mod jarvis_memory {
         pub category: String,
         pub tags: Vec<String>,
         pub timestamp: u64,
+        pub vector: Option<Vec<f32>>,
+    }
+
+    pub fn text_to_hash_vector(text: &str, dim: usize) -> Vec<f32> {
+        let mut vec = vec![0.0f32; dim];
+        for word in text.to_lowercase().split_whitespace() {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(word, &mut hasher);
+            let idx = (std::hash::Hasher::finish(&hasher) as usize) % dim;
+            vec[idx] += 1.0;
+        }
+        let norm: f32 = vec.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for v in vec.iter_mut() {
+                *v /= norm;
+            }
+        }
+        vec
+    }
+
+    pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+        if a.is_empty() || b.is_empty() || a.len() != b.len() {
+            return 0.0;
+        }
+        let mut dot = 0.0;
+        let mut norm_a = 0.0;
+        let mut norm_b = 0.0;
+        for i in 0..a.len() {
+            dot += a[i] * b[i];
+            norm_a += a[i] * a[i];
+            norm_b += b[i] * b[i];
+        }
+        if norm_a == 0.0 || norm_b == 0.0 {
+            0.0
+        } else {
+            dot / (norm_a.sqrt() * norm_b.sqrt())
+        }
     }
 
     fn get_memory_file_path() -> PathBuf {
@@ -79,49 +117,59 @@ pub mod jarvis_memory {
             .map(|w| w.to_string())
             .collect();
 
+        let vec = text_to_hash_vector(clean, 128);
+
         let record = MemoryRecord {
             id: format!("mem_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
             text: clean.to_string(),
             category: category.trim().to_lowercase(),
             tags: words,
             timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            vector: Some(vec),
         };
 
         memories.push(record);
         save_memories(&memories)?;
-        Ok(format!("Stored in memory: '{}'", clean))
+        Ok(format!("Stored in vector memory: '{}'", clean))
     }
 
     pub fn recall(query: &str) -> Vec<MemoryRecord> {
         let memories = load_memories();
-        let query_terms: Vec<String> = query.to_lowercase()
+        let clean_q = query.trim().to_lowercase();
+        if clean_q.is_empty() {
+            return memories;
+        }
+
+        let query_terms: Vec<String> = clean_q
             .split_whitespace()
             .map(|s| s.to_string())
             .collect();
 
-        if query_terms.is_empty() {
-            return memories;
-        }
+        let query_vec = text_to_hash_vector(&clean_q, 128);
 
-        let mut scored: Vec<(usize, MemoryRecord)> = memories.into_iter().filter_map(|m| {
+        let mut scored: Vec<(f32, MemoryRecord)> = memories.into_iter().filter_map(|m| {
             let lower_text = m.text.to_lowercase();
-            let mut score = 0;
+            let mut score = 0.0f32;
             for term in &query_terms {
                 if lower_text.contains(term) {
-                    score += 2;
+                    score += 2.0;
                 }
                 if m.tags.iter().any(|t| t == term) {
-                    score += 1;
+                    score += 1.0;
                 }
             }
-            if score > 0 {
+            if let Some(ref v) = m.vector {
+                let cos = cosine_similarity(&query_vec, v);
+                score += cos * 3.5;
+            }
+            if score > 0.15 {
                 Some((score, m))
             } else {
                 None
             }
         }).collect();
 
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         scored.into_iter().map(|(_, m)| m).take(8).collect()
     }
 
@@ -908,6 +956,15 @@ pub mod win32_system_agent {
 
     pub static LAST_EXTERNAL_HWND: AtomicUsize = AtomicUsize::new(0);
 
+    #[repr(C)]
+    #[derive(Copy, Clone, Default)]
+    pub struct RECT {
+        pub left: i32,
+        pub top: i32,
+        pub right: i32,
+        pub bottom: i32,
+    }
+
     const CF_UNICODETEXT: UINT = 13;
     const GMEM_MOVEABLE: UINT = 0x0002;
 
@@ -967,6 +1024,7 @@ pub mod win32_system_agent {
         fn IsWindow(hWnd: HWND) -> BOOL;
         fn IsWindowVisible(hWnd: HWND) -> BOOL;
         fn EnumChildWindows(hWndParent: HWND, lpEnumFunc: extern "system" fn(HWND, LPARAM) -> BOOL, lParam: LPARAM) -> BOOL;
+        fn GetWindowRect(hWnd: HWND, lpRect: *mut RECT) -> BOOL;
         // GDI for in-memory screen capture
         fn GetDC(hWnd: HWND) -> HDC;
         fn ReleaseDC(hWnd: HWND, hDC: HDC) -> i32;
@@ -1472,6 +1530,68 @@ pub mod win32_system_agent {
         }
         info.elements
     }
+
+    pub fn click_element_by_name(target_name: &str) -> Result<String, String> {
+        let clean = target_name.trim().to_lowercase();
+        if clean.is_empty() {
+            return Err("Target element name cannot be empty".into());
+        }
+
+        unsafe {
+            let mut hwnd = GetForegroundWindow();
+            if hwnd.is_null() {
+                let raw = LAST_EXTERNAL_HWND.load(Ordering::SeqCst);
+                if raw != 0 {
+                    hwnd = raw as HWND;
+                }
+            }
+            if hwnd.is_null() || IsWindow(hwnd) == 0 {
+                return Err("No active foreground window found".into());
+            }
+
+            struct MatchSearch {
+                target: String,
+                found_rect: Option<RECT>,
+            }
+
+            extern "system" fn search_enum_proc(child: HWND, lparam: LPARAM) -> BOOL {
+                unsafe {
+                    if IsWindowVisible(child) != 0 {
+                        let mut text_buf = [0u16; 256];
+                        let len = GetWindowTextW(child, text_buf.as_mut_ptr(), 256);
+                        if len > 0 {
+                            let text = String::from_utf16_lossy(&text_buf[..len as usize]).to_lowercase();
+                            let s = &mut *(lparam as *mut MatchSearch);
+                            if text.contains(&s.target) || s.target.contains(&text) {
+                                let mut rect: RECT = std::mem::zeroed();
+                                if GetWindowRect(child, &mut rect) != 0 {
+                                    s.found_rect = Some(rect);
+                                    return 0; // stop enumeration
+                                }
+                            }
+                        }
+                    }
+                    1
+                }
+            }
+
+            let mut search = MatchSearch {
+                target: clean,
+                found_rect: None,
+            };
+
+            EnumChildWindows(hwnd, search_enum_proc, &mut search as *mut _ as LPARAM);
+
+            if let Some(r) = search.found_rect {
+                let center_x = (r.left + r.right) / 2;
+                let center_y = (r.top + r.bottom) / 2;
+                click_at_coords(center_x, center_y)?;
+                Ok(format!("Clicked '{}' at ({}, {})", target_name, center_x, center_y))
+            } else {
+                Err(format!("Could not find UI control matching '{}' in foreground window", target_name))
+            }
+        }
+    }
 }
 
 pub use win32_system_agent as win32_clipboard;
@@ -1492,6 +1612,7 @@ pub mod win32_system_agent {
     pub fn click_right() {}
     pub fn double_click() {}
     pub fn click_at_coords(_x: i32, _y: i32) -> Result<String, String> { Ok("Simulated click".into()) }
+    pub fn click_element_by_name(_target: &str) -> Result<String, String> { Ok("Simulated element click".into()) }
     pub fn send_key_combo_2(_mod_vk: u8, _key_vk: u8) {}
     pub fn send_key_combo_3(_mod1: u8, _mod2: u8, _key: u8) {}
     pub fn send_single_key(_key: u8) {}
@@ -1817,6 +1938,152 @@ fn get_bluetooth_watch_status() -> Result<WatchStatusResult, String> {
         }
     }
     Ok(status)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PhoneTelemetry {
+    pub is_connected: bool,
+    pub battery_level: i32,
+    pub is_charging: bool,
+    pub battery_temp_c: f32,
+    pub model: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PhoneNotificationItem {
+    pub package: String,
+    pub title: String,
+    pub text: String,
+}
+
+#[tauri::command]
+fn get_phone_telemetry() -> Result<PhoneTelemetry, String> {
+    let adb_path = get_adb_path();
+    let mut telem = PhoneTelemetry {
+        is_connected: false,
+        battery_level: -1,
+        is_charging: false,
+        battery_temp_c: 0.0,
+        model: get_phone_model_name(),
+    };
+
+    if let Ok(out) = silent_command(&adb_path).args(["devices"]).output() {
+        let dev_str = String::from_utf8_lossy(&out.stdout);
+        if dev_str.lines().any(|l| l.contains("device") && !l.contains("List of devices")) {
+            telem.is_connected = true;
+            if let Ok(batt_out) = silent_command(&adb_path).args(["shell", "dumpsys", "battery"]).output() {
+                let batt_str = String::from_utf8_lossy(&batt_out.stdout);
+                for line in batt_str.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("level:") {
+                        if let Some(lvl) = trimmed.split(':').nth(1) {
+                            telem.battery_level = lvl.trim().parse::<i32>().unwrap_or(-1);
+                        }
+                    } else if trimmed.starts_with("status:") {
+                        if let Some(st) = trimmed.split(':').nth(1) {
+                            telem.is_charging = st.trim() == "2";
+                        }
+                    } else if trimmed.starts_with("temperature:") {
+                        if let Some(temp) = trimmed.split(':').nth(1) {
+                            let raw = temp.trim().parse::<f32>().unwrap_or(0.0);
+                            telem.battery_temp_c = raw / 10.0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(telem)
+}
+
+#[tauri::command]
+fn get_phone_notifications() -> Result<Vec<PhoneNotificationItem>, String> {
+    let adb_path = get_adb_path();
+    let mut list = Vec::new();
+
+    if let Ok(out) = silent_command(&adb_path).args(["shell", "dumpsys", "notification", "--noredact"]).output() {
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut cur_pkg = String::new();
+        let mut cur_title = String::new();
+        let mut cur_text = String::new();
+
+        for line in text.lines() {
+            let tr = line.trim();
+            if tr.starts_with("pkg=") {
+                if let Some(p) = tr.split("pkg=").nth(1) {
+                    cur_pkg = p.split_whitespace().next().unwrap_or("").to_string();
+                }
+            } else if tr.starts_with("android.title=") {
+                if let Some(t) = tr.split("android.title=").nth(1) {
+                    cur_title = t.trim().to_string();
+                }
+            } else if tr.starts_with("android.text=") {
+                if let Some(t) = tr.split("android.text=").nth(1) {
+                    cur_text = t.trim().to_string();
+                }
+            }
+
+            if !cur_pkg.is_empty() && (!cur_title.is_empty() || !cur_text.is_empty()) {
+                if !cur_pkg.contains("android") && !cur_pkg.contains("systemui") {
+                    list.push(PhoneNotificationItem {
+                        package: cur_pkg.clone(),
+                        title: cur_title.clone(),
+                        text: cur_text.clone(),
+                    });
+                }
+                cur_pkg.clear();
+                cur_title.clear();
+                cur_text.clear();
+                if list.len() >= 6 {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(list)
+}
+
+#[tauri::command]
+async fn pull_ollama_model(model_name: String) -> Result<String, String> {
+    let clean = model_name.trim();
+    if clean.is_empty() {
+        return Err("Model name cannot be empty".into());
+    }
+    let base_url = get_ollama_base_url();
+    let pull_url = format!("{}/api/pull", base_url);
+    let client = reqwest::Client::new();
+    let payload = serde_json::json!({
+        "name": clean,
+        "stream": false
+    });
+    let req = client.post(&pull_url).json(&payload).timeout(Duration::from_secs(600));
+    let req = add_navi_headers(req);
+    let res = req.send().await.map_err(|e| e.to_string())?;
+    if res.status().is_success() {
+        Ok(format!("Model '{}' successfully pulled into local Ollama matrix.", clean))
+    } else {
+        Err(format!("Ollama pull failed with HTTP status {}", res.status()))
+    }
+}
+
+#[tauri::command]
+fn save_memory_item(text: String, category: Option<String>) -> Result<String, String> {
+    jarvis_memory::store(&text, &category.unwrap_or_else(|| "general".to_string()))
+}
+
+#[tauri::command]
+fn get_memory_items(query: Option<String>) -> Result<Vec<jarvis_memory::MemoryRecord>, String> {
+    if let Some(q) = query {
+        if !q.trim().is_empty() {
+            return Ok(jarvis_memory::recall(&q));
+        }
+    }
+    Ok(jarvis_memory::load_memories())
+}
+
+#[tauri::command]
+fn clear_memory_items() -> Result<String, String> {
+    jarvis_memory::clear().map(|_| "All memories cleared, sir.".to_string())
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -3163,6 +3430,14 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
             } else {
                 Err("Coordinates must be in format 'x,y'".into())
             }
+        }
+        "click_element" | "uia_click" | "click_button" => {
+            #[cfg(windows)]
+            {
+                win32_system_agent::click_element_by_name(clean_target)
+            }
+            #[cfg(not(windows))]
+            Ok(format!("Clicked element '{}'", clean_target))
         }
         // --- PHASE 3: SEMANTIC LOCAL FILE SEARCH ---
         "file_search" | "search_files" | "find_file" => {
@@ -4897,7 +5172,7 @@ async fn inspect_screen_jarvis(prompt: Option<String>, state: tauri::State<'_, A
 }
 
 #[tauri::command]
-async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>) -> Result<JarvisResponse, String> {
+async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: tauri::AppHandle) -> Result<JarvisResponse, String> {
     let start_time = Instant::now();
     let prompt_clean = prompt.trim();
 
@@ -5129,7 +5404,9 @@ Rules:
                         words.push("→".to_string());
                         for w in reply_text.split_whitespace() {
                             words.push(w.to_string());
+                            let _ = app.emit("jarvis://stream_token", format!("{} ", w));
                         }
+                        let _ = app.emit("jarvis://stream_end", ());
 
                         return Ok(JarvisResponse {
                             reply: reply_text,
@@ -5247,7 +5524,9 @@ Rules:
                         words.push("→".to_string());
                         for w in reply_text.split_whitespace() {
                             words.push(w.to_string());
+                            let _ = app.emit("jarvis://stream_token", format!("{} ", w));
                         }
+                        let _ = app.emit("jarvis://stream_end", ());
 
                         return Ok(JarvisResponse {
                             reply: reply_text,
@@ -5380,6 +5659,9 @@ fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
                                             }
                                             VOICE_NOTIFY.notify_waiters();
                                             let _ = app_handle.emit("jarvis://voice_directive", clean_text.to_string());
+                                            if val.get("is_wake_word").and_then(|w| w.as_bool()).unwrap_or(false) {
+                                                let _ = app_handle.emit("jarvis://wake_word", clean_text.to_string());
+                                            }
                                         }
                                     }
                                 }
@@ -5986,7 +6268,13 @@ pub fn run() {
             inspect_screen_jarvis,
             write_code_jarvis,
             run_self_healing_code,
-            get_wifi_network_info
+            get_wifi_network_info,
+            get_phone_telemetry,
+            get_phone_notifications,
+            pull_ollama_model,
+            save_memory_item,
+            get_memory_items,
+            clear_memory_items
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

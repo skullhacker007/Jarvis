@@ -41,7 +41,8 @@ function Run-WinRTWorker {
             if ($recTask.IsCompleted -and $recTask.Result -and $recTask.Result.Text) {
                 $text = $recTask.Result.Text.Trim()
                 if ($text.Length -gt 0) {
-                    $json = @{ event = "speech"; text = $text; confidence = $recTask.Result.Confidence.ToString() } | ConvertTo-Json -Compress
+                    $isWake = ($text.ToLower() -match '\bjarvis\b')
+                    $json = @{ event = "speech"; text = $text; confidence = $recTask.Result.Confidence.ToString(); is_wake_word = $isWake } | ConvertTo-Json -Compress
                     [Console]::Out.WriteLine($json)
                 }
             }
@@ -69,7 +70,8 @@ function Run-SapiWorker {
     Register-ObjectEvent -InputObject $rec -EventName "SpeechRecognized" -Action {
         $text = $Event.SourceEventArgs.Result.Text
         if ($text -and $text.Trim().Length -gt 0) {
-            $json = @{ event = "speech"; text = $text.Trim() } | ConvertTo-Json -Compress
+            $isWake = ($text.ToLower() -match '\bjarvis\b')
+            $json = @{ event = "speech"; text = $text.Trim(); is_wake_word = $isWake } | ConvertTo-Json -Compress
             [Console]::Out.WriteLine($json)
         }
     } | Out-Null

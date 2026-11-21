@@ -246,6 +246,10 @@
           <div class="models-list" id="models-list">
             <!-- Populated dynamically with live metrics & priority -->
           </div>
+          <div class="model-pull-row" id="model-pull-row">
+            <input type="text" id="model-pull-input" placeholder="Pull model (e.g. qwen2.5:1.5b)..." class="model-pull-input" spellcheck="false" />
+            <button type="button" id="model-pull-btn" class="model-pull-btn">PULL</button>
+          </div>
         </div>
       </div>
 
@@ -736,6 +740,11 @@
         <span class="reticle-label" id="reticle-label">TARGET ACQUIRED</span>
       </div>
     </div>
+
+    <!-- ========================================================= -->
+    <!-- HUD NOTIFICATION TOAST CONTAINER (ANDROID & SYSTEM)       -->
+    <!-- ========================================================= -->
+    <div class="hud-toast-container" id="hud-toast-container"></div>
 
     <script type="module" src="main.js"></script>
   </body>

@@ -2,6 +2,12 @@
 // 100% Dynamic Hardware Telemetry (CPU, 64GB RAM, I7 CPU, Network, Active Apps)
 // Real Token Activity (Reference Matrix & Metrics) + Borderless App Dock (Phone, Outlook, WhatsApp, Spotify)
 
+import { JarvisSoundscape } from "./modules/soundscape.js";
+import { showToast, startPhoneNotificationSync } from "./modules/notifications.js";
+import { JarvisDialer } from "./modules/dialer.js";
+import { fetchSystemTelemetry, fetchPhoneTelemetry, formatBytesToGb, formatNetworkRate } from "./modules/telemetry.js";
+import { JarvisNeuralClient } from "./modules/ai.js";
+
 function getTauriInvoke() {
   if (typeof window !== "undefined") {
     if (window.__TAURI__?.core?.invoke) return window.__TAURI__.core.invoke;
@@ -200,146 +206,8 @@ function toggleInputBar() {
 }
 
 // =============================================================
-// PHASE 1: PROCEDURAL SCI-FI SOUNDSCAPE (PURE WEB AUDIO API)
+// PHASE 1: PROCEDURAL SCI-FI SOUNDSCAPE (LOADED FROM ./modules/soundscape.js)
 // =============================================================
-const JarvisSoundscape = (() => {
-  let sfxCtx = null;
-
-  function getAudioCtx() {
-    if (!sfxCtx) {
-      const AudioClass = window.AudioContext || window.webkitAudioContext;
-      if (AudioClass) sfxCtx = new AudioClass();
-    }
-    if (sfxCtx && sfxCtx.state === "suspended") {
-      sfxCtx.resume().catch(() => {});
-    }
-    return sfxCtx;
-  }
-
-  function play(name) {
-    const actx = getAudioCtx();
-    if (!actx) return;
-    const now = actx.currentTime;
-
-    try {
-      switch (name) {
-        case "click": {
-          // Subtle, tactile high-frequency sci-fi click (1800Hz -> 700Hz in 25ms)
-          const osc = actx.createOscillator();
-          const gain = actx.createGain();
-          osc.type = "sine";
-          osc.frequency.setValueAtTime(1800, now);
-          osc.frequency.exponentialRampToValueAtTime(700, now + 0.025);
-          gain.gain.setValueAtTime(0.08, now);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.025);
-          osc.connect(gain);
-          gain.connect(actx.destination);
-          osc.start(now);
-          osc.stop(now + 0.028);
-          break;
-        }
-
-        case "confirm": {
-          // Stark HUD affirmation: two-tone rising chime (659Hz -> 987Hz -> 1318Hz)
-          const osc1 = actx.createOscillator();
-          const osc2 = actx.createOscillator();
-          const gain = actx.createGain();
-          osc1.type = "sine";
-          osc2.type = "triangle";
-          osc1.frequency.setValueAtTime(659.25, now);
-          osc1.frequency.setValueAtTime(987.77, now + 0.05);
-          osc2.frequency.setValueAtTime(1318.51, now + 0.05);
-          gain.gain.setValueAtTime(0.07, now);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-          osc1.connect(gain);
-          osc2.connect(gain);
-          gain.connect(actx.destination);
-          osc1.start(now);
-          osc2.start(now + 0.05);
-          osc1.stop(now + 0.17);
-          osc2.stop(now + 0.17);
-          break;
-        }
-
-        case "alert": {
-          // Urgent holographic advisory pulse: 1040Hz + 1560Hz dual tone
-          const osc = actx.createOscillator();
-          const gain = actx.createGain();
-          osc.type = "sawtooth";
-          osc.frequency.setValueAtTime(1040, now);
-          osc.frequency.setValueAtTime(780, now + 0.08);
-          osc.frequency.setValueAtTime(1040, now + 0.14);
-          const filter = actx.createBiquadFilter();
-          filter.type = "bandpass";
-          filter.frequency.value = 1200;
-          filter.Q.value = 3.0;
-          gain.gain.setValueAtTime(0.12, now);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
-          osc.connect(filter);
-          filter.connect(gain);
-          gain.connect(actx.destination);
-          osc.start(now);
-          osc.stop(now + 0.25);
-          break;
-        }
-
-        case "wake": {
-          // Reactor / voice wake sweep: warm rising acoustic resonance
-          const osc = actx.createOscillator();
-          const gain = actx.createGain();
-          osc.type = "sine";
-          osc.frequency.setValueAtTime(320, now);
-          osc.frequency.exponentialRampToValueAtTime(1280, now + 0.12);
-          gain.gain.setValueAtTime(0.001, now);
-          gain.gain.linearRampToValueAtTime(0.09, now + 0.04);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
-          osc.connect(gain);
-          gain.connect(actx.destination);
-          osc.start(now);
-          osc.stop(now + 0.15);
-          break;
-        }
-
-        case "mode": {
-          // Futuristic routine mode engagement chord
-          [523.25, 783.99, 1046.50].forEach((freq, idx) => {
-            const osc = actx.createOscillator();
-            const gain = actx.createGain();
-            osc.type = "sine";
-            osc.frequency.setValueAtTime(freq, now + idx * 0.03);
-            gain.gain.setValueAtTime(0.06, now + idx * 0.03);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
-            osc.connect(gain);
-            gain.connect(actx.destination);
-            osc.start(now + idx * 0.03);
-            osc.stop(now + 0.35);
-          });
-          break;
-        }
-
-        case "undo": {
-          // Descending rollback tone (880Hz -> 330Hz)
-          const osc = actx.createOscillator();
-          const gain = actx.createGain();
-          osc.type = "sine";
-          osc.frequency.setValueAtTime(880, now);
-          osc.frequency.exponentialRampToValueAtTime(330, now + 0.11);
-          gain.gain.setValueAtTime(0.09, now);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-          osc.connect(gain);
-          gain.connect(actx.destination);
-          osc.start(now);
-          osc.stop(now + 0.13);
-          break;
-        }
-      }
-    } catch (e) {
-      console.warn("Soundscape FX playback failed:", e);
-    }
-  }
-
-  return { play, getAudioCtx };
-})();
 
 // =============================================================
 // PHASE 1: ACTION ROLLBACK STACK (INSTANT UNDO)
@@ -564,16 +432,21 @@ const PersistentMemoryManager = (() => {
     } catch (e) {}
   });
 
-  searchInput?.addEventListener("input", (e) => {
-    const q = (e.target.value || "").toLowerCase().trim();
+  searchInput?.addEventListener("input", async (e) => {
+    const q = (e.target.value || "").trim();
     if (!q) {
       renderMemories(cachedMemories);
     } else {
-      const filtered = cachedMemories.filter(m => 
-        (m.text || "").toLowerCase().includes(q) || 
-        (m.tags || []).some(t => t.toLowerCase().includes(q))
-      );
-      renderMemories(filtered);
+      try {
+        const results = await invoke("get_memory_items", { query: q });
+        renderMemories(results || []);
+      } catch (err) {
+        const filtered = cachedMemories.filter(m => 
+          (m.text || "").toLowerCase().includes(q.toLowerCase()) || 
+          (m.tags || []).some(t => t.toLowerCase().includes(q.toLowerCase()))
+        );
+        renderMemories(filtered);
+      }
     }
   });
 
@@ -603,8 +476,8 @@ const PersistentMemoryManager = (() => {
     if (!modalEl) return;
     modalEl.classList.add("active");
     try {
-      const raw = await invoke("run_direct_action", { action: "memory_list", target: "" });
-      cachedMemories = JSON.parse(raw || "[]");
+      const memories = await invoke("get_memory_items", { query: null });
+      cachedMemories = memories || [];
       renderMemories(cachedMemories);
     } catch (e) {
       cachedMemories = [];
@@ -1607,6 +1480,37 @@ async function refreshSystemTelemetry() {
       });
     }
 
+    // Dynamic Ollama Model Puller
+    const modelPullInput = document.getElementById("model-pull-input");
+    const modelPullBtn = document.getElementById("model-pull-btn");
+    if (modelPullBtn && modelPullInput && !modelPullBtn._hasBound) {
+      modelPullBtn._hasBound = true;
+      modelPullBtn.addEventListener("click", async () => {
+        const targetModel = modelPullInput.value.trim();
+        if (!targetModel) return;
+        showJarvisFeedback(`Pulling model '${targetModel}' into Ollama matrix...`, "ollama_pull", true);
+        modelPullBtn.disabled = true;
+        modelPullBtn.textContent = "...";
+        try {
+          const res = await invoke("pull_ollama_model", { modelName: targetModel });
+          showJarvisFeedback(res, "pull_complete");
+          modelPullInput.value = "";
+          refreshSystemTelemetry();
+        } catch (err) {
+          showJarvisFeedback(`⚠️ Failed to pull ${targetModel}: ${err}`, "pull_failed");
+        } finally {
+          modelPullBtn.disabled = false;
+          modelPullBtn.textContent = "PULL";
+        }
+      });
+      modelPullInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          modelPullBtn.click();
+        }
+      });
+    }
+
     // Proactive Hardware Health Alerts
     checkProactiveHardwareAlerts(telem);
 
@@ -2065,9 +1969,15 @@ let connectedPhoneName = null;
 async function pollBluetoothWatch() {
   try {
     const res = await invoke("get_bluetooth_watch_status");
+    let phoneTelem = null;
+    try {
+      phoneTelem = await invoke("get_phone_telemetry");
+    } catch (e) {}
+
     if (res) {
-      isPhoneConnected = !!res.has_connected_phone;
-      connectedPhoneName = res.connected_phone_name || (res.has_connected_phone ? "CONNECTED PHONE" : null);
+      isPhoneConnected = !!res.has_connected_phone || (phoneTelem && phoneTelem.is_connected);
+      const baseName = res.connected_phone_name || (phoneTelem && phoneTelem.model) || (isPhoneConnected ? "ANDROID" : null);
+      connectedPhoneName = baseName;
 
       // Update Phone Dialer Keypad header dynamically
       const dialerPhoneName = document.getElementById("dialer-phone-name");
@@ -2077,10 +1987,13 @@ async function pollBluetoothWatch() {
 
       if (dialerPhoneName && phoneStatusDot) {
         if (isPhoneConnected) {
-          dialerPhoneName.textContent = connectedPhoneName ? connectedPhoneName.toUpperCase() : "ONLINE";
+          const battStr = (phoneTelem && phoneTelem.battery_level >= 0)
+            ? ` [${phoneTelem.battery_level}%${phoneTelem.is_charging ? "⚡" : ""}]`
+            : "";
+          dialerPhoneName.textContent = (connectedPhoneName ? connectedPhoneName.toUpperCase() : "ONLINE") + battStr;
           phoneStatusDot.className = "phone-status-dot active";
           if (callBtnText) callBtnText.textContent = "INITIATE CALL";
-          if (btnDockCall) btnDockCall.title = `Direct Phone (${connectedPhoneName})`;
+          if (btnDockCall) btnDockCall.title = `Direct Phone (${connectedPhoneName}${battStr})`;
         } else {
           dialerPhoneName.textContent = "OFFLINE";
           phoneStatusDot.className = "phone-status-dot";
@@ -4065,6 +3978,27 @@ window.addEventListener("keydown", (e) => {
 // Expose global processDirective for external and test invocations
 window.processDirective = processDirective;
 window.invokeTauri = invoke;
+
+// Expose modular components for system interactions
+window.JarvisSoundscape = JarvisSoundscape;
+window.showToast = showToast;
+window.JarvisDialer = JarvisDialer;
+
+// Neural Streaming & Wake-Word Event Integration
+const jarvisNeural = new JarvisNeuralClient(invoke);
+jarvisNeural.onToken((token, fullBuffer) => {
+  if (visorResponseBanner) visorResponseBanner.style.display = "flex";
+  if (visorJarvisText) visorJarvisText.textContent = fullBuffer;
+  if (visorBeaconDot) visorBeaconDot.className = "visor-jarvis-dot thinking";
+});
+jarvisNeural.onWakeWord(() => {
+  JarvisSoundscape.play("wake");
+  showJarvisFeedback("Listening, sir...", null, false);
+  setSystemState("listening");
+});
+
+// Start Real-Time Android Phone Notification Sync
+startPhoneNotificationSync(invoke);
 
 // Phase 3 Systems Initialization
 StarkVisionSensor.init();
