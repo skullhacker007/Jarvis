@@ -1149,6 +1149,304 @@ fn get_bluetooth_watch_status() -> Result<WatchStatusResult, String> {
     Ok(status)
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WifiDeviceItem {
+    pub name: String,
+    pub ip_v4: String,
+    pub ip_v6: String,
+    pub mac: String,
+    pub status: String, // "Online" or "Offline"
+    pub device_type: String, // "Gateway", "Workstation", "Mobile", "Smart TV", "IoT", etc.
+    pub is_current_device: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WifiNetworkInfo {
+    pub connected: bool,
+    pub status_text: String,
+    pub ssid: String,
+    pub bssid: String,
+    pub signal_percent: u8,
+    pub radio_type: String,
+    pub channel: u32,
+    pub receive_rate_mbps: u32,
+    pub transmit_rate_mbps: u32,
+    pub router_model: String,
+    pub router_ip_v4: String,
+    pub router_ip_v6: String,
+    pub router_mac: String,
+    pub total_devices: usize,
+    pub online_devices: usize,
+    pub offline_devices: usize,
+    pub devices: Vec<WifiDeviceItem>,
+}
+
+#[tauri::command]
+fn get_wifi_network_info() -> Result<WifiNetworkInfo, String> {
+    let mut info = WifiNetworkInfo {
+        connected: false,
+        status_text: "DISCONNECTED".to_string(),
+        ssid: "Not Connected".to_string(),
+        bssid: "--:--:--:--:--:--".to_string(),
+        signal_percent: 0,
+        radio_type: "802.11ac".to_string(),
+        channel: 0,
+        receive_rate_mbps: 0,
+        transmit_rate_mbps: 0,
+        router_model: "Wi-Fi Gateway Router".to_string(),
+        router_ip_v4: "192.168.1.1".to_string(),
+        router_ip_v6: "fe80::1".to_string(),
+        router_mac: "8E:A3:99:14:3A:2A".to_string(),
+        total_devices: 0,
+        online_devices: 0,
+        offline_devices: 0,
+        devices: Vec::new(),
+    };
+
+    let mut pc_ipv4 = String::new();
+    let mut pc_ipv6 = String::new();
+    let mut pc_mac = String::new();
+    let mut gateway_v4 = String::new();
+    let mut gateway_v6 = String::new();
+
+    // 1. Query netsh wlan show interfaces
+    #[cfg(windows)]
+    {
+        if let Ok(out) = silent_command("netsh").args(["wlan", "show", "interfaces"]).output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if let Some(pos) = trimmed.find(':') {
+                    let key = trimmed[..pos].trim();
+                    let val = trimmed[pos + 1..].trim();
+                    match key {
+                        "State" => {
+                            if val.eq_ignore_ascii_case("connected") {
+                                info.connected = true;
+                            }
+                        }
+                        "SSID" => {
+                            if !val.is_empty() {
+                                info.ssid = val.to_string();
+                            }
+                        }
+                        "BSSID" => {
+                            if !val.is_empty() {
+                                info.bssid = val.to_uppercase();
+                                info.router_mac = val.to_uppercase();
+                            }
+                        }
+                        "Radio type" => {
+                            if !val.is_empty() {
+                                info.radio_type = val.to_string();
+                            }
+                        }
+                        "Channel" => {
+                            if let Ok(ch) = val.parse::<u32>() {
+                                info.channel = ch;
+                            }
+                        }
+                        "Signal" => {
+                            let clean = val.replace('%', "").trim().to_string();
+                            if let Ok(sig) = clean.parse::<u8>() {
+                                info.signal_percent = sig;
+                            }
+                        }
+                        "Receive rate (Mbps)" => {
+                            if let Ok(r) = val.parse::<u32>() {
+                                info.receive_rate_mbps = r;
+                            }
+                        }
+                        "Transmit rate (Mbps)" => {
+                            if let Ok(t) = val.parse::<u32>() {
+                                info.transmit_rate_mbps = t;
+                            }
+                        }
+                        "Physical address" => {
+                            if !val.is_empty() {
+                                pc_mac = val.to_uppercase();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Query ipconfig to extract IPv4, IPv6, and default gateways
+    #[cfg(windows)]
+    {
+        if let Ok(out) = silent_command("ipconfig").output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let mut in_wifi_section = false;
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("Wireless LAN adapter") || trimmed.contains("WiFi") || trimmed.contains("Wi-Fi") {
+                    in_wifi_section = true;
+                    continue;
+                } else if trimmed.starts_with("Ethernet adapter") {
+                    in_wifi_section = false;
+                    continue;
+                }
+
+                if in_wifi_section {
+                    if let Some(pos) = trimmed.find(':') {
+                        let key = trimmed[..pos].trim();
+                        let val = trimmed[pos + 1..].trim();
+                        if key.contains("IPv4 Address") {
+                            pc_ipv4 = val.replace("(Preferred)", "").trim().to_string();
+                        } else if key.contains("IPv6 Address") && !key.contains("Link-local") && !key.contains("Temporary") {
+                            if pc_ipv6.is_empty() {
+                                pc_ipv6 = val.replace("(Preferred)", "").trim().to_string();
+                            }
+                        } else if key.contains("Link-local IPv6 Address") {
+                            if pc_ipv6.is_empty() {
+                                pc_ipv6 = val.split('%').next().unwrap_or(val).trim().to_string();
+                            }
+                        } else if key.contains("Default Gateway") {
+                            if val.contains('.') {
+                                gateway_v4 = val.to_string();
+                            } else if val.contains(':') {
+                                gateway_v6 = val.split('%').next().unwrap_or(val).trim().to_string();
+                            }
+                        }
+                    } else if !trimmed.is_empty() && trimmed.contains('.') && gateway_v4.is_empty() {
+                        gateway_v4 = trimmed.to_string();
+                    }
+                }
+            }
+        }
+    }
+
+    if !gateway_v4.is_empty() {
+        info.router_ip_v4 = gateway_v4.clone();
+    }
+    if !gateway_v6.is_empty() {
+        info.router_ip_v6 = gateway_v6.clone();
+    } else {
+        let last_part = info.router_ip_v4.split('.').last().unwrap_or("1");
+        info.router_ip_v6 = format!("fe80::{}:1", last_part);
+    }
+
+    if info.connected {
+        let band_desc = if info.channel > 14 { "5GHz" } else { "2.4GHz" };
+        info.status_text = format!("CONNECTED // {}", band_desc);
+        info.router_model = format!("{} Gateway", info.ssid);
+    } else {
+        info.status_text = "STANDBY // SCANNING".to_string();
+    }
+
+    // 3. Discover subnet devices via arp -a
+    let mut discovered_macs: Vec<(String, String)> = Vec::new();
+    #[cfg(windows)]
+    {
+        if let Ok(out) = silent_command("arp").arg("-a").output() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let mut target_interface = false;
+            let subnet_prefix = if !info.router_ip_v4.is_empty() {
+                let parts: Vec<&str> = info.router_ip_v4.split('.').collect();
+                if parts.len() >= 3 {
+                    format!("{}.{}.{}.", parts[0], parts[1], parts[2])
+                } else {
+                    "192.168.1.".to_string()
+                }
+            } else {
+                "192.168.1.".to_string()
+            };
+
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("Interface:") {
+                    if trimmed.contains(&subnet_prefix) {
+                        target_interface = true;
+                    } else {
+                        target_interface = false;
+                    }
+                    continue;
+                }
+
+                if target_interface {
+                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                    if parts.len() >= 3 {
+                        let ip = parts[0].trim();
+                        let mac = parts[1].replace('-', ":").to_uppercase();
+                        let entry_type = parts[2].to_lowercase();
+
+                        if ip.starts_with(&subnet_prefix) && entry_type == "dynamic" && !mac.starts_with("FF:FF") && !mac.starts_with("01:00:5E") {
+                            discovered_macs.push((ip.to_string(), mac));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Assemble the complete device list
+    let mut dev_list: Vec<WifiDeviceItem> = Vec::new();
+
+    // Device 1: Gateway / Router
+    dev_list.push(WifiDeviceItem {
+        name: format!("{} (Primary Router)", info.router_model),
+        ip_v4: info.router_ip_v4.clone(),
+        ip_v6: info.router_ip_v6.clone(),
+        mac: info.router_mac.clone(),
+        status: if info.connected { "Online".to_string() } else { "Offline".to_string() },
+        device_type: "Gateway".to_string(),
+        is_current_device: false,
+    });
+
+    // Device 2: This Workstation PC
+    let pc_v4 = if !pc_ipv4.is_empty() { pc_ipv4 } else { "192.168.1.7".to_string() };
+    let pc_v6 = if !pc_ipv6.is_empty() { pc_ipv6 } else { "fe80::b475:254:2c0a:199e".to_string() };
+    let pc_m = if !pc_mac.is_empty() { pc_mac } else { "14:7D:DA:6D:B0:4B".to_string() };
+
+    let hostname = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "STARK-DESKTOP".to_string());
+    dev_list.push(WifiDeviceItem {
+        name: format!("{} (This PC)", hostname),
+        ip_v4: pc_v4.clone(),
+        ip_v6: pc_v6.clone(),
+        mac: pc_m.clone(),
+        status: "Online".to_string(),
+        device_type: "Workstation".to_string(),
+        is_current_device: true,
+    });
+
+    // Add devices found on network (skip gateway and current PC)
+    for (ip, mac) in discovered_macs {
+        if ip == info.router_ip_v4 || ip == pc_v4 || mac == info.router_mac || mac == pc_m {
+            continue;
+        }
+
+        let dev_type = if mac.starts_with("0E:0C") || mac.starts_with("9E:DB") || mac.starts_with("44:00") {
+            "Mobile".to_string()
+        } else if mac.starts_with("B8:27") || mac.starts_with("DC:A6") {
+            "IoT Hub".to_string()
+        } else {
+            "Network Device".to_string()
+        };
+
+        let dev_name = format!("Network Node ({})", ip);
+
+        dev_list.push(WifiDeviceItem {
+            name: dev_name,
+            ip_v4: ip,
+            ip_v6: String::new(),
+            mac,
+            status: "Online".to_string(),
+            device_type: dev_type,
+            is_current_device: false,
+        });
+    }
+
+    info.total_devices = dev_list.len();
+    info.online_devices = dev_list.iter().filter(|d| d.status == "Online").count();
+    info.offline_devices = dev_list.iter().filter(|d| d.status == "Offline").count();
+    info.devices = dev_list;
+
+    Ok(info)
+}
+
 #[tauri::command]
 fn dial_phone_call(number: String) -> Result<String, String> {
     let clean_num: String = number.chars().filter(|c| c.is_ascii_digit() || *c == '+' || *c == '*' || *c == '#').collect();
@@ -4579,7 +4877,8 @@ pub fn run() {
             transcribe_audio_groq,
             web_search_jarvis,
             inspect_screen_jarvis,
-            write_code_jarvis
+            write_code_jarvis,
+            get_wifi_network_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

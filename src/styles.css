@@ -1,5 +1,6 @@
 :root {
-  --deck-width-left: clamp(280px, 21vw, 340px);
+  --deck-width-left: clamp(240px, 19vw, 340px);
+  --deck-width-right: clamp(260px, 22vw, 420px);
   --bg-black: #000000;
   --bg-card: rgba(8, 16, 32, 0.82);
   --bg-card-hover: rgba(12, 24, 46, 0.88);
@@ -258,24 +259,41 @@ body {
 }
 
 /* ========================================================= */
-/* TOP-LEFT: INTELLIGENT MODERN DATE & TIME HUD              */
+/* LEFT MASTER DECK & INTELLIGENT MODERN DATE & TIME HUD     */
 /* ========================================================= */
-.tech-time-hud {
+.left-master-deck {
   position: absolute;
-  top: 16px;
-  left: 24px;
+  top: clamp(10px, 1.8vh, 20px);
+  bottom: clamp(12px, 2vh, 24px);
+  left: clamp(10px, 1.6vw, 24px);
   width: var(--deck-width-left);
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 6px 12px;
+  justify-content: space-between;
+  gap: clamp(10px, 1.4vh, 16px);
+  z-index: 10;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.left-master-deck > * {
+  pointer-events: auto;
+}
+
+.tech-time-hud {
+  position: relative;
+  width: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2px, 0.4vh, 4px);
+  padding: clamp(4px, 0.6vh, 7px) clamp(8px, 1vw, 12px);
   background: linear-gradient(135deg, rgba(8, 16, 32, 0.78) 0%, rgba(5, 12, 24, 0.86) 100%);
   border: 1px solid rgba(56, 189, 248, 0.18);
   border-left: 2.5px solid var(--cyan-neon);
   border-radius: 4px;
   backdrop-filter: blur(6px);
   box-shadow: 0 0 14px rgba(56, 189, 248, 0.072);
-  z-index: 10;
   box-sizing: border-box;
   pointer-events: none;
 }
@@ -380,622 +398,7 @@ body {
   transition: width 0.3s ease;
 }
 
-/* ========================================================= */
-/* LEFT MIDDLE: NAVEEN BIOMETRICS & HEALTH BLUEPRINT HUD      */
-/* ========================================================= */
-.humanoid-blueprint-panel {
-  position: absolute;
-  top: calc(50vh - 114px);
-  transform: translateY(-50%);
-  left: 24px;
-  width: var(--deck-width-left);
-  background: linear-gradient(145deg, rgba(8, 16, 32, 0.88) 0%, rgba(5, 11, 24, 0.94) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.23);
-  border-left: 2.5px solid var(--cyan-neon);
-  border-radius: 4px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.086), inset 0 0 12px rgba(56, 189, 248, 0.03);
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  z-index: 10;
-  box-sizing: border-box;
-}
 
-.blueprint-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.bp-paired-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(52, 211, 153, 0.06);
-  border: 1px solid rgba(52, 211, 153, 0.338);
-  padding: 3px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  user-select: none;
-}
-
-.bp-paired-tag:hover {
-  background: rgba(56, 189, 248, 0.101);
-  border-color: var(--cyan-neon);
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.18);
-}
-
-.bp-watch-icon {
-  width: 14px;
-  height: 14px;
-  display: block;
-  stroke: #34d399;
-  color: #34d399;
-  filter: drop-shadow(0 0 5px rgba(52, 211, 153, 0.525));
-  transition: all 0.25s ease;
-}
-
-.bp-paired-label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: var(--emerald-voice);
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.375);
-  letter-spacing: 0.8px;
-}
-
-.bp-sync-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--emerald-voice);
-  box-shadow: 0 0 8px var(--emerald-voice);
-  animation: pulse-beacon 1.6s infinite;
-}
-
-/* IDLE STATE: When no watch is connected (gray . Idle) */
-.bp-paired-tag.idle {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(148, 163, 184, 0.25);
-}
-
-.bp-paired-tag.idle .bp-watch-icon {
-  stroke: #64748b;
-  color: #64748b;
-  filter: none;
-}
-
-.bp-paired-tag.idle .bp-sync-dot {
-  background: #64748b;
-  box-shadow: none;
-  animation: none;
-}
-
-.bp-paired-tag.idle .bp-paired-label {
-  color: #64748b;
-  text-shadow: none;
-}
-
-.bp-title-group {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.bp-beacon {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--cyan-neon);
-  box-shadow: 0 0 8px var(--cyan-neon);
-  animation: pulse-beacon 1.8s infinite;
-}
-
-.bp-title {
-  font-family: var(--font-orbitron);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: #f1f5f9;
-  text-shadow: 0 0 8px rgba(56, 189, 248, 0.252);
-}
-
-.bp-badge {
-  font-family: var(--font-mono);
-  font-size: 0.52rem;
-  font-weight: 600;
-  background: rgba(56, 189, 248, 0.086);
-  border: 1px solid rgba(56, 189, 248, 0.252);
-  color: var(--cyan-neon);
-  padding: 1px 5px;
-  border-radius: 3px;
-  letter-spacing: 0.4px;
-}
-
-.bp-ver {
-  font-family: var(--font-mono);
-  font-size: 0.55rem;
-  font-weight: 600;
-  color: #34d399;
-  text-shadow: 0 0 6px rgba(52, 211, 153, 0.3);
-  letter-spacing: 0.4px;
-}
-
-/* 3D Blueprint Canvas Box with Blueprint Grid */
-.blueprint-canvas-box {
-  position: relative;
-  width: 100%;
-  height: clamp(140px, 20vh, 195px);
-  border-radius: 3px;
-  background-color: #040813;
-  background-image: 
-    linear-gradient(rgba(56, 189, 248, 0.043) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(56, 189, 248, 0.043) 1px, transparent 1px);
-  background-size: 14px 14px;
-  border: 1px solid rgba(56, 189, 248, 0.158);
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.blueprint-body-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center;
-  display: block;
-  filter: contrast(1.1) brightness(1.05);
-}
-
-.blueprint-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  pointer-events: none;
-}
-
-/* CAD Corner Crosshairs */
-.bp-cad-corners {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.bp-corner {
-  position: absolute;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  line-height: 1;
-  color: rgba(56, 189, 248, 0.396);
-}
-
-.bp-corner.top-left { top: 3px; left: 4px; }
-.bp-corner.top-right { top: 3px; right: 4px; }
-.bp-corner.bottom-left { bottom: 3px; left: 4px; }
-.bp-corner.bottom-right { bottom: 3px; right: 4px; }
-
-/* Scanner Standby Overlay: Visible when watch is NOT paired (Requirement 5) */
-.bp-scanner-standby {
-  position: absolute;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: rgba(1, 10, 20, 0.62);
-  backdrop-filter: blur(2px);
-  pointer-events: none;
-  z-index: 5;
-}
-
-.humanoid-blueprint-panel.not-paired .bp-scanner-standby {
-  display: flex;
-}
-
-.humanoid-blueprint-panel.not-paired .blueprint-body-img {
-  filter: contrast(0.85) brightness(0.5) grayscale(55%);
-}
-
-.humanoid-blueprint-panel.not-paired .bp-corner {
-  color: rgba(148, 163, 184, 0.28);
-}
-
-.standby-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: rgba(10, 18, 30, 0.92);
-  border: 1px dashed rgba(148, 163, 184, 0.45);
-  padding: 6px 12px;
-  border-radius: 4px;
-  box-shadow: 0 0 16px rgba(0, 0, 0, 0.8);
-}
-
-.standby-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #64748b;
-}
-
-.standby-text {
-  font-family: var(--font-mono);
-  font-size: 0.58rem;
-  font-weight: 700;
-  color: #94a3b8;
-  letter-spacing: 0.8px;
-}
-
-/* Dynamic Blueprint Callout Tags */
-.bp-callouts-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.bp-callout {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--font-mono);
-  font-size: 0.48rem;
-  color: #38bdf8;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-  background: linear-gradient(135deg, rgba(8, 16, 32, 0.78) 0%, rgba(5, 12, 24, 0.86) 100%);
-  padding: 1px 4px;
-  border-radius: 2px;
-}
-
-.bp-callout-head {
-  top: 10px;
-  right: 6px;
-}
-
-.bp-callout-core {
-  top: 48px;
-  left: 6px;
-}
-
-.bp-callout-wrist {
-  bottom: 16px;
-  left: 6px;
-}
-
-.bp-line {
-  display: inline-block;
-  width: 8px;
-  height: 1px;
-  background: rgba(56, 189, 248, 0.432);
-  box-shadow: 0 0 4px var(--cyan-neon);
-}
-
-/* Profile Bar: DOB & Age */
-.bp-profile-bar {
-  display: grid;
-  grid-template-columns: 1fr 1.35fr 0.9fr 0.95fr;
-  gap: 4px;
-  padding: 4px 7px;
-  background: rgba(56, 189, 248, 0.036);
-  border: 1px solid rgba(56, 189, 248, 0.158);
-  border-radius: 3px;
-  font-family: var(--font-mono);
-}
-
-.bp-profile-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.bp-prof-label {
-  font-size: 0.58rem;
-  font-weight: 600;
-  color: #94a3b8;
-  letter-spacing: 0.5px;
-}
-
-.bp-prof-val {
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: #f1f5f9;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-}
-
-.bp-prof-val.cyan { color: var(--cyan-neon); text-shadow: 0 0 6px var(--cyan-glow); }
-.bp-prof-val.emerald { color: #34d399; text-shadow: 0 0 6px rgba(52, 211, 153, 0.375); }
-
-/* Live Vitals Grid: Heart Rate, Pulse SpO2, Blood Pressure */
-.bp-vitals-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
-}
-
-.bp-vital-card {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 6px 8px;
-  background: rgba(2, 14, 28, 0.88);
-  border: 1px solid rgba(56, 189, 248, 0.202);
-  border-radius: 4px;
-  box-shadow: inset 0 0 10px rgba(56, 189, 248, 0.036);
-}
-
-.humanoid-blueprint-panel.not-paired .bp-vital-card {
-  border-color: rgba(148, 163, 184, 0.18);
-  background: rgba(2, 10, 20, 0.65);
-}
-
-.vital-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.vital-label {
-  font-family: var(--font-mono);
-  font-size: 0.54rem;
-  color: #38bdf8;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-}
-
-.vital-icon {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: #94a3b8;
-}
-
-.vital-heart-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-}
-
-.vital-heart-svg {
-  width: 13px;
-  height: 13px;
-  display: block;
-  filter: drop-shadow(0 0 5px rgba(244, 63, 94, 0.562));
-  animation: heart-beat 1.15s infinite ease-in-out;
-  transform-origin: center center;
-}
-
-.humanoid-blueprint-panel.not-paired .vital-heart-svg {
-  animation: none;
-  filter: grayscale(80%) opacity(0.35);
-}
-
-@keyframes heart-beat {
-  0%, 100% {
-    transform: scale(1);
-    filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.45));
-  }
-  14% {
-    transform: scale(1.32);
-    filter: drop-shadow(0 0 9px rgba(244, 63, 94, 0.712)) drop-shadow(0 0 3px rgba(255, 255, 255, 0.6));
-  }
-  26% {
-    transform: scale(1.05);
-    filter: drop-shadow(0 0 5px rgba(244, 63, 94, 0.525));
-  }
-  38% {
-    transform: scale(1.22);
-    filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.637));
-  }
-  52% {
-    transform: scale(1);
-    filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.45));
-  }
-}
-
-.vital-val-row {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-}
-
-.vital-num {
-  font-family: var(--font-orbitron);
-  font-size: 1.15rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.vital-num.cyan { color: var(--cyan-neon); text-shadow: 0 0 8px var(--cyan-glow); }
-.vital-num.emerald { color: #34d399; text-shadow: 0 0 8px rgba(52, 211, 153, 0.375); }
-.vital-num.purple { color: #a78bfa; text-shadow: 0 0 8px rgba(167, 139, 250, 0.35); }
-
-.vital-unit {
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  font-weight: 600;
-  color: #f1f5f9;
-  letter-spacing: 0.2px;
-}
-
-/* Total Steps & Activity Progress Deck (Noise / Fitbit) */
-.bp-activity-deck {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
-  background: rgba(2, 14, 28, 0.88);
-  border: 1px solid rgba(56, 189, 248, 0.202);
-  border-radius: 4px;
-  box-shadow: inset 0 0 10px rgba(56, 189, 248, 0.036);
-}
-
-.humanoid-blueprint-panel.not-paired .bp-activity-deck {
-  border-color: rgba(148, 163, 184, 0.18);
-  background: rgba(2, 10, 20, 0.65);
-}
-
-.bp-activity-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.act-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.act-shoe-svg {
-  width: 15px;
-  height: 15px;
-  display: block;
-  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.36));
-}
-
-.act-title {
-  font-family: var(--font-orbitron);
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  color: #f1f5f9;
-}
-
-.act-nums {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-}
-
-.act-cur {
-  font-family: var(--font-orbitron);
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: var(--cyan-neon);
-  text-shadow: 0 0 8px var(--cyan-glow);
-}
-
-.act-goal {
-  font-family: var(--font-mono);
-  color: #94a3b8;
-  font-size: 0.62rem;
-  font-weight: 500;
-}
-
-.bp-step-meter {
-  width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.bp-step-fill {
-  height: 100%;
-  background: #38bdf8;
-  box-shadow: 0 0 8px #38bdf8;
-  border-radius: 3px;
-  transition: width 0.4s ease;
-}
-
-.act-sub-metrics {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  color: #cbd5e1;
-}
-
-.act-sub-metrics strong {
-  color: #ffffff;
-  font-size: 0.70rem;
-  font-weight: 700;
-}
-
-.act-dot {
-  color: rgba(56, 189, 248, 0.396);
-  font-size: 0.72rem;
-}
-
-.act-sub-metrics strong {
-  color: #ffffff;
-  font-size: 0.68rem;
-}
-
-.act-dot {
-  color: rgba(56, 189, 248, 0.288);
-}
-
-/* Real-Time Neural ECG Waveform Strip */
-.blueprint-ecg-strip {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding-top: 3px;
-  border-top: 1px solid rgba(56, 189, 248, 0.115);
-}
-
-.ecg-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-}
-
-.ecg-label {
-  color: #94a3b8;
-  letter-spacing: 0.5px;
-  font-weight: 500;
-}
-
-.ecg-bpm {
-  color: #34d399;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.375);
-}
-
-.ecg-canvas-box {
-  width: 100%;
-  height: 54px;
-  border-radius: 3px;
-  background-color: rgba(2, 12, 24, 0.75);
-  background-image: 
-    linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
-  background-size: 16px 16px;
-  border: 1px solid rgba(56, 189, 248, 0.158);
-  overflow: hidden;
-  box-shadow: inset 0 0 10px rgba(56, 189, 248, 0.036);
-  position: relative;
-}
-
-.ecg-canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-@media (max-height: 800px) {
-  .humanoid-blueprint-panel {
-    top: 80px;
-    padding: 5px 8px;
-    gap: 4px;
-  }
-  .blueprint-canvas-box {
-    height: 125px;
-  }
-}
 
 /* ========================================================= */
 /* NEURAL CORE TELEMETRY STYLING                             */
@@ -1086,15 +489,14 @@ body {
 /* LEFT BOTTOM: HARDWARE CLUSTER (PROCESSOR, MEMORY, NET)    */
 /* ========================================================= */
 .left-system-deck {
-  position: absolute;
-  left: 24px;
-  bottom: 24px;
-  width: var(--deck-width-left);
+  position: relative;
+  width: 100%;
+  margin-top: auto;
+  flex-shrink: 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  z-index: 10;
+  gap: clamp(4px, 0.6vh, 8px);
 }
 
 /* ========================================================= */
@@ -1102,15 +504,16 @@ body {
 /* ========================================================= */
 .right-system-deck {
   position: absolute;
-  right: 24px;
-  top: 24px;
-  bottom: 24px;
-  width: clamp(340px, 28vw, 440px);
+  right: clamp(10px, 1.6vw, 24px);
+  top: clamp(10px, 1.8vh, 20px);
+  bottom: clamp(12px, 2vh, 24px);
+  width: var(--deck-width-right);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 16px;
+  gap: clamp(6px, 1vh, 14px);
   z-index: 10;
+  box-sizing: border-box;
 }
 
 /* Gadget Panels (Full Width, Sci-Fi HUD Framing) */
@@ -1120,12 +523,13 @@ body {
   border: 1px solid rgba(56, 189, 248, 0.144);
   border-left: 2px solid var(--cyan-neon);
   border-radius: 4px;
-  padding: 6px 10px;
+  padding: clamp(3px, 0.5vh, 6px) clamp(6px, 0.8vw, 10px);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: clamp(2px, 0.3vh, 4px);
   backdrop-filter: blur(4px);
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  box-sizing: border-box;
 }
 
 .gadget-panel:hover {
@@ -1135,6 +539,7 @@ body {
 
 .gadget-panel.neural-panel {
   border-left-color: var(--purple-ai);
+  flex-shrink: 0;
 }
 
 .gadget-top {
@@ -1145,7 +550,7 @@ body {
 
 .gadget-title {
   font-family: var(--font-hero);
-  font-size: 0.74rem;
+  font-size: clamp(0.62rem, 0.78vw, 0.74rem);
   letter-spacing: 1px;
   color: #f1f5f9;
   white-space: nowrap;
@@ -1153,7 +558,7 @@ body {
 
 .gadget-val {
   font-family: var(--font-mono);
-  font-size: 0.82rem;
+  font-size: clamp(0.68rem, 0.85vw, 0.82rem);
   font-weight: 700;
   letter-spacing: 0.4px;
   white-space: nowrap;
@@ -1176,7 +581,7 @@ body {
 
 .gadget-sub {
   font-family: var(--font-mono);
-  font-size: 0.64rem;
+  font-size: clamp(0.52rem, 0.65vw, 0.64rem);
   color: var(--text-muted);
   letter-spacing: 0.5px;
 }
@@ -1194,7 +599,7 @@ body {
 /* Canvas Containers */
 .canvas-box {
   width: 100%;
-  height: 48px;
+  height: clamp(26px, 4vh, 44px);
   position: relative;
   background: rgba(56, 189, 248, 0.03);
   border-bottom: 1px solid rgba(56, 189, 248, 0.144);
@@ -1202,7 +607,7 @@ body {
 }
 
 .canvas-box.neural-box {
-  height: 165px;
+  height: clamp(75px, 14vh, 155px);
   background: radial-gradient(circle at 50% 50%, rgba(167, 139, 250, 0.049) 0%, rgba(0, 12, 24, 0.8) 100%);
   border: 1px solid rgba(167, 139, 250, 0.175);
   border-radius: 4px;
@@ -1239,15 +644,17 @@ body {
 /* ========================================================= */
 .ref-token-card {
   width: 100%;
+  flex-shrink: 0;
   background: linear-gradient(145deg, rgba(8, 16, 32, 0.88) 0%, rgba(5, 11, 24, 0.94) 100%);
   border: 1px solid rgba(56, 189, 248, 0.202);
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: clamp(4px, 0.6vh, 8px) clamp(6px, 0.8vw, 10px);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: clamp(2px, 0.4vh, 5px);
   backdrop-filter: blur(8px);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55), 0 0 16px rgba(56, 189, 248, 0.058);
+  box-sizing: border-box;
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
@@ -1323,12 +730,12 @@ body {
 .ref-token-matrix {
   display: grid;
   grid-template-columns: repeat(32, 1fr);
-  grid-auto-rows: 6px;
-  gap: 2px;
+  grid-auto-rows: clamp(3.5px, 0.6vh, 6px);
+  gap: clamp(1px, 0.2vw, 2px);
 }
 
 .token-slot {
-  height: 6px;
+  height: clamp(3.5px, 0.6vh, 6px);
   background: #0c1524;
   border: 0.5px solid #162740;
   border-radius: 1.5px;
@@ -1459,18 +866,18 @@ body {
 .models-roster-panel {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  flex: 1;
-  min-height: 140px;
-  max-height: 185px;
+  gap: clamp(3px, 0.5vh, 6px);
+  flex: 1 1 auto;
+  min-height: clamp(70px, 11vh, 130px);
+  max-height: clamp(105px, 18vh, 175px);
 }
 
 .models-list {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: clamp(3px, 0.4vh, 5px);
   flex: 1;
-  max-height: 145px;
+  max-height: clamp(65px, 14vh, 135px);
   overflow-y: auto;
   padding-right: 3px;
 }
@@ -1663,13 +1070,13 @@ body {
 /* ========================================================= */
 .bottom-dock-container {
   position: absolute;
-  bottom: 16px;
+  bottom: clamp(8px, 1.8vh, 16px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: clamp(3px, 0.6vh, 6px);
   z-index: 15;
 }
 
@@ -1677,11 +1084,11 @@ body {
 .app-icons-dock {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: clamp(8px, 1.1vw, 16px);
   background: rgba(4, 10, 24, 0.45);
   border: 1px solid rgba(56, 189, 248, 0.15);
   border-radius: 30px;
-  padding: 6px 14px;
+  padding: clamp(3px, 0.6vh, 6px) clamp(8px, 1.1vw, 14px);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.08);
@@ -1700,8 +1107,8 @@ body {
 }
 
 .dock-icon-box {
-  width: 40px;
-  height: 40px;
+  width: clamp(32px, 3.2vw, 40px);
+  height: clamp(32px, 3.2vw, 40px);
   border-radius: 50%;
   background: radial-gradient(circle at 35% 35%, rgba(18, 34, 60, 0.8) 0%, rgba(8, 16, 32, 0.88) 100%);
   border: 1.2px solid rgba(56, 189, 248, 0.3);
@@ -1720,8 +1127,8 @@ body {
 }
 
 .dock-svg {
-  width: 19px;
-  height: 19px;
+  width: clamp(15px, 1.5vw, 19px);
+  height: clamp(15px, 1.5vw, 19px);
   color: var(--cyan-neon);
   stroke: var(--cyan-neon);
   transition: color 0.2s ease, stroke 0.2s ease, transform 0.2s ease;
@@ -1744,17 +1151,18 @@ body {
 /* ========================================================= */
 .holographic-input-bar {
   position: absolute;
-  bottom: 74px;
+  bottom: clamp(56px, 8.5vh, 74px);
   left: 50%;
   transform: translateX(-50%) translateY(0) scale(1);
-  width: clamp(380px, 34vw, 500px);
+  width: clamp(280px, 32vw, 480px);
+  max-width: calc(100vw - var(--deck-width-left) - var(--deck-width-right) - 36px);
   background: rgba(0, 0, 0, 0.92);
   border: 1px solid rgba(56, 189, 248, 0.35);
   border-radius: 28px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9), 0 0 24px rgba(56, 189, 248, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  padding: 4px 6px 4px 6px;
+  padding: clamp(3px, 0.5vh, 4px) clamp(4px, 0.6vw, 6px);
   z-index: 50;
   box-sizing: border-box;
   opacity: 1;
@@ -1986,281 +1394,7 @@ body {
   transform: translateY(-3px) scale(1.12);
 }
 
-/* ========================================================= */
-/* SMARTWATCH TELEMETRY & BLUETOOTH CONTROLLER MODAL         */
-/* ========================================================= */
-.watch-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 5, 15, 0.78);
-  backdrop-filter: blur(10px);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: fadeIn 0.2s ease-out;
-}
 
-.watch-modal-card {
-  width: 440px;
-  max-width: 90vw;
-  background: linear-gradient(150deg, rgba(10, 20, 38, 0.97) 0%, rgba(6, 12, 24, 0.98) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.288);
-  box-shadow: 0 0 35px rgba(56, 189, 248, 0.158), inset 0 0 20px rgba(56, 189, 248, 0.036);
-  border-radius: 6px;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.watch-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: rgba(56, 189, 248, 0.058);
-  border-bottom: 1px solid rgba(56, 189, 248, 0.18);
-}
-
-.watch-modal-title-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.watch-modal-icon {
-  width: 16px;
-  height: 16px;
-  stroke: var(--cyan-neon);
-}
-
-.watch-modal-title {
-  font-family: var(--font-orbitron);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: #f1f5f9;
-}
-
-.watch-modal-close {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  font-size: 1.4rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 4px;
-  transition: color 0.2s ease;
-}
-
-.watch-modal-close:hover {
-  color: #f43f5e;
-}
-
-.watch-modal-body {
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.watch-status-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 4px;
-  background: rgba(52, 211, 153, 0.06);
-  border: 1px solid rgba(52, 211, 153, 0.262);
-  transition: all 0.3s ease;
-}
-
-.watch-status-banner.idle {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(148, 163, 184, 0.25);
-}
-
-.ws-indicator {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #34d399;
-  box-shadow: 0 0 10px #34d399;
-}
-
-.watch-status-banner.idle .ws-indicator {
-  background: #64748b;
-  box-shadow: none;
-}
-
-.ws-text-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ws-label {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #34d399;
-  letter-spacing: 0.6px;
-}
-
-.watch-status-banner.idle .ws-label {
-  color: #94a3b8;
-}
-
-.ws-sub {
-  font-family: var(--font-mono);
-  font-size: 0.60rem;
-  color: #64748b;
-}
-
-.watch-section-title {
-  font-family: var(--font-mono);
-  font-size: 0.60rem;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  color: #38bdf8;
-  margin-top: 4px;
-}
-
-.watch-device-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 120px;
-  overflow-y: auto;
-  background: rgba(0, 5, 12, 0.5);
-  border: 1px solid rgba(56, 189, 248, 0.108);
-  border-radius: 4px;
-  padding: 6px;
-}
-
-.watch-device-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 3px;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-}
-
-.watch-device-item.scan-msg {
-  color: #64748b;
-  justify-content: center;
-  padding: 10px;
-}
-
-.w-dev-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.w-dev-name {
-  color: #f1f5f9;
-  font-weight: 600;
-}
-
-.w-dev-badge {
-  font-size: 0.55rem;
-  padding: 1px 4px;
-  border-radius: 2px;
-  background: rgba(56, 189, 248, 0.108);
-  color: var(--cyan-neon);
-}
-
-.w-dev-btn {
-  background: rgba(56, 189, 248, 0.108);
-  border: 1px solid rgba(56, 189, 248, 0.288);
-  color: var(--cyan-neon);
-  font-family: var(--font-mono);
-  font-size: 0.58rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.w-dev-btn:hover {
-  background: var(--cyan-neon);
-  color: #040814;
-}
-
-.watch-controls-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.w-ctrl-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 4px;
-  color: #94a3b8;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.w-ctrl-btn.active {
-  background: rgba(52, 211, 153, 0.09);
-  border-color: #34d399;
-  color: #34d399;
-}
-
-.btn-ctrl-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #64748b;
-}
-
-.w-ctrl-btn.active .btn-ctrl-dot {
-  background: #34d399;
-  box-shadow: 0 0 6px #34d399;
-}
-
-.watch-presets-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.w-preset-label {
-  font-family: var(--font-mono);
-  font-size: 0.58rem;
-  color: #64748b;
-}
-
-.w-preset-btn {
-  background: rgba(56, 189, 248, 0.058);
-  border: 1px solid rgba(56, 189, 248, 0.252);
-  color: var(--cyan-neon);
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  font-weight: 600;
-  padding: 6px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.w-preset-btn:hover {
-  background: rgba(56, 189, 248, 0.144);
-  border-color: var(--cyan-neon);
-}
 
 /* ========================================================= */
 /* HOLOGRAPHIC PHONE DIALER & KEYPAD HUD (ULTRA-PRO STARK UI) */
@@ -2284,13 +1418,13 @@ body {
 }
 
 .phone-dialer-card {
-  width: 364px;
-  max-width: 92vw;
+  width: min(364px, 92vw);
+  max-height: 92vh;
+  overflow-y: auto;
   background: linear-gradient(165deg, rgba(10, 18, 36, 0.95) 0%, rgba(5, 10, 22, 0.98) 100%);
   border: 1px solid rgba(56, 189, 248, 0.32);
   box-shadow: 0 25px 65px rgba(0, 0, 0, 0.85), 0 0 40px rgba(56, 189, 248, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   border-radius: 16px;
-  overflow: hidden;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -2627,16 +1761,16 @@ body {
 }
 
 .phone-sync-card {
-  width: 92%;
-  max-width: 470px;
+  width: min(470px, 92vw);
+  max-height: 92vh;
+  overflow-y: auto;
   background: rgba(7, 12, 24, 0.96);
   border: 1px solid rgba(56, 189, 248, 0.38);
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.85), 0 0 35px rgba(56, 189, 248, 0.18), inset 0 0 25px rgba(56, 189, 248, 0.04);
   border-radius: 12px;
-  padding: 20px 22px 18px 22px;
+  padding: clamp(12px, 2vh, 20px) clamp(14px, 2vw, 22px);
   color: #f1f5f9;
   position: relative;
-  overflow: hidden;
   box-sizing: border-box;
 }
 
@@ -3080,4 +2214,261 @@ body {
 .sync-footer-tip strong {
   color: #e2e8f0;
 }
+
+/* ========================================================= */
+/* COMPREHENSIVE RESPONSIVE DESIGN (LAPTOPS, PCS, 2K/4K)     */
+/* ========================================================= */
+
+/* Standard Laptop Screens (Height <= 860px, e.g. 1080p@125%, 900p, 768p, 720p) */
+@media (max-height: 860px) {
+  .left-master-deck,
+  .right-system-deck {
+    top: 10px;
+    bottom: 12px;
+    gap: 6px;
+  }
+  .tech-time-hud {
+    padding: 4px 8px;
+    gap: 2px;
+  }
+  .time-digits {
+    font-size: 1.25rem;
+  }
+  .router-details-card {
+    padding: 4px 6px;
+    gap: 3px;
+  }
+  .canvas-box {
+    height: 28px;
+  }
+  .canvas-box.neural-box {
+    height: 95px;
+  }
+  .neural-telemetry-row {
+    padding: 2px 0;
+  }
+  .ref-token-card {
+    padding: 4px 8px;
+    gap: 3px;
+  }
+  .ref-token-matrix {
+    grid-auto-rows: 4px;
+    gap: 1.5px;
+  }
+  .token-slot {
+    height: 4px;
+  }
+  .models-roster-panel {
+    min-height: 75px;
+    max-height: 120px;
+  }
+  .models-list {
+    max-height: 90px;
+  }
+  .holographic-input-bar {
+    bottom: 58px;
+  }
+  .bottom-dock-container {
+    bottom: 8px;
+  }
+  .dock-icon-box {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* Compact Laptop / Low-Res Windows (Height <= 700px) */
+@media (max-height: 700px) {
+  .left-master-deck,
+  .right-system-deck {
+    top: 6px;
+    bottom: 6px;
+    gap: 4px;
+  }
+  .router-details-card {
+    padding: 3px 5px;
+    gap: 2px;
+  }
+  .router-icon-box {
+    width: 22px;
+    height: 22px;
+  }
+  .router-svg {
+    width: 13px;
+    height: 13px;
+  }
+  .wifi-device-item {
+    padding: 3px 5px;
+  }
+  .canvas-box {
+    height: 24px;
+  }
+  .canvas-box.neural-box {
+    height: 72px;
+  }
+  .ref-token-matrix {
+    grid-auto-rows: 3.5px;
+    gap: 1px;
+  }
+  .token-slot {
+    height: 3.5px;
+  }
+  .ref-hint-text {
+    display: none;
+  }
+  .models-roster-panel {
+    min-height: 65px;
+    max-height: 95px;
+  }
+  .models-list {
+    max-height: 70px;
+  }
+  .model-item {
+    padding: 2px 6px;
+  }
+  .holographic-input-bar {
+    bottom: 48px;
+    border-radius: 20px;
+    padding: 2px 4px;
+  }
+  .bottom-dock-container {
+    bottom: 4px;
+  }
+  .dock-icon-box {
+    width: 32px;
+    height: 32px;
+  }
+  .dock-svg {
+    width: 15px;
+    height: 15px;
+  }
+}
+
+/* Fallback Scrollable for Ultra-Compact Heights (Height <= 580px) */
+@media (max-height: 580px) {
+  .left-master-deck,
+  .right-system-deck {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56, 189, 248, 0.3) transparent;
+  }
+  .left-master-deck::-webkit-scrollbar,
+  .right-system-deck::-webkit-scrollbar {
+    width: 3px;
+  }
+  .left-master-deck::-webkit-scrollbar-thumb,
+  .right-system-deck::-webkit-scrollbar-thumb {
+    background: rgba(56, 189, 248, 0.3);
+    border-radius: 2px;
+  }
+}
+
+/* Medium Width Laptop Screens (Width <= 1366px) */
+@media (max-width: 1366px) {
+  :root {
+    --deck-width-left: clamp(220px, 19vw, 280px);
+    --deck-width-right: clamp(240px, 22vw, 320px);
+  }
+  .left-master-deck {
+    left: 10px;
+  }
+  .right-system-deck {
+    right: 10px;
+  }
+  .holographic-input-bar {
+    width: clamp(260px, 30vw, 400px);
+  }
+}
+
+/* Compact Width Screens (Width <= 1120px) */
+@media (max-width: 1120px) {
+  :root {
+    --deck-width-left: 215px;
+    --deck-width-right: 235px;
+  }
+  .left-master-deck {
+    left: 8px;
+  }
+  .right-system-deck {
+    right: 8px;
+  }
+  .gadget-title {
+    font-size: 0.62rem;
+  }
+  .gadget-val {
+    font-size: 0.70rem;
+  }
+  .holographic-input-bar {
+    width: clamp(240px, 28vw, 320px);
+  }
+  .app-icons-dock {
+    gap: 8px;
+  }
+}
+
+/* High-Resolution / 2K / 4K Desktop Monitors (Width >= 2000px) */
+@media (min-width: 2000px) {
+  :root {
+    --deck-width-left: clamp(340px, 18vw, 420px);
+    --deck-width-right: clamp(420px, 22vw, 520px);
+  }
+  .left-master-deck,
+  .right-system-deck {
+    top: 24px;
+    bottom: 28px;
+    gap: 16px;
+  }
+  .tech-time-hud {
+    padding: 8px 16px;
+  }
+  .time-digits {
+    font-size: 1.85rem;
+  }
+  .time-ampm {
+    font-size: 0.90rem;
+  }
+  .hud-temp-display {
+    font-size: 1.10rem;
+  }
+  .date-telemetry-row {
+    font-size: 0.82rem;
+  }
+
+  .canvas-box {
+    height: 56px;
+  }
+  .canvas-box.neural-box {
+    height: 195px;
+  }
+  .ref-token-matrix {
+    grid-auto-rows: 7px;
+    gap: 2.5px;
+  }
+  .token-slot {
+    height: 7px;
+  }
+  .models-roster-panel {
+    max-height: 220px;
+  }
+  .models-list {
+    max-height: 180px;
+  }
+  .holographic-input-bar {
+    width: 540px;
+    bottom: 84px;
+  }
+  .bottom-dock-container {
+    bottom: 22px;
+  }
+  .dock-icon-box {
+    width: 48px;
+    height: 48px;
+  }
+  .dock-svg {
+    width: 24px;
+    height: 24px;
+  }
+}
+
 
