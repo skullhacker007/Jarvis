@@ -2086,6 +2086,70 @@ fn clear_memory_items() -> Result<String, String> {
     jarvis_memory::clear().map(|_| "All memories cleared, sir.".to_string())
 }
 
+#[tauri::command]
+fn get_auto_startup_status() -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        let out = silent_command("reg")
+            .args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "Jarvis"])
+            .output();
+        if let Ok(res) = out {
+            return Ok(res.status.success());
+        }
+        Ok(false)
+    }
+    #[cfg(not(windows))]
+    Ok(false)
+}
+
+#[tauri::command]
+fn set_auto_startup(enable: bool) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        if enable {
+            let exe_path = std::env::current_exe()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| r"C:\Users\Chowdary\Desktop\Project\Jarvis\Jarvis.exe".to_string());
+            let quoted_exe = format!(r#""{}""#, exe_path);
+            let out = silent_command("reg")
+                .args([
+                    "add",
+                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                    "/v",
+                    "Jarvis",
+                    "/t",
+                    "REG_SZ",
+                    "/d",
+                    &quoted_exe,
+                    "/f",
+                ])
+                .output();
+            match out {
+                Ok(res) if res.status.success() => Ok("Windows auto-startup enabled for Jarvis, sir.".to_string()),
+                Ok(res) => Err(format!("Registry update failed: {}", String::from_utf8_lossy(&res.stderr))),
+                Err(e) => Err(format!("Could not execute reg command: {}", e)),
+            }
+        } else {
+            let out = silent_command("reg")
+                .args([
+                    "delete",
+                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                    "/v",
+                    "Jarvis",
+                    "/f",
+                ])
+                .output();
+            match out {
+                Ok(res) if res.status.success() => Ok("Windows auto-startup disabled, sir.".to_string()),
+                Ok(_) => Ok("Windows auto-startup was already disabled.".to_string()),
+                Err(e) => Err(format!("Could not execute reg command: {}", e)),
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    Err("Auto-startup is only supported on Windows".to_string())
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WifiDeviceItem {
     pub name: String,
@@ -3468,6 +3532,17 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
         "presence_lock" | "lock_on_absence" => {
             execute_system_action("lock_pc", "")
         }
+        // --- WINDOWS AUTO-STARTUP ---
+        "enable_auto_startup" | "auto_startup_on" => {
+            set_auto_startup(true)
+        }
+        "disable_auto_startup" | "auto_startup_off" => {
+            set_auto_startup(false)
+        }
+        "get_auto_startup" | "check_auto_startup" => {
+            let enabled = get_auto_startup_status().unwrap_or(false);
+            Ok(format!("Auto-startup is currently {}", if enabled { "ENABLED" } else { "DISABLED" }))
+        }
         _ => Err(format!("Unknown action: {}", action)),
     }
 }
@@ -3491,6 +3566,40 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
             tokens_per_sec: 25.0,
             model_name: MODEL_NAME.to_string(),
             token_words: vec!["lock".into(), "screen".into(), "→".into(), "Computer".into(), "locked.".into()],
+        });
+    }
+
+    if lower == "enable auto startup" || lower == "turn on auto startup" || lower == "start with windows" || lower == "enable startup" {
+        let _ = set_auto_startup(true);
+        return Some(JarvisResponse {
+            reply: "Windows auto-startup enabled for Jarvis, sir.".into(),
+            action: Some("⚡ Auto-Startup Enabled".into()),
+            command: Some("reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v Jarvis".into()),
+            output: Some("Auto-startup enabled in registry.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 4,
+            eval_tokens: 8,
+            total_tokens: 12,
+            tokens_per_sec: 30.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["auto".into(), "startup".into(), "→".into(), "Enabled".into()],
+        });
+    }
+
+    if lower == "disable auto startup" || lower == "turn off auto startup" || lower == "don't start with windows" || lower == "disable startup" {
+        let _ = set_auto_startup(false);
+        return Some(JarvisResponse {
+            reply: "Windows auto-startup disabled, sir.".into(),
+            action: Some("⚡ Auto-Startup Disabled".into()),
+            command: Some("reg delete HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v Jarvis".into()),
+            output: Some("Auto-startup deleted from registry.".into()),
+            latency_ms: start.elapsed().as_millis(),
+            prompt_tokens: 4,
+            eval_tokens: 6,
+            total_tokens: 10,
+            tokens_per_sec: 30.0,
+            model_name: MODEL_NAME.to_string(),
+            token_words: vec!["auto".into(), "startup".into(), "→".into(), "Disabled".into()],
         });
     }
 
@@ -6274,7 +6383,9 @@ pub fn run() {
             pull_ollama_model,
             save_memory_item,
             get_memory_items,
-            clear_memory_items
+            clear_memory_items,
+            get_auto_startup_status,
+            set_auto_startup
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -6396,6 +6507,14 @@ mod tests {
 
         let res_save = check_fast_path("save");
         assert!(res_save.is_some(), "check_fast_path('save') should return Some");
+
+        let res_startup = check_fast_path("start with windows");
+        assert!(res_startup.is_some(), "check_fast_path('start with windows') should return Some");
+        assert!(res_startup.unwrap().reply.contains("auto-startup enabled"));
+
+        let res_disable = check_fast_path("disable auto startup");
+        assert!(res_disable.is_some(), "check_fast_path('disable auto startup') should return Some");
+        assert!(res_disable.unwrap().reply.contains("auto-startup disabled"));
     }
 
     #[test]

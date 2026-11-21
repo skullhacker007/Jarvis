@@ -2974,7 +2974,7 @@ async function processDirective(prompt, shouldOpenInput = false) {
     JarvisSoundscape.play("confirm");
     try {
       const out = await invoke("run_direct_action", { action: "memory_store", target: fact });
-      const replyMsg = `Recorded in persistent memory: "${fact}", sir.`;
+      const replyMsg = out || `Recorded in persistent memory: "${fact}", sir.`;
       showJarvisFeedback(replyMsg, "memory_store");
       speakResponse(replyMsg);
     } catch (e) {
@@ -3108,7 +3108,7 @@ async function processDirective(prompt, shouldOpenInput = false) {
       const randY = Math.round(window.innerHeight * 0.5 + (Math.random() * 80 - 40));
       showVisualTarget(randX, randY, `OMNI // ${target.toUpperCase()}`);
       try {
-        const out = await invoke("run_direct_action", { action: "click_coords", target: `${randX},${randY}` });
+        await invoke("run_direct_action", { action: "click_coords", target: `${randX},${randY}` });
         showJarvisFeedback(`Clicked "${target}", sir.`, "omni_parser");
         speakResponse(`Clicked ${target}, sir.`);
       } catch (e) {
