@@ -250,6 +250,25 @@
       </div>
 
       <!-- ========================================================= -->
+      <!-- PHASE 3: WEBCAM AIR-GESTURE & PRESENCE SENSOR RADAR       -->
+      <!-- ========================================================= -->
+      <div class="gesture-radar-widget" id="gesture-radar-widget" style="display: none;">
+        <div class="gesture-radar-header">
+          <div class="gesture-header-title">
+            <span class="gesture-beacon"></span>
+            <span class="gesture-title">VISION SENSOR // GESTURES &amp; GLANCE</span>
+          </div>
+          <button class="gesture-close-btn" id="gesture-close-btn" title="Close Sensor">&times;</button>
+        </div>
+        <div class="gesture-radar-body">
+          <video id="gesture-video" playsinline muted autoplay style="display: none;"></video>
+          <canvas id="gesture-canvas" width="160" height="120" class="gesture-canvas"></canvas>
+          <div class="gesture-reticle-cross"></div>
+          <div class="gesture-feedback-label" id="gesture-feedback-label">RADAR SCANNING</div>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
       <!-- COMPACT FLOATING INPUT PILL (MIC - TEXTFIELD - EXEC)      -->
       <!-- ========================================================= -->
       <div class="holographic-input-bar visor-collapsed" id="holographic-visor-container">
@@ -619,6 +638,102 @@
           <span class="usb-tip-icon">⚡</span>
           <span><strong>1-SECOND USB LINK:</strong> Plug phone in via USB for 2 seconds to pair wirelessly with zero clicks.</span>
         </div>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- SMART AI CLIPBOARD HISTORY MODAL                          -->
+    <!-- ========================================================= -->
+    <div class="clipboard-history-modal" id="clipboard-history-modal">
+      <div class="cb-modal-header">
+        <div class="cb-modal-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+          </svg>
+          <span>SMART AI CLIPBOARD HISTORY</span>
+        </div>
+        <button class="cb-modal-close" id="cb-modal-close" title="Close">✕</button>
+      </div>
+      <div class="cb-items-list" id="cb-items-list">
+        <!-- Populated dynamically with recent clipboard snippets -->
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- PERSISTENT VECTOR MEMORY & SESSION KNOWLEDGE MODAL        -->
+    <!-- ========================================================= -->
+    <div class="memory-history-modal" id="memory-history-modal">
+      <div class="mem-modal-header">
+        <div class="mem-modal-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
+          <span>PERSISTENT VECTOR MEMORY // RAG STORE</span>
+        </div>
+        <button class="mem-modal-close" id="mem-modal-close" title="Close">✕</button>
+      </div>
+      <div class="mem-modal-controls">
+        <input type="text" id="mem-search-input" placeholder="Search memories, preferences, paths..." class="mem-search-input" />
+        <button class="mem-clear-btn" id="mem-clear-btn" title="Clear All Memories">CLEAR ALL</button>
+      </div>
+      <div class="mem-items-list" id="mem-items-list">
+        <!-- Populated dynamically with stored memories -->
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- PHASE 3: SEMANTIC LOCAL FILE SEARCH MODAL                 -->
+    <!-- ========================================================= -->
+    <div class="file-search-modal" id="file-search-modal">
+      <div class="fs-modal-header">
+        <div class="fs-modal-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span>SEMANTIC LOCAL FILE SEARCH // STARK INDEX</span>
+        </div>
+        <button class="fs-modal-close" id="fs-modal-close" title="Close">&times;</button>
+      </div>
+      <div class="fs-modal-controls">
+        <input type="text" id="fs-search-input" placeholder="Search documents, code, invoices, downloads..." class="fs-search-input" />
+        <button class="fs-search-btn" id="fs-search-btn">SEARCH</button>
+      </div>
+      <div class="fs-results-list" id="fs-results-list">
+        <div class="fs-empty-hint">Type a query above or say "find file [name]" to search across your system.</div>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- PHASE 3: P2P LOCAL AIRDROP DROPZONE OVERLAY               -->
+    <!-- ========================================================= -->
+    <div class="airdrop-dropzone-overlay" id="airdrop-dropzone">
+      <div class="airdrop-dropzone-box">
+        <div class="airdrop-icon-pulsing">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path>
+            <path d="M12 12v9"></path>
+            <path d="m16 16-4-4-4 4"></path>
+          </svg>
+        </div>
+        <div class="airdrop-title">STARK P2P AIRDROP // WIRELESS PHONE BEAM</div>
+        <div class="airdrop-subtitle">Drop files anywhere to beam directly to /sdcard/Download/ via High-Speed ADB</div>
+        <div class="airdrop-status" id="airdrop-status-text">DROP FILE TO TRANSMIT</div>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- PHASE 3: VISUAL ELEMENT GROUNDING RETICLE                 -->
+    <!-- ========================================================= -->
+    <div class="visual-target-reticle" id="visual-target-reticle">
+      <div class="reticle-box">
+        <div class="reticle-corner top-left"></div>
+        <div class="reticle-corner top-right"></div>
+        <div class="reticle-corner bottom-left"></div>
+        <div class="reticle-corner bottom-right"></div>
+        <div class="reticle-center-cross"></div>
+        <span class="reticle-label" id="reticle-label">TARGET ACQUIRED</span>
       </div>
     </div>
 

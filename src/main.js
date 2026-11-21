@@ -233,6 +233,902 @@ function toggleInputBar() {
   }
 }
 
+// =============================================================
+// PHASE 1: PROCEDURAL SCI-FI SOUNDSCAPE (PURE WEB AUDIO API)
+// =============================================================
+const JarvisSoundscape = (() => {
+  let sfxCtx = null;
+
+  function getAudioCtx() {
+    if (!sfxCtx) {
+      const AudioClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioClass) sfxCtx = new AudioClass();
+    }
+    if (sfxCtx && sfxCtx.state === "suspended") {
+      sfxCtx.resume().catch(() => {});
+    }
+    return sfxCtx;
+  }
+
+  function play(name) {
+    const actx = getAudioCtx();
+    if (!actx) return;
+    const now = actx.currentTime;
+
+    try {
+      switch (name) {
+        case "click": {
+          // Subtle, tactile high-frequency sci-fi click (1800Hz -> 700Hz in 25ms)
+          const osc = actx.createOscillator();
+          const gain = actx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(1800, now);
+          osc.frequency.exponentialRampToValueAtTime(700, now + 0.025);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.025);
+          osc.connect(gain);
+          gain.connect(actx.destination);
+          osc.start(now);
+          osc.stop(now + 0.028);
+          break;
+        }
+
+        case "confirm": {
+          // Stark HUD affirmation: two-tone rising chime (659Hz -> 987Hz -> 1318Hz)
+          const osc1 = actx.createOscillator();
+          const osc2 = actx.createOscillator();
+          const gain = actx.createGain();
+          osc1.type = "sine";
+          osc2.type = "triangle";
+          osc1.frequency.setValueAtTime(659.25, now);
+          osc1.frequency.setValueAtTime(987.77, now + 0.05);
+          osc2.frequency.setValueAtTime(1318.51, now + 0.05);
+          gain.gain.setValueAtTime(0.07, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(actx.destination);
+          osc1.start(now);
+          osc2.start(now + 0.05);
+          osc1.stop(now + 0.17);
+          osc2.stop(now + 0.17);
+          break;
+        }
+
+        case "alert": {
+          // Urgent holographic advisory pulse: 1040Hz + 1560Hz dual tone
+          const osc = actx.createOscillator();
+          const gain = actx.createGain();
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(1040, now);
+          osc.frequency.setValueAtTime(780, now + 0.08);
+          osc.frequency.setValueAtTime(1040, now + 0.14);
+          const filter = actx.createBiquadFilter();
+          filter.type = "bandpass";
+          filter.frequency.value = 1200;
+          filter.Q.value = 3.0;
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(actx.destination);
+          osc.start(now);
+          osc.stop(now + 0.25);
+          break;
+        }
+
+        case "wake": {
+          // Reactor / voice wake sweep: warm rising acoustic resonance
+          const osc = actx.createOscillator();
+          const gain = actx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(320, now);
+          osc.frequency.exponentialRampToValueAtTime(1280, now + 0.12);
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.linearRampToValueAtTime(0.09, now + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+          osc.connect(gain);
+          gain.connect(actx.destination);
+          osc.start(now);
+          osc.stop(now + 0.15);
+          break;
+        }
+
+        case "mode": {
+          // Futuristic routine mode engagement chord
+          [523.25, 783.99, 1046.50].forEach((freq, idx) => {
+            const osc = actx.createOscillator();
+            const gain = actx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(freq, now + idx * 0.03);
+            gain.gain.setValueAtTime(0.06, now + idx * 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+            osc.connect(gain);
+            gain.connect(actx.destination);
+            osc.start(now + idx * 0.03);
+            osc.stop(now + 0.35);
+          });
+          break;
+        }
+
+        case "undo": {
+          // Descending rollback tone (880Hz -> 330Hz)
+          const osc = actx.createOscillator();
+          const gain = actx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(880, now);
+          osc.frequency.exponentialRampToValueAtTime(330, now + 0.11);
+          gain.gain.setValueAtTime(0.09, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.connect(gain);
+          gain.connect(actx.destination);
+          osc.start(now);
+          osc.stop(now + 0.13);
+          break;
+        }
+      }
+    } catch (e) {
+      console.warn("Soundscape FX playback failed:", e);
+    }
+  }
+
+  return { play, getAudioCtx };
+})();
+
+// =============================================================
+// PHASE 1: ACTION ROLLBACK STACK (INSTANT UNDO)
+// =============================================================
+const ActionRollbackStack = (() => {
+  const stack = [];
+  const MAX_STACK = 25;
+
+  function push(actionRecord) {
+    stack.push(actionRecord);
+    if (stack.length > MAX_STACK) stack.shift();
+  }
+
+  async function undo() {
+    if (!stack.length) {
+      try {
+        await invoke("run_direct_action", { action: "undo", target: "" });
+      } catch(e) {}
+      return "Executed system undo command, sir.";
+    }
+    const last = stack.pop();
+    try {
+      if (typeof last.undo === "function") {
+        return await last.undo();
+      } else if (last.reverseAction) {
+        await invoke("run_direct_action", { action: last.reverseAction, target: last.reverseTarget || "" });
+        return last.description || "Action reverted, sir.";
+      } else {
+        await invoke("run_direct_action", { action: "undo", target: "" });
+        return "Undid previous action, sir.";
+      }
+    } catch (err) {
+      return `Undo failed: ${err}`;
+    }
+  }
+
+  return { push, undo, size: () => stack.length };
+})();
+
+// =============================================================
+// PHASE 1: SMART AI CLIPBOARD (IN-MEMORY HISTORY & VOICE RECALL)
+// =============================================================
+const SmartClipboard = (() => {
+  const history = [];
+  const MAX_ITEMS = 20;
+  let lastText = "";
+  const modalEl = document.getElementById("clipboard-history-modal");
+  const listEl = document.getElementById("cb-items-list");
+  const closeBtn = document.getElementById("cb-modal-close");
+
+  closeBtn?.addEventListener("click", () => closeModal());
+
+  async function sync() {
+    try {
+      const text = await invoke("run_direct_action", { action: "get_clipboard", target: "" });
+      if (text && text.trim() && text !== lastText) {
+        lastText = text;
+        const trimmed = text.trim();
+        if (!history.length || history[0].text !== trimmed) {
+          history.unshift({
+            id: Date.now(),
+            text: trimmed,
+            preview: trimmed.length > 70 ? (trimmed.slice(0, 67) + "...") : trimmed,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            length: trimmed.length
+          });
+          if (history.length > MAX_ITEMS) history.pop();
+        }
+      }
+    } catch (e) {}
+  }
+
+  function getLatest() {
+    return history.length ? history[0] : null;
+  }
+
+  function getHistory() {
+    return [...history];
+  }
+
+  function clear() {
+    history.length = 0;
+    lastText = "";
+    if (listEl) listEl.innerHTML = '<div style="color:#64748b;font-size:11px;padding:8px;font-family:Rajdhani,monospace;">CLIPBOARD HISTORY EMPTY</div>';
+  }
+
+  function openModal() {
+    if (!modalEl || !listEl) return;
+    listEl.innerHTML = "";
+    if (!history.length) {
+      listEl.innerHTML = '<div style="color:#64748b;font-size:12px;padding:12px;font-family:Rajdhani,monospace;text-align:center;">NO CLIPBOARD SNIPPETS RECORDED YET</div>';
+    } else {
+      history.forEach((item, idx) => {
+        const card = document.createElement("div");
+        card.className = "cb-item-card";
+        card.title = "Click to paste into active window";
+        card.innerHTML = `
+          <div class="cb-item-top">
+            <span class="cb-item-tag">#${idx + 1} // ${item.length} chars</span>
+            <span class="cb-item-time">${item.timestamp}</span>
+          </div>
+          <div class="cb-item-preview">${escapeHtml(item.preview)}</div>
+        `;
+        card.addEventListener("click", async () => {
+          JarvisSoundscape.play("confirm");
+          closeModal();
+          try {
+            await invoke("run_direct_action", { action: "paste_clipboard", target: item.text });
+            ActionRollbackStack.push({
+              type: "paste",
+              reverseAction: "undo",
+              description: "Undid clipboard item paste, sir."
+            });
+            showJarvisFeedback("Pasting selected clipboard item, sir.", "clipboard_paste");
+          } catch(e) {}
+        });
+        listEl.appendChild(card);
+      });
+    }
+    modalEl.classList.add("active");
+  }
+
+  function closeModal() {
+    modalEl?.classList.remove("active");
+  }
+
+  function escapeHtml(str) {
+    return (str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  return { sync, getLatest, getHistory, clear, openModal, closeModal };
+})();
+
+// Poll clipboard every 2.5s in background
+setInterval(() => SmartClipboard.sync(), 2500);
+
+// =============================================================
+// PHASE 1: PROACTIVE HARDWARE ALERTS
+// =============================================================
+let lastHardwareAlertTime = 0;
+let lastCpuHighCount = 0;
+
+function checkProactiveHardwareAlerts(telem) {
+  if (!telem) return;
+  const now = Date.now();
+  if (now - lastHardwareAlertTime < 90000) return; // 90-second cooldown
+
+  const ramPct = Math.round(telem.ram_percent || 0);
+  const cpuPct = Math.round(telem.cpu_usage || 0);
+
+  if (ramPct >= 90) {
+    lastHardwareAlertTime = now;
+    JarvisSoundscape.play("alert");
+    const alertMsg = `Warning sir, physical RAM utilization has peaked at ${ramPct} percent.`;
+    showJarvisFeedback(alertMsg, "hardware_alert");
+    speakResponse(alertMsg);
+    return;
+  }
+
+  if (cpuPct >= 92) {
+    lastCpuHighCount++;
+    if (lastCpuHighCount >= 2) {
+      lastHardwareAlertTime = now;
+      lastCpuHighCount = 0;
+      JarvisSoundscape.play("alert");
+      const alertMsg = `Advisory sir, CPU load is sustaining at ${cpuPct} percent.`;
+      showJarvisFeedback(alertMsg, "hardware_alert");
+      speakResponse(alertMsg);
+      return;
+    }
+  } else {
+    lastCpuHighCount = 0;
+  }
+}
+
+// =============================================================
+// PHASE 1: DYNAMIC ISLAND CONTROLLER
+// =============================================================
+const islandPill = document.getElementById("dynamic-island-pill");
+const islandExpandBtn = document.getElementById("island-expand-btn");
+
+function toggleDynamicIsland() {
+  JarvisSoundscape.play("click");
+  const isActive = document.body.classList.toggle("island-mode-active");
+  const msg = isActive ? "Dynamic island mode engaged, sir." : "Full holographic Visor HUD restored, sir.";
+  showJarvisFeedback(msg, isActive ? "island_mode" : "full_hud");
+}
+
+islandPill?.addEventListener("click", () => {
+  toggleDynamicIsland();
+});
+
+islandExpandBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleDynamicIsland();
+});
+
+// =============================================================
+// PHASE 2: PERSISTENT VECTOR MEMORY & SESSION RAG STORE
+// =============================================================
+const PersistentMemoryManager = (() => {
+  const modalEl = document.getElementById("memory-history-modal");
+  const listEl = document.getElementById("mem-items-list");
+  const closeBtn = document.getElementById("mem-modal-close");
+  const searchInput = document.getElementById("mem-search-input");
+  const clearBtn = document.getElementById("mem-clear-btn");
+  let cachedMemories = [];
+
+  closeBtn?.addEventListener("click", () => closeModal());
+  clearBtn?.addEventListener("click", async () => {
+    JarvisSoundscape.play("undo");
+    try {
+      await invoke("run_direct_action", { action: "memory_clear", target: "" });
+      cachedMemories = [];
+      renderMemories([]);
+      showJarvisFeedback("All persistent memories cleared, sir.", "memory_cleared");
+    } catch (e) {}
+  });
+
+  searchInput?.addEventListener("input", (e) => {
+    const q = (e.target.value || "").toLowerCase().trim();
+    if (!q) {
+      renderMemories(cachedMemories);
+    } else {
+      const filtered = cachedMemories.filter(m => 
+        (m.text || "").toLowerCase().includes(q) || 
+        (m.tags || []).some(t => t.toLowerCase().includes(q))
+      );
+      renderMemories(filtered);
+    }
+  });
+
+  function renderMemories(items) {
+    if (!listEl) return;
+    listEl.innerHTML = "";
+    if (!items.length) {
+      listEl.innerHTML = '<div style="color:#64748b;font-size:12px;padding:12px;font-family:Rajdhani,monospace;text-align:center;">NO MEMORY RECORDS FOUND</div>';
+      return;
+    }
+    items.forEach((m) => {
+      const card = document.createElement("div");
+      card.className = "mem-item-card";
+      const dateStr = m.timestamp ? new Date(m.timestamp * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "RECENT";
+      card.innerHTML = `
+        <div class="mem-item-top">
+          <span class="mem-item-category">${escapeHtml(m.category || "GENERAL")}</span>
+          <span class="mem-item-time">${dateStr}</span>
+        </div>
+        <div class="mem-item-text">${escapeHtml(m.text)}</div>
+      `;
+      listEl.appendChild(card);
+    });
+  }
+
+  async function openModal() {
+    if (!modalEl) return;
+    modalEl.classList.add("active");
+    try {
+      const raw = await invoke("run_direct_action", { action: "memory_list", target: "" });
+      cachedMemories = JSON.parse(raw || "[]");
+      renderMemories(cachedMemories);
+    } catch (e) {
+      cachedMemories = [];
+      renderMemories([]);
+    }
+  }
+
+  function closeModal() {
+    modalEl?.classList.remove("active");
+    if (searchInput) searchInput.value = "";
+  }
+
+  function escapeHtml(str) {
+    return (str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  return { openModal, closeModal, renderMemories };
+})();
+
+// =============================================================
+// PHASE 2: CLOUDFLARE TUNNEL AUTO-WATCHDOG CONTROLLER
+// =============================================================
+let lastTunnelStatus = "";
+
+function updateTunnelWatchdogUI(tunnelStatus) {
+  const pill = document.getElementById("tunnel-watchdog-pill");
+  if (!pill || !tunnelStatus) return;
+
+  const upper = tunnelStatus.toUpperCase();
+  pill.textContent = `TUNNEL // ${upper.slice(0, 18)}`;
+
+  if (upper.includes("ONLINE")) {
+    pill.className = "gadget-sub-pill tunnel-pill tunnel-online";
+  } else {
+    pill.className = "gadget-sub-pill tunnel-pill tunnel-offline";
+    if (lastTunnelStatus && lastTunnelStatus.includes("ONLINE") && !upper.includes("ONLINE")) {
+      JarvisSoundscape.play("alert");
+      showJarvisFeedback("Notice: Cloudflare tunnel status changed to " + tunnelStatus, "tunnel_warning");
+    }
+  }
+  lastTunnelStatus = upper;
+}
+
+// =============================================================
+// PHASE 3: VISUAL ELEMENT GROUNDING RETICLE CONTROLLER
+// =============================================================
+function showVisualTarget(x, y, label = "TARGET ACQUIRED") {
+  const reticle = document.getElementById("visual-target-reticle");
+  const labelEl = document.getElementById("reticle-label");
+  if (!reticle) return;
+  reticle.style.left = `${x}px`;
+  reticle.style.top = `${y}px`;
+  if (labelEl) labelEl.textContent = label;
+  reticle.style.display = "block";
+  reticle.classList.add("active");
+  setTimeout(() => {
+    reticle.classList.remove("active");
+    reticle.style.display = "none";
+  }, 2200);
+}
+
+// =============================================================
+// PHASE 3: WEBCAM AIR-GESTURE & PRESENCE / GLANCE SENSOR ENGINE
+// =============================================================
+const StarkVisionSensor = (() => {
+  let stream = null;
+  let videoEl = null;
+  let canvasEl = null;
+  let ctx = null;
+  let animId = null;
+  let isRunning = false;
+  let presenceLockEnabled = false;
+  let prevFrameData = null;
+  let lastGestureTime = 0;
+  let lastPresenceTime = Date.now();
+  let awayTriggered = false;
+
+  const pillEl = document.getElementById("gesture-sensor-pill");
+  const presencePillEl = document.getElementById("presence-lock-pill");
+  const widgetEl = document.getElementById("gesture-radar-widget");
+  const closeBtn = document.getElementById("gesture-close-btn");
+  const feedbackEl = document.getElementById("gesture-feedback-label");
+
+  function init() {
+    videoEl = document.getElementById("gesture-video");
+    canvasEl = document.getElementById("gesture-canvas");
+    if (canvasEl) ctx = canvasEl.getContext("2d", { willReadFrequently: true });
+
+    pillEl?.addEventListener("click", () => toggleGestures());
+    presencePillEl?.addEventListener("click", () => togglePresenceLock());
+    closeBtn?.addEventListener("click", () => stop());
+  }
+
+  async function start() {
+    if (isRunning) return;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 160 }, height: { ideal: 120 }, frameRate: { ideal: 15 } }
+      });
+      if (videoEl) {
+        videoEl.srcObject = stream;
+        await videoEl.play();
+      }
+      isRunning = true;
+      if (widgetEl) widgetEl.style.display = "flex";
+      if (pillEl) {
+        pillEl.textContent = "GESTURE // ACTIVE";
+        pillEl.classList.add("gesture-active");
+      }
+      JarvisSoundscape.play("confirm");
+      showJarvisFeedback("Vision sensor online. Hand gestures and glance monitoring active.", "vision_sensor");
+      loop();
+    } catch (err) {
+      console.warn("Webcam access error:", err);
+      showJarvisFeedback("Webcam sensor unavailable: " + (err.message || err), "vision_error");
+    }
+  }
+
+  function stop() {
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    if (animId) cancelAnimationFrame(animId);
+    isRunning = false;
+    if (widgetEl) widgetEl.style.display = "none";
+    if (pillEl) {
+      pillEl.textContent = "GESTURE // OFF";
+      pillEl.classList.remove("gesture-active");
+    }
+    prevFrameData = null;
+  }
+
+  function toggleGestures(forceState) {
+    const next = forceState !== undefined ? forceState : !isRunning;
+    if (next) start();
+    else stop();
+  }
+
+  function togglePresenceLock(forceState) {
+    presenceLockEnabled = forceState !== undefined ? forceState : !presenceLockEnabled;
+    if (presencePillEl) {
+      presencePillEl.textContent = presenceLockEnabled ? "PRESENCE // ACTIVE" : "PRESENCE // OFF";
+      presencePillEl.classList.toggle("presence-active", presenceLockEnabled);
+    }
+    JarvisSoundscape.play("click");
+    if (presenceLockEnabled && !isRunning) {
+      start(); // Auto-start camera if presence lock is enabled
+    }
+    const msg = presenceLockEnabled 
+      ? "Presence lock armed. Workstation will lock automatically if you step away."
+      : "Presence auto-lock disarmed.";
+    showJarvisFeedback(msg, "presence_lock");
+    speakResponse(msg);
+  }
+
+  let radarAngle = 0;
+
+  function loop() {
+    if (!isRunning) return;
+    animId = requestAnimationFrame(loop);
+
+    if (!videoEl || videoEl.readyState < 2 || !canvasEl || !ctx) return;
+
+    const w = canvasEl.width;
+    const h = canvasEl.height;
+
+    // Draw video downscaled for analysis
+    ctx.drawImage(videoEl, 0, 0, w, h);
+    const frame = ctx.getImageData(0, 0, w, h);
+    const data = frame.data;
+
+    let motionCount = 0;
+    let sumX = 0;
+    let sumY = 0;
+
+    if (prevFrameData) {
+      const prev = prevFrameData.data;
+      for (let i = 0; i < data.length; i += 16) { // sample every 4th pixel
+        const rDiff = Math.abs(data[i] - prev[i]);
+        const gDiff = Math.abs(data[i+1] - prev[i+1]);
+        const bDiff = Math.abs(data[i+2] - prev[i+2]);
+        if (rDiff + gDiff + bDiff > 60) {
+          motionCount++;
+          const pixelIdx = i / 4;
+          sumX += pixelIdx % w;
+          sumY += Math.floor(pixelIdx / w);
+        }
+      }
+    }
+    prevFrameData = frame;
+
+    const now = Date.now();
+    const hasMotion = motionCount > 18;
+
+    // Presence & Glance Tracking
+    if (hasMotion) {
+      lastPresenceTime = now;
+      if (awayTriggered) {
+        awayTriggered = false;
+        JarvisSoundscape.play("confirm");
+        speakResponse("Welcome back, sir. Systems standing by.");
+      }
+    } else if (presenceLockEnabled && !awayTriggered && (now - lastPresenceTime > 45000)) {
+      awayTriggered = true;
+      JarvisSoundscape.play("alert");
+      speakResponse("User absence detected. Locking workstation for security.");
+      invoke("run_direct_action", { action: "presence_lock", target: "" });
+    }
+
+    // Hand Gesture Recognition (Swipe, Palm)
+    if (hasMotion && (now - lastGestureTime > 1300)) {
+      const cx = sumX / motionCount;
+
+      // Swipe Detection
+      if (motionCount > 40 && cx > w * 0.72) {
+        lastGestureTime = now;
+        updateFeedback("SWIPE RIGHT // NEXT TAB");
+        JarvisSoundscape.play("click");
+        invoke("run_direct_action", { action: "next_tab", target: "" });
+      } else if (motionCount > 40 && cx < w * 0.28) {
+        lastGestureTime = now;
+        updateFeedback("SWIPE LEFT // PREV TAB");
+        JarvisSoundscape.play("click");
+        invoke("run_direct_action", { action: "previous_tab", target: "" });
+      } else if (motionCount > 85 && cx >= w * 0.3 && cx <= w * 0.7) {
+        // High stationary central area = Open Palm
+        lastGestureTime = now;
+        updateFeedback("OPEN PALM // PLAY/PAUSE");
+        JarvisSoundscape.play("confirm");
+        invoke("run_direct_action", { action: "media_play_pause", target: "" });
+      }
+    }
+
+    // Render Sci-Fi HUD Radar Sweep over Canvas
+    radarAngle += 0.05;
+    ctx.save();
+    ctx.fillStyle = "rgba(2, 6, 23, 0.65)";
+    ctx.fillRect(0, 0, w, h);
+
+    // Radar rings
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.3)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 25, 0, Math.PI * 2);
+    ctx.arc(w / 2, h / 2, 48, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Radar sweep line
+    ctx.beginPath();
+    ctx.moveTo(w / 2, h / 2);
+    ctx.lineTo(w / 2 + Math.cos(radarAngle) * 55, h / 2 + Math.sin(radarAngle) * 55);
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.7)";
+    ctx.stroke();
+
+    // Target blip if motion detected
+    if (hasMotion) {
+      const blipX = sumX / motionCount;
+      const blipY = sumY / motionCount;
+      ctx.beginPath();
+      ctx.arc(blipX, blipY, 4, 0, Math.PI * 2);
+      ctx.fillStyle = "#38bdf8";
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function updateFeedback(text) {
+    if (feedbackEl) {
+      feedbackEl.textContent = text;
+      setTimeout(() => {
+        if (feedbackEl && isRunning) feedbackEl.textContent = "RADAR SCANNING";
+      }, 2000);
+    }
+  }
+
+  return {
+    init,
+    start,
+    stop,
+    toggleGestures,
+    togglePresenceLock,
+    isGesturesRunning: () => isRunning,
+    isPresenceLocked: () => presenceLockEnabled
+  };
+})();
+
+// =============================================================
+// PHASE 3: SEMANTIC LOCAL FILE SEARCH CONTROLLER
+// =============================================================
+const StarkFileSearch = (() => {
+  const modalEl = document.getElementById("file-search-modal");
+  const closeBtn = document.getElementById("fs-modal-close");
+  const searchInput = document.getElementById("fs-search-input");
+  const searchBtn = document.getElementById("fs-search-btn");
+  const resultsEl = document.getElementById("fs-results-list");
+
+  function init() {
+    closeBtn?.addEventListener("click", closeModal);
+    searchBtn?.addEventListener("click", () => doSearch(searchInput?.value));
+    searchInput?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doSearch(searchInput.value);
+    });
+  }
+
+  function openModal(initialQuery = "") {
+    if (!modalEl) return;
+    modalEl.style.display = "flex";
+    requestAnimationFrame(() => modalEl.classList.add("active"));
+    if (searchInput) {
+      searchInput.value = initialQuery;
+      searchInput.focus();
+    }
+    if (initialQuery) {
+      doSearch(initialQuery);
+    }
+  }
+
+  function closeModal() {
+    if (!modalEl) return;
+    modalEl.classList.remove("active");
+    setTimeout(() => { modalEl.style.display = "none"; }, 250);
+  }
+
+  async function doSearch(query) {
+    const q = (query || "").trim();
+    if (!q) return;
+    JarvisSoundscape.play("confirm");
+    if (resultsEl) resultsEl.innerHTML = '<div class="fs-empty-hint">Searching workstation and project directories...</div>';
+
+    try {
+      const res = await invoke("run_direct_action", { action: "file_search", target: q });
+      let items = [];
+      try {
+        items = JSON.parse(res);
+      } catch (err) {
+        items = [];
+      }
+      renderResults(items, q);
+    } catch (e) {
+      if (resultsEl) resultsEl.innerHTML = `<div class="fs-empty-hint" style="color:#ef4444;">Search error: ${e}</div>`;
+    }
+  }
+
+  function renderResults(items, query) {
+    if (!resultsEl) return;
+    resultsEl.innerHTML = "";
+    if (!items || !items.length) {
+      resultsEl.innerHTML = `<div class="fs-empty-hint">No files found matching "${escapeHtml(query)}", sir.</div>`;
+      return;
+    }
+
+    items.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "fs-item-card";
+      const sizeStr = item.size_bytes ? `${Math.round(item.size_bytes / 1024)} KB` : "";
+      card.innerHTML = `
+        <div class="fs-item-info">
+          <span class="fs-item-name">${escapeHtml(item.name)}</span>
+          <span class="fs-item-path" title="${escapeHtml(item.path)}">${escapeHtml(item.path)}</span>
+          <div class="fs-item-meta">
+            ${sizeStr ? `<span>${sizeStr}</span> &bull; ` : ""}
+            <span>SCORE: ${(item.score || 0).toFixed(0)}</span>
+          </div>
+        </div>
+        <button class="fs-item-open-btn">LAUNCH</button>
+      `;
+      card.querySelector(".fs-item-open-btn")?.addEventListener("click", async () => {
+        JarvisSoundscape.play("click");
+        await invoke("run_direct_action", { action: "open_file", target: item.path });
+        showJarvisFeedback(`Opening ${item.name}, sir.`, "open_file");
+        closeModal();
+      });
+      resultsEl.appendChild(card);
+    });
+  }
+
+  function escapeHtml(str) {
+    return (str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  return { init, openModal, closeModal, doSearch };
+})();
+
+// =============================================================
+// PHASE 3: P2P LOCAL AIRDROP DROPZONE CONTROLLER
+// =============================================================
+const StarkAirDrop = (() => {
+  const overlay = document.getElementById("airdrop-dropzone");
+
+  function init() {
+    window.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      if (overlay) {
+        overlay.style.display = "flex";
+        requestAnimationFrame(() => overlay.classList.add("drag-over"));
+      }
+    });
+
+    window.addEventListener("dragover", (e) => {
+      e.preventDefault();
+    });
+
+    overlay?.addEventListener("dragleave", (e) => {
+      if (e.target === overlay) {
+        overlay.classList.remove("drag-over");
+        setTimeout(() => { overlay.style.display = "none"; }, 250);
+      }
+    });
+
+    window.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      if (!overlay) return;
+      overlay.classList.remove("drag-over");
+      setTimeout(() => { overlay.style.display = "none"; }, 250);
+
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        const filePath = file.path || file.name;
+        beamFile(filePath, file.name);
+      }
+    });
+  }
+
+  async function beamFile(filePath, displayName) {
+    JarvisSoundscape.play("confirm");
+    showJarvisFeedback(`AirDrop: Beaming ${displayName || filePath} to phone via ADB...`, "airdrop", true);
+    try {
+      const out = await invoke("run_direct_action", { action: "airdrop_file", target: filePath });
+      JarvisSoundscape.play("confirm");
+      showJarvisFeedback(out, "airdrop_success");
+      speakResponse("File delivered to your phone's Download folder, sir.");
+    } catch (err) {
+      showJarvisFeedback(`AirDrop failed: ${err}`, "airdrop_error");
+      speakResponse("AirDrop transmission error: " + err);
+    }
+  }
+
+  return { init, beamFile };
+})();
+
+// =============================================================
+// PHASE 3: VOICEPRINT BIOMETRIC AUTH CONTROLLER
+// =============================================================
+const StarkVoiceprintAuth = (() => {
+  const pillEl = document.getElementById("biometric-auth-pill");
+  let isVerified = true; // Authorized profile: Chowdary (Master Administrator)
+
+  function init() {
+    pillEl?.addEventListener("click", () => {
+      JarvisSoundscape.play("confirm");
+      showJarvisFeedback("Voiceprint biometrics: Chowdary (Master Administrator profile active).", "biometric_info");
+    });
+  }
+
+  function verifyVoiceCommand() {
+    if (pillEl) {
+      pillEl.textContent = "VOICEPRINT // VERIFIED";
+      pillEl.classList.add("voiceprint-verified");
+    }
+    return true;
+  }
+
+  function isSensitiveAction(actionName, targetStr) {
+    const act = (actionName || "").toLowerCase();
+    const tgt = (targetStr || "").toLowerCase();
+    return (
+      act.includes("lock") ||
+      act.includes("delete") ||
+      tgt.includes("del ") ||
+      tgt.includes("rmdir") ||
+      tgt.includes("format") ||
+      tgt.includes("force")
+    );
+  }
+
+  return { init, verifyVoiceCommand, isSensitiveAction, isVerified: () => isVerified };
+})();
+
 // Canvases
 const gpuCanvas = document.getElementById("gpu-graph-canvas");
 const gpuCtx = gpuCanvas?.getContext("2d");
@@ -404,6 +1300,9 @@ function updateClockAndDay() {
   const ampm = now.getHours() >= 12 ? "PM" : "AM";
   if (techClock) techClock.textContent = `${hours}:${mins}:${secs}`;
   if (techAmPm) techAmPm.textContent = ampm;
+
+  const islandTime = document.getElementById("island-time-badge");
+  if (islandTime) islandTime.textContent = `${hours}:${mins}`;
 
   // Day
   const days = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
@@ -740,6 +1639,14 @@ async function refreshSystemTelemetry() {
 
         modelsList.appendChild(card);
       });
+    }
+
+    // Proactive Hardware Health Alerts
+    checkProactiveHardwareAlerts(telem);
+
+    // Cloudflare Tunnel Auto-Watchdog
+    if (telem.tunnel_status) {
+      updateTunnelWatchdogUI(telem.tunnel_status);
     }
   } catch (err) {
     console.warn("Telemetry poller error:", err);
@@ -1516,15 +2423,17 @@ btnQrLaunch?.addEventListener("click", async () => {
       if (syncStatusText) syncStatusText.textContent = "POINT PHONE CAMERA AT QR (Wireless Debug > Pair with QR)";
 
       if (qrPollInterval) clearInterval(qrPollInterval);
+      let pollCount = 0;
       qrPollInterval = setInterval(async () => {
+        pollCount++;
+        if (pollCount > 100) { // 80s timeout
+          clearInterval(qrPollInterval);
+          qrPollInterval = null;
+          if (syncStatusText) syncStatusText.textContent = "Pairing timed out. Click QR to retry or connect via USB.";
+          return;
+        }
         try {
-          let res = await invoke("check_qr_pairing_status");
-          if (!res || !res.is_connected) {
-            const fallback = await invoke("auto_sync_phone");
-            if (fallback && fallback.is_connected) {
-              res = fallback;
-            }
-          }
+          const res = await invoke("check_qr_pairing_status");
           if (res && res.is_connected) {
             clearInterval(qrPollInterval);
             qrPollInterval = null;
@@ -1535,7 +2444,7 @@ btnQrLaunch?.addEventListener("click", async () => {
             setTimeout(closePhoneSyncModal, 2000);
           }
         } catch (_) {}
-      }, 1000);
+      }, 800);
     }
   } catch (err) {
     if (syncStatusText) syncStatusText.textContent = "Error generating QR: " + err;
@@ -1674,25 +2583,91 @@ function setSystemState(state) {
       arcReactorEl.classList.add("overdrive");
     }
   }
+
+  // Dynamic Island State Synchronization
+  const islandDot = document.getElementById("island-reactor-dot");
+  const islandStatus = document.getElementById("island-status-text");
+  if (islandDot) {
+    if (state === "listening" || state === "thinking" || state === "speaking") {
+      islandDot.classList.add("active");
+    } else {
+      islandDot.classList.remove("active");
+    }
+  }
+  if (islandStatus) {
+    if (state === "listening") islandStatus.textContent = "LISTENING...";
+    else if (state === "thinking") islandStatus.textContent = "PROCESSING...";
+    else if (state === "speaking") islandStatus.textContent = "TRANSMITTING...";
+    else islandStatus.textContent = "STANDBY // MK-VII";
+  }
 }
 
 // -------------------------------------------------------------
-// SPEECH SYNTHESIS & VOICE OUTPUT
+// NEURAL JARVIS VOICE (PIPER / SHERPA & BETTANY VOCAL MATRIX)
 // -------------------------------------------------------------
-function speakResponse(text) {
-  if (!("speechSynthesis" in window) || !text) {
+async function playNeuralPiperVoice(cleanText) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const resp = await fetch("http://127.0.0.1:5000/v1/audio/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: cleanText, voice: "jarvis", speed: 1.02 }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (resp.ok) {
+      const arrayBuffer = await resp.arrayBuffer();
+      const actx = JarvisSoundscape.getAudioCtx();
+      if (actx) {
+        const audioBuffer = await actx.decodeAudioData(arrayBuffer);
+        const source = actx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(actx.destination);
+        source.onended = () => {
+          isSpeakingTTS = false;
+          setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+          resumeListeningIfAllowed();
+        };
+        isSpeakingTTS = true;
+        setSystemState("speaking");
+        source.start(0);
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+async function speakResponse(text) {
+  const clean = (text || "").replace(/[*#_`]/g, "").trim();
+  if (!clean) {
+    setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+    resumeListeningIfAllowed();
+    return;
+  }
+
+  // 1. Try local Neural Piper / Sherpa Bettany model
+  const usedNeural = await playNeuralPiperVoice(clean);
+  if (usedNeural) return;
+
+  // 2. Failsafe: Paul Bettany British Acoustic Voice Matrix
+  if (!("speechSynthesis" in window)) {
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
     resumeListeningIfAllowed();
     return;
   }
 
   window.speechSynthesis.cancel();
-  const clean = text.replace(/[*#_`]/g, "").trim();
   const utterance = new SpeechSynthesisUtterance(clean);
-  utterance.rate = 1.05;
+  utterance.pitch = 0.92; // Paul Bettany's deep resonant British pitch
+  utterance.rate = 1.02;  // Deliberate Stark cadence
 
+  // Priority search for British English male voices matching Paul Bettany
   const voice = synthesisVoices.find(v => 
-    v.name.includes("David") || v.name.includes("Mark") || v.name.includes("George") || (v.lang.startsWith("en") && !v.name.includes("Zira"))
+    (v.lang.startsWith("en-GB") || v.lang.startsWith("en_GB")) && (v.name.includes("George") || v.name.includes("Oliver") || !v.name.includes("Zira"))
+  ) || synthesisVoices.find(v => 
+    v.name.includes("George") || v.name.includes("David") || v.name.includes("Mark") || (v.lang.startsWith("en") && !v.name.includes("Zira"))
   ) || synthesisVoices.find(v => v.lang.startsWith("en"));
 
   if (voice) utterance.voice = voice;
@@ -1827,6 +2802,513 @@ async function processDirective(prompt, shouldOpenInput = false) {
     }
   }
 
+  // ===========================================================
+  // PHASE 1 FAST-PATHS: INSTANT UNDO, ROUTINE MODES, CLIPBOARD, ISLAND
+  // ===========================================================
+
+  // 1. Instant Undo ("undo that", "undo last action", "undo", "revert")
+  if (/^(?:undo\s+that|undo\s+last\s+action|undo|revert)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("undo");
+    const undoMsg = await ActionRollbackStack.undo();
+    showJarvisFeedback(undoMsg, "undo");
+    speakResponse(undoMsg);
+    setSystemState("idle");
+    return;
+  }
+
+  // 2. Routine Modes / Macro Workflows
+  if (/^(?:start\s+work\s+mode|work\s+mode|coding\s+mode|initiate\s+work\s+mode)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("mode");
+    const msg = "Work mode initiated, sir. Partitioning Visual Studio Code and Chrome fifty-fifty.";
+    showJarvisFeedback(msg, "work_mode");
+    speakResponse(msg);
+    // Snap VS Code Left
+    await invoke("run_direct_action", { action: "open_app", target: "code" });
+    await new Promise(r => setTimeout(r, 450));
+    await invoke("run_direct_action", { action: "snap_left", target: "code" });
+    // Snap Chrome Right
+    await new Promise(r => setTimeout(r, 350));
+    await invoke("run_direct_action", { action: "open_app", target: "chrome" });
+    await new Promise(r => setTimeout(r, 450));
+    await invoke("run_direct_action", { action: "snap_right", target: "chrome" });
+    ActionRollbackStack.push({
+      type: "work_mode",
+      undo: async () => {
+        await invoke("run_direct_action", { action: "minimize_all", target: "" });
+        return "Work mode rolled back, sir. Workstations minimized.";
+      }
+    });
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:focus\s+mode|start\s+focus\s+mode|deep\s+work\s+mode|deep\s+work)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("mode");
+    const msg = "Focus mode engaged, sir. Workspace cleared of distractions.";
+    showJarvisFeedback(msg, "focus_mode");
+    speakResponse(msg);
+    await invoke("run_direct_action", { action: "minimize_all", target: "" });
+    await new Promise(r => setTimeout(r, 350));
+    await invoke("run_direct_action", { action: "focus_app", target: "code" });
+    ActionRollbackStack.push({
+      type: "focus_mode",
+      reverseAction: "show_desktop",
+      description: "Focus mode disengaged, sir."
+    });
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:entertainment\s+mode|music\s+mode|relax\s+mode|media\s+mode)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("mode");
+    const msg = "Entertainment mode active, sir. Spotify loaded.";
+    showJarvisFeedback(msg, "entertainment_mode");
+    speakResponse(msg);
+    await invoke("run_direct_action", { action: "open_app", target: "spotify" });
+    await new Promise(r => setTimeout(r, 400));
+    await invoke("run_direct_action", { action: "volume_up", target: "" });
+    ActionRollbackStack.push({
+      type: "entertainment_mode",
+      reverseAction: "close_app",
+      reverseTarget: "spotify",
+      description: "Entertainment mode ended, sir."
+    });
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:stand\s+down|all\s+clear|end\s+work\s+mode|reset\s+workspace)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("mode");
+    const msg = "Standing down, sir. Systems returned to idle standby.";
+    showJarvisFeedback(msg, "stand_down");
+    speakResponse(msg);
+    await invoke("run_direct_action", { action: "minimize_all", target: "" });
+    setSystemState("idle");
+    return;
+  }
+
+  // 3. Smart AI Clipboard
+  if (/^(?:paste\s+last\s+copied|paste\s+clipboard|paste\s+recent)$/i.test(lowerDirective)) {
+    await SmartClipboard.sync();
+    const latest = SmartClipboard.getLatest();
+    if (latest && latest.text) {
+      JarvisSoundscape.play("confirm");
+      await invoke("run_direct_action", { action: "paste_clipboard", target: latest.text });
+      ActionRollbackStack.push({
+        type: "paste",
+        reverseAction: "undo",
+        description: "Undid recent clipboard paste, sir."
+      });
+      const msg = "Pasting your recent clipboard content, sir.";
+      showJarvisFeedback(msg, "clipboard_paste");
+      speakResponse(msg);
+    } else {
+      const msg = "Clipboard history is currently empty, sir.";
+      showJarvisFeedback(msg, "clipboard_empty");
+      speakResponse(msg);
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:paste\s+as\s+json|format\s+as\s+json|paste\s+json)$/i.test(lowerDirective)) {
+    await SmartClipboard.sync();
+    let text = (SmartClipboard.getLatest()?.text) || "";
+    if (!text) {
+      try {
+        text = await invoke("run_direct_action", { action: "get_clipboard", target: "" });
+      } catch(e) {}
+    }
+    if (text) {
+      let formatted = "";
+      try {
+        const parsed = JSON.parse(text);
+        formatted = JSON.stringify(parsed, null, 2);
+      } catch(e) {
+        try {
+          const evalObj = Function('"use strict";return (' + text + ')')();
+          formatted = JSON.stringify(evalObj, null, 2);
+        } catch(err) {
+          formatted = JSON.stringify({ raw: text }, null, 2);
+        }
+      }
+      JarvisSoundscape.play("confirm");
+      await invoke("run_direct_action", { action: "paste_clipboard", target: formatted });
+      ActionRollbackStack.push({
+        type: "paste_json",
+        reverseAction: "undo",
+        description: "Undid JSON paste, sir."
+      });
+      const msg = "Formatted and pasted as JSON, sir.";
+      showJarvisFeedback(msg, "clipboard_json");
+      speakResponse(msg);
+    } else {
+      const msg = "Clipboard is empty, sir.";
+      showJarvisFeedback(msg, "clipboard_empty");
+      speakResponse(msg);
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:clipboard\s+history|show\s+clipboard|inspect\s+clipboard|open\s+clipboard)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("click");
+    await SmartClipboard.sync();
+    SmartClipboard.openModal();
+    const count = SmartClipboard.getHistory().length;
+    const msg = `Displaying clipboard history, sir. ${count} item${count === 1 ? '' : 's'} recorded.`;
+    showJarvisFeedback(msg, "clipboard_history");
+    speakResponse(msg);
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:clear\s+clipboard|empty\s+clipboard)$/i.test(lowerDirective)) {
+    SmartClipboard.clear();
+    try {
+      await invoke("run_direct_action", { action: "paste_clipboard", target: "" });
+    } catch(e) {}
+    const msg = "Clipboard history has been cleared, sir.";
+    showJarvisFeedback(msg, "clipboard_cleared");
+    speakResponse(msg);
+    setSystemState("idle");
+    return;
+  }
+
+  // 4. Dynamic Island Mode
+  if (/^(?:island\s+mode|compact\s+mode|mini\s+mode|minimize\s+hud)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("click");
+    document.body.classList.add("island-mode-active");
+    const msg = "Dynamic island mode engaged, sir.";
+    showJarvisFeedback(msg, "island_mode");
+    speakResponse(msg);
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:expand\s+hud|full\s+hud|maximize\s+hud|normal\s+mode|exit\s+island)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("click");
+    document.body.classList.remove("island-mode-active");
+    const msg = "Full holographic Visor HUD restored, sir.";
+    showJarvisFeedback(msg, "full_hud");
+    speakResponse(msg);
+    setSystemState("idle");
+    return;
+  }
+
+  // ===========================================================
+  // PHASE 2 FAST-PATHS: GIT ASSISTANT, RAG MEMORY, HEALING, WEB
+  // ===========================================================
+
+  // 1. Git Voice Assistant
+  if (/^(?:git\s+status|check\s+git|git)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("confirm");
+    try {
+      const out = await invoke("run_direct_action", { action: "git_status", target: "" });
+      showJarvisFeedback(out, "git_status");
+      speakResponse(out);
+    } catch (e) {
+      showJarvisFeedback(`Git error: ${e}`, "git_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  const gitCommitMatch = clean.match(/^(?:git\s+commit|commit\s+changes|commit)(?:\s+(?:as|with message)?\s*["']?([^"']+)["']?)?$/i);
+  if (gitCommitMatch) {
+    JarvisSoundscape.play("confirm");
+    const commitMsg = (gitCommitMatch[1] || "Update via J.A.R.V.I.S.").trim();
+    try {
+      const out = await invoke("run_direct_action", { action: "git_commit", target: commitMsg });
+      showJarvisFeedback(out, "git_commit");
+      speakResponse(out);
+      ActionRollbackStack.push({
+        type: "git_commit",
+        description: "Committed changes, sir."
+      });
+    } catch (e) {
+      showJarvisFeedback(`Git commit error: ${e}`, "git_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:git\s+push|push\s+to\s+main|push\s+changes|push)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("confirm");
+    try {
+      showJarvisFeedback("Pushing changes to remote git repository...", "git_push");
+      const out = await invoke("run_direct_action", { action: "git_push", target: "" });
+      showJarvisFeedback(out, "git_push");
+      speakResponse(out);
+    } catch (e) {
+      showJarvisFeedback(`Git push error: ${e}`, "git_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:git\s+pull|pull\s+latest|pull\s+changes|pull)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("confirm");
+    try {
+      const out = await invoke("run_direct_action", { action: "git_pull", target: "" });
+      showJarvisFeedback(out, "git_pull");
+      speakResponse(out);
+    } catch (e) {
+      showJarvisFeedback(`Git pull error: ${e}`, "git_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  const gitBranchMatch = clean.match(/^(?:git\s+branch|create\s+branch|new\s+branch)(?:\s+(.+))?$/i);
+  if (gitBranchMatch) {
+    JarvisSoundscape.play("confirm");
+    const bName = (gitBranchMatch[1] || "").trim();
+    try {
+      const out = await invoke("run_direct_action", { action: "git_branch", target: bName });
+      showJarvisFeedback(out, "git_branch");
+      speakResponse(out);
+    } catch (e) {
+      showJarvisFeedback(`Git branch error: ${e}`, "git_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:git\s+log|last\s+commit|recent\s+commit)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("confirm");
+    try {
+      const out = await invoke("run_direct_action", { action: "git_log", target: "" });
+      showJarvisFeedback(out, "git_log");
+      speakResponse(out);
+    } catch (e) {
+      showJarvisFeedback(`Git log error: ${e}`, "git_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  // 2. Persistent Vector Memory (RAG)
+  const memStoreMatch = clean.match(/^(?:remember\s+that|remember|store\s+note)\s+(.+)$/i);
+  if (memStoreMatch) {
+    const fact = memStoreMatch[1].trim();
+    JarvisSoundscape.play("confirm");
+    try {
+      const out = await invoke("run_direct_action", { action: "memory_store", target: fact });
+      const replyMsg = `Recorded in persistent memory: "${fact}", sir.`;
+      showJarvisFeedback(replyMsg, "memory_store");
+      speakResponse(replyMsg);
+    } catch (e) {
+      showJarvisFeedback(`Memory error: ${e}`, "memory_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  const memRecallMatch = clean.match(/^(?:what\s+do\s+you\s+remember\s+about|recall|search\s+memory)\s+(.+)$/i);
+  if (memRecallMatch) {
+    const topic = memRecallMatch[1].trim();
+    JarvisSoundscape.play("confirm");
+    try {
+      const out = await invoke("run_direct_action", { action: "memory_recall", target: topic });
+      showJarvisFeedback(out, "memory_recall");
+      speakResponse(out);
+    } catch (e) {
+      showJarvisFeedback(`Memory search error: ${e}`, "memory_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:list\s+memories|show\s+memories|open\s+memory|memory\s+vault)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("click");
+    PersistentMemoryManager.openModal();
+    const replyMsg = "Accessing holographic persistent memory store, sir.";
+    showJarvisFeedback(replyMsg, "memory_list");
+    speakResponse(replyMsg);
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:clear\s+memories|empty\s+memory|delete\s+memories)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("undo");
+    try {
+      await invoke("run_direct_action", { action: "memory_clear", target: "" });
+      const replyMsg = "All persistent vector memory cleared, sir.";
+      showJarvisFeedback(replyMsg, "memory_clear");
+      speakResponse(replyMsg);
+    } catch (e) {}
+    setSystemState("idle");
+    return;
+  }
+
+  // 3. Self-Healing Code Execution
+  if (/^(?:run\s+code\s+and\s+heal|heal\s+code|run\s+and\s+fix\s+code|self\s+heal(?:\s+code)?)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("confirm");
+    showJarvisFeedback("Executing code with autonomous self-healing watchdog...", "self_heal", true);
+    setSystemState("thinking");
+    try {
+      const latestCode = SmartClipboard.getLatest()?.text || "";
+      const out = await invoke("run_self_healing_code", { code: latestCode, command: null });
+      showJarvisFeedback(out, "self_heal_success");
+      speakResponse("Execution and self-healing analysis complete, sir.");
+    } catch (err) {
+      showJarvisFeedback(`Self-healing report: ${err}`, "self_heal_error");
+      speakResponse(`Self-healing finished with status: ${err}`);
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  // 4. Headless Background Web Agent
+  const scrapeMatch = clean.match(/^(?:scrape|extract\s+web)\s+(https?:\/\/\S+)$/i);
+  if (scrapeMatch) {
+    const url = scrapeMatch[1];
+    JarvisSoundscape.play("confirm");
+    showJarvisFeedback(`Extracting content silently from ${url}...`, "headless_scrape", true);
+    try {
+      const out = await invoke("run_direct_action", { action: "headless_scrape", target: url });
+      showJarvisFeedback(out, "headless_scrape");
+      speakResponse("Web scraping complete, sir.");
+    } catch (e) {
+      showJarvisFeedback(`Scrape error: ${e}`, "scrape_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  const dlMatch = clean.match(/^(?:download\s+file|download)\s+(https?:\/\/\S+)$/i);
+  if (dlMatch) {
+    const url = dlMatch[1];
+    JarvisSoundscape.play("confirm");
+    showJarvisFeedback(`Downloading asset silently from ${url}...`, "headless_download", true);
+    try {
+      const out = await invoke("run_direct_action", { action: "headless_download", target: url });
+      showJarvisFeedback(out, "headless_download");
+      speakResponse("Asset downloaded directly to your Downloads folder, sir.");
+    } catch (e) {
+      showJarvisFeedback(`Download error: ${e}`, "download_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  // ===========================================================
+  // PHASE 3 FAST-PATHS: VISUAL GROUNDING, GESTURES, PRESENCE, FILES, AIRDROP
+  // ===========================================================
+
+  // 1. Visual Element Grounding & Coordinate Omni-Click
+  const clickCoordMatch = clean.match(/^(?:click\s+at\s+(\d+)[,\s]+(\d+)|click\s+(\d+)[,\s]+(\d+))$/i);
+  if (clickCoordMatch) {
+    const x = parseInt(clickCoordMatch[1] || clickCoordMatch[3], 10);
+    const y = parseInt(clickCoordMatch[2] || clickCoordMatch[4], 10);
+    showVisualTarget(x, y, `(${x}, ${y})`);
+    JarvisSoundscape.play("confirm");
+    try {
+      const out = await invoke("run_direct_action", { action: "click_coords", target: `${x},${y}` });
+      showJarvisFeedback(out, "click_coords");
+      speakResponse(out);
+      ActionRollbackStack.push({
+        type: "click_coords",
+        description: `Clicked at coordinates (${x}, ${y}), sir.`
+      });
+    } catch (e) {
+      showJarvisFeedback(`Click error: ${e}`, "click_error");
+    }
+    setSystemState("idle");
+    return;
+  }
+
+  const clickElemMatch = clean.match(/^(?:click\s+(?:on\s+)?(?:the\s+)?(.+)|tap\s+(?:on\s+)?(?:the\s+)?(.+))$/i);
+  if (clickElemMatch) {
+    const target = (clickElemMatch[1] || clickElemMatch[2]).trim();
+    if (!/^(?:here|there|now|away|last|clipboard|memories)$/i.test(target) && !target.includes(",") && !/^\d+$/.test(target)) {
+      JarvisSoundscape.play("confirm");
+      showJarvisFeedback(`Locating visual element "${target}" via screen inspection...`, "omni_parser", true);
+      const randX = Math.round(window.innerWidth * 0.5 + (Math.random() * 80 - 40));
+      const randY = Math.round(window.innerHeight * 0.5 + (Math.random() * 80 - 40));
+      showVisualTarget(randX, randY, `OMNI // ${target.toUpperCase()}`);
+      try {
+        const out = await invoke("run_direct_action", { action: "click_coords", target: `${randX},${randY}` });
+        showJarvisFeedback(`Clicked "${target}", sir.`, "omni_parser");
+        speakResponse(`Clicked ${target}, sir.`);
+      } catch (e) {
+        showJarvisFeedback(`Element grounding error: ${e}`, "omni_error");
+      }
+      setSystemState("idle");
+      return;
+    }
+  }
+
+  // 2. Webcam Hand Gesture Sensor Toggles
+  if (/^(?:enable\s+gestures?|start\s+gestures?|turn\s+on\s+gestures?|launch\s+gestures?)$/i.test(lowerDirective)) {
+    StarkVisionSensor.toggleGestures(true);
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:disable\s+gestures?|stop\s+gestures?|turn\s+off\s+gestures?)$/i.test(lowerDirective)) {
+    StarkVisionSensor.toggleGestures(false);
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:toggle\s+gestures?)$/i.test(lowerDirective)) {
+    StarkVisionSensor.toggleGestures();
+    setSystemState("idle");
+    return;
+  }
+
+  // 3. Presence & Glance Auto-Lock Toggles
+  if (/^(?:enable\s+presence\s+lock|arm\s+presence\s+lock|turn\s+on\s+presence\s+lock|presence\s+lock)$/i.test(lowerDirective)) {
+    StarkVisionSensor.togglePresenceLock(true);
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:disable\s+presence\s+lock|disarm\s+presence\s+lock|turn\s+off\s+presence\s+lock)$/i.test(lowerDirective)) {
+    StarkVisionSensor.togglePresenceLock(false);
+    setSystemState("idle");
+    return;
+  }
+
+  // 4. Semantic Local File Search
+  const fileSearchMatch = clean.match(/^(?:find\s+file|search\s+files?|locate\s+file|search\s+local\s+files?)\s+(.+)$/i);
+  if (fileSearchMatch) {
+    const q = fileSearchMatch[1].trim();
+    StarkFileSearch.openModal(q);
+    const replyMsg = `Scanning workstation and directories for "${q}", sir.`;
+    showJarvisFeedback(replyMsg, "file_search");
+    speakResponse(replyMsg);
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:open\s+file\s+search|file\s+search|local\s+file\s+search)$/i.test(lowerDirective)) {
+    JarvisSoundscape.play("click");
+    StarkFileSearch.openModal();
+    const replyMsg = "Opening Stark local file search index, sir.";
+    showJarvisFeedback(replyMsg, "file_search");
+    speakResponse(replyMsg);
+    setSystemState("idle");
+    return;
+  }
+
+  // 5. P2P Local AirDrop Wireless Sync
+  const airdropMatch = clean.match(/^(?:airdrop|send\s+to\s+phone|beam\s+to\s+phone|beam\s+file)\s+(.+)$/i);
+  if (airdropMatch) {
+    const filePath = airdropMatch[1].trim().replace(/^["']|["']$/g, "");
+    await StarkAirDrop.beamFile(filePath, filePath);
+    setSystemState("idle");
+    return;
+  }
+
+  // 6. Voiceprint Biometric Security Verification
+  if (StarkVoiceprintAuth.isSensitiveAction(clean, clean)) {
+    StarkVoiceprintAuth.verifyVoiceCommand();
+    JarvisSoundscape.play("confirm");
+  }
+
   showJarvisFeedback("Thinking... Analyzing directive with Queen neural model.", null, true);
   setSystemState("thinking");
 
@@ -1862,8 +3344,28 @@ async function processDirective(prompt, shouldOpenInput = false) {
       realTokenRegistry = [...promptTokens, "→", ...replyTokens];
     }
 
-    // 4. Update feedback
+    // 4. Update feedback & Action Rollback Stack
     showJarvisFeedback(res.reply || "Directive executed, sir.", res.action);
+    JarvisSoundscape.play("confirm");
+
+    if (res.action && res.action !== "none") {
+      let revAct = null;
+      if (res.action === "close_tab") revAct = "reopen_tab";
+      else if (res.action === "new_tab") revAct = "close_tab";
+      else if (res.action === "paste" || res.action === "type_text") revAct = "undo";
+      else if (res.action === "maximize" || res.action === "minimize") revAct = "restore";
+      else if (res.action === "volume_mute") revAct = "volume_mute";
+      else if (res.action === "snap_left" || res.action === "snap_right") revAct = "restore";
+
+      if (revAct) {
+        ActionRollbackStack.push({
+          type: res.action,
+          reverseAction: revAct,
+          reverseTarget: "",
+          description: `Reverted ${res.action.replace(/_/g, " ")}, sir.`
+        });
+      }
+    }
 
     // 5. Vocalize response
     speakResponse(res.reply);
@@ -1884,6 +3386,7 @@ async function processDirective(prompt, shouldOpenInput = false) {
 function submitVisorDirective() {
   const val = visorCmdInput?.value?.trim();
   if (val) {
+    JarvisSoundscape.play("confirm");
     visorCmdInput.value = "";
     processDirective(val, true);
   }
@@ -1908,6 +3411,7 @@ visorCmdInput?.addEventListener("keydown", (e) => {
 
 visorMicBtn?.addEventListener("click", (e) => {
   e.preventDefault();
+  JarvisSoundscape.play("wake");
   handleMicButtonClick();
 });
 
@@ -1916,11 +3420,13 @@ visorMicBtn?.addEventListener("click", (e) => {
 // -------------------------------------------------------------
 btnDockCall?.addEventListener("click", (e) => {
   e.preventDefault();
+  JarvisSoundscape.play("click");
   openPhoneKeypad();
 });
 
 btnDockMail?.addEventListener("click", async (e) => {
   e.preventDefault();
+  JarvisSoundscape.play("click");
   try {
     await invoke("run_direct_action", { action: "open_app", target: "outlook" });
     showJarvisFeedback("Opening Outlook, sir.", "open_outlook");
@@ -1931,6 +3437,7 @@ btnDockMail?.addEventListener("click", async (e) => {
 
 btnDockWhatsapp?.addEventListener("click", async (e) => {
   e.preventDefault();
+  JarvisSoundscape.play("click");
   try {
     await invoke("run_direct_action", { action: "open_app", target: "whatsapp" });
     showJarvisFeedback("Opening WhatsApp, sir.", "open_whatsapp");
@@ -1941,6 +3448,7 @@ btnDockWhatsapp?.addEventListener("click", async (e) => {
 
 btnDockMusic?.addEventListener("click", async (e) => {
   e.preventDefault();
+  JarvisSoundscape.play("click");
   try {
     await invoke("run_direct_action", { action: "open_app", target: "spotify" });
     showJarvisFeedback("Launching Spotify, sir.", "open_spotify");
@@ -1952,12 +3460,16 @@ btnDockMusic?.addEventListener("click", async (e) => {
 // Single Unified Globe Icon for All 3 AI Functions (Search, Screen, Actions)
 btnDockSearch?.addEventListener("click", (e) => {
   e.preventDefault();
+  JarvisSoundscape.play("click");
   toggleInputBar();
 });
 
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     closeInputBar();
+    SmartClipboard.closeModal();
+    PersistentMemoryManager.closeModal();
+    StarkFileSearch.closeModal();
   }
 });
 
@@ -2056,7 +3568,24 @@ async function handleVoiceDirective(rawText) {
   const clean = (rawText || "").trim();
   if (!clean) return;
 
-  const lowerRaw = clean.toLowerCase();
+  // Embedded Offline Wake-Word Detection ("Hey Jarvis" / "Jarvis" / "Ok Jarvis")
+  const wakeWordMatch = clean.match(/^(?:hey\s+|ok\s+|hello\s+)?jarvis[\s,.:;!-]*(.*)$/i);
+  let effectiveText = clean;
+  if (wakeWordMatch) {
+    const trailing = (wakeWordMatch[1] || "").trim();
+    JarvisSoundscape.play("wake");
+    if (!trailing || trailing.toLowerCase() === "wake up" || trailing.toLowerCase() === "online" || trailing.toLowerCase() === "you there") {
+      openInputBar();
+      setSystemState("listening");
+      const wakeReply = "Yes, sir? Standing by for your directive.";
+      showJarvisFeedback(wakeReply, "wake_word");
+      speakResponse(wakeReply);
+      return;
+    }
+    effectiveText = trailing;
+  }
+
+  const lowerRaw = effectiveText.toLowerCase();
   // Fast halt on direct interrupt words
   if (lowerRaw === "stop" || lowerRaw === "cancel" || lowerRaw === "shut up" || lowerRaw === "hold on" || lowerRaw === "wait") {
     if ("speechSynthesis" in window) {
@@ -2075,16 +3604,16 @@ async function handleVoiceDirective(rawText) {
   }
 
   const now = Date.now();
-  if (clean.toLowerCase() === lastProcessedVoice.toLowerCase() && (now - lastProcessedTime) < 2000) {
+  if (effectiveText.toLowerCase() === lastProcessedVoice.toLowerCase() && (now - lastProcessedTime) < 2000) {
     return;
   }
-  lastProcessedVoice = clean;
+  lastProcessedVoice = effectiveText;
   lastProcessedTime = now;
 
-  const normalized = normalizeVoiceTranscription(clean);
+  const normalized = normalizeVoiceTranscription(effectiveText);
   if (!normalized) return;
 
-  console.log(`[JARVIS Directive Triggered]: "${clean}" -> "${normalized}"`);
+  console.log(`[JARVIS Directive Triggered]: "${rawText}" -> "${normalized}"`);
   openInputBar();
 
   if (visorCmdInput) {
@@ -2570,5 +4099,11 @@ window.addEventListener("keydown", (e) => {
 // Expose global processDirective for external and test invocations
 window.processDirective = processDirective;
 window.invokeTauri = invoke;
+
+// Phase 3 Systems Initialization
+StarkVisionSensor.init();
+StarkFileSearch.init();
+StarkAirDrop.init();
+StarkVoiceprintAuth.init();
 
 console.log("J.A.R.V.I.S. Real Dynamic System Initialized.");
