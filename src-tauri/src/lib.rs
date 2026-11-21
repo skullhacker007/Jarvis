@@ -2002,6 +2002,9 @@ pub struct SystemTelemetry {
     pub net_rx_kb: f32,
     pub net_tx_kb: f32,
     pub top_apps: Vec<ProcessItem>,
+    pub is_whatsapp_running: bool,
+    pub is_spotify_running: bool,
+    pub is_chrome_running: bool,
     pub model_metrics: ModelMetrics,
     pub has_mic: bool,
     pub username: String,
@@ -4698,11 +4701,24 @@ fn set_voice_listening(active: bool) -> Result<bool, String> {
 
 #[tauri::command]
 async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<SystemTelemetry, String> {
-    let (cpu_usage, cpu_brand, cpu_cores, cpu_threads, ram_used_gb, ram_total_gb, ram_percent, proc_list) = {
+    let (cpu_usage, cpu_brand, cpu_cores, cpu_threads, ram_used_gb, ram_total_gb, ram_percent, proc_list, is_whatsapp_running, is_spotify_running, is_chrome_running) = {
         let mut sys = state.sys.lock().map_err(|e| e.to_string())?;
         sys.refresh_cpu_all();
         sys.refresh_memory();
         sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+        let mut is_whatsapp_running = false;
+        let mut is_spotify_running = false;
+        let mut is_chrome_running = false;
+        for (_, proc) in sys.processes() {
+            let n = proc.name().to_string_lossy().to_lowercase();
+            if n.contains("whatsapp") { is_whatsapp_running = true; }
+            if n.contains("spotify") { is_spotify_running = true; }
+            if n.contains("chrome") { is_chrome_running = true; }
+            if is_whatsapp_running && is_spotify_running && is_chrome_running {
+                break;
+            }
+        }
 
         let cpu = sys.global_cpu_usage();
         let cpu_brand = sys.cpus().first().map(|c| c.brand().trim().to_string()).unwrap_or_else(|| "Intel Core i7".to_string());
@@ -4797,7 +4813,7 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         plist.sort_by(|a, b| b.memory_mb.partial_cmp(&a.memory_mb).unwrap_or(std::cmp::Ordering::Equal));
         plist.truncate(6);
 
-        (cpu, cpu_brand, cpu_cores, cpu_threads, ram_used, ram_total, ram_pct, plist)
+        (cpu, cpu_brand, cpu_cores, cpu_threads, ram_used, ram_total, ram_pct, plist, is_whatsapp_running, is_spotify_running, is_chrome_running)
     };
 
     let (net_rx_kb, net_tx_kb) = {
@@ -5033,6 +5049,9 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         net_rx_kb,
         net_tx_kb,
         top_apps: proc_list,
+        is_whatsapp_running,
+        is_spotify_running,
+        is_chrome_running,
         model_metrics,
         has_mic,
         username: std::env::var("USERNAME").unwrap_or_else(|_| "CHOWDARY".to_string()).to_uppercase(),

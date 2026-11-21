@@ -98,6 +98,7 @@ body {
     0 0 6px rgba(56, 189, 248, 0.36),
     0 0 12px rgba(56, 189, 248, 0.18);
   animation: reactor-rim-pulse 3s ease-in-out infinite alternate;
+  transition: box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1), filter 0.35s ease;
 }
 
 .reactor-container {
@@ -236,26 +237,182 @@ body {
   }
 }
 
-/* Overdrive state when Jarvis is calculating or responding */
-.stark-arc-reactor.overdrive {
+/* ========================================================= */
+/* ARC REACTOR STATE-DRIVEN GLOW MATRIX                     */
+/* ========================================================= */
+
+/* Transitions for dynamic elements inside reactor */
+.reactor-rotor {
+  transition: filter 0.35s ease;
+}
+.reactor-stator {
+  transition: filter 0.35s ease;
+}
+.reactor-color-glow-overlay {
+  transition: background 0.35s ease, opacity 0.35s ease;
+}
+.core-plasma-disc {
+  transition: box-shadow 0.35s ease, transform 0.15s ease;
+}
+
+/* 1. IDLE: Gentle breathing pulse with cyan illumination */
+.stark-arc-reactor.state-idle,
+.stark-arc-reactor:not([class*="state-"]) {
+  box-shadow:
+    0 0 6px rgba(56, 189, 248, 0.36),
+    0 0 12px rgba(56, 189, 248, 0.18);
+  animation: reactor-rim-pulse 3s ease-in-out infinite alternate;
+}
+.stark-arc-reactor.state-idle .reactor-rotor {
+  animation: reactor-rotor-spin 16s linear infinite;
+  filter: drop-shadow(0 0 2px rgba(56, 189, 248, 0.288));
+}
+.stark-arc-reactor.state-idle .reactor-stator {
+  filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.324));
+}
+.stark-arc-reactor.state-idle .core-plasma-disc {
+  animation: core-pulse-glow 2.5s ease-in-out infinite alternate;
+  box-shadow: 0 0 4px #ffffff, 0 0 10px #38bdf8;
+}
+
+/* 2. LISTENING: Concentrated cyan rings that pulse dynamically with live voice / microphone audio */
+.stark-arc-reactor.state-listening {
+  box-shadow:
+    0 0 calc(14px + 24px * var(--audio-amp, 0.2)) rgba(56, 189, 248, 0.9),
+    0 0 calc(28px + 44px * var(--audio-amp, 0.2)) rgba(56, 189, 248, 0.5),
+    inset 0 0 calc(12px + 16px * var(--audio-amp, 0.2)) rgba(56, 189, 248, 0.65);
+  animation: reactor-listening-pulse 1.8s ease-in-out infinite alternate;
+}
+.stark-arc-reactor.state-listening .reactor-rotor {
+  animation: reactor-rotor-spin 7s linear infinite;
+  filter: drop-shadow(0 0 calc(6px + 12px * var(--audio-amp, 0.2)) #38bdf8) drop-shadow(0 0 calc(2px + 4px * var(--audio-amp, 0.2)) #ffffff);
+}
+.stark-arc-reactor.state-listening .reactor-stator {
+  filter: drop-shadow(0 0 calc(6px + 12px * var(--audio-amp, 0.2)) #38bdf8) drop-shadow(0 0 calc(1px + 3px * var(--audio-amp, 0.2)) rgba(255, 255, 255, 0.6));
+}
+.stark-arc-reactor.state-listening .reactor-color-glow-overlay {
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, calc(0.2 + 0.35 * var(--audio-amp, 0.2))) 0%,
+    rgba(56, 189, 248, calc(0.18 + 0.3 * var(--audio-amp, 0.2))) 36%,
+    transparent 70%
+  );
+}
+.stark-arc-reactor.state-listening .core-plasma-disc {
+  transform: scale(calc(1.02 + 0.22 * var(--audio-amp, 0.2)));
+  box-shadow:
+    0 0 calc(6px + 8px * var(--audio-amp, 0.2)) #ffffff,
+    0 0 calc(14px + 20px * var(--audio-amp, 0.2)) #38bdf8,
+    0 0 calc(22px + 30px * var(--audio-amp, 0.2)) rgba(56, 189, 248, 0.7);
+}
+
+/* 3. THINKING / PROCESSING: Rapid clockwise rotation with emerald/gold illumination */
+.stark-arc-reactor.state-thinking {
+  box-shadow:
+    0 0 18px #10b981,
+    0 0 36px rgba(245, 158, 11, 0.5),
+    inset 0 0 14px #10b981;
+  animation: reactor-thinking-pulse 1s ease-in-out infinite alternate;
+}
+.stark-arc-reactor.state-thinking .reactor-rotor {
+  animation: reactor-rotor-spin 1.8s linear infinite; /* Rapid clockwise rotation */
+  filter: drop-shadow(0 0 8px #10b981) drop-shadow(0 0 5px #fbbf24);
+}
+.stark-arc-reactor.state-thinking .reactor-stator {
+  filter: drop-shadow(0 0 8px #10b981) drop-shadow(0 0 4px #fbbf24);
+}
+.stark-arc-reactor.state-thinking .reactor-color-glow-overlay {
+  background: radial-gradient(
+    circle,
+    rgba(254, 240, 138, 0.35) 0%,
+    rgba(16, 185, 129, 0.25) 42%,
+    transparent 70%
+  );
+}
+.stark-arc-reactor.state-thinking .core-plasma-disc {
+  transform: scale(1.12);
+  box-shadow:
+    0 0 8px #ffffff,
+    0 0 20px #10b981,
+    0 0 32px #fbbf24;
+}
+
+/* 4. SPEAKING: Light pulses synchronized with speech amplitude */
+.stark-arc-reactor.state-speaking {
+  box-shadow:
+    0 0 calc(8px + 22px * var(--audio-amp, 0.5)) #38bdf8,
+    0 0 calc(16px + 44px * var(--audio-amp, 0.5)) rgba(56, 189, 248, 0.6),
+    inset 0 0 calc(6px + 14px * var(--audio-amp, 0.5)) #38bdf8;
+}
+.stark-arc-reactor.state-speaking .reactor-rotor {
+  animation: reactor-rotor-spin 4s linear infinite;
+  filter: drop-shadow(0 0 calc(4px + 12px * var(--audio-amp, 0.5)) #38bdf8) drop-shadow(0 0 calc(1px + 4px * var(--audio-amp, 0.5)) #ffffff);
+}
+.stark-arc-reactor.state-speaking .reactor-stator {
+  filter: drop-shadow(0 0 calc(4px + 12px * var(--audio-amp, 0.5)) #38bdf8);
+}
+.stark-arc-reactor.state-speaking .reactor-color-glow-overlay {
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, calc(0.15 + 0.4 * var(--audio-amp, 0.5))) 0%,
+    rgba(56, 189, 248, calc(0.1 + 0.35 * var(--audio-amp, 0.5))) 38%,
+    transparent 70%
+  );
+}
+.stark-arc-reactor.state-speaking .core-plasma-disc {
+  transform: scale(calc(0.96 + 0.28 * var(--audio-amp, 0.5)));
+  box-shadow:
+    0 0 calc(6px + 10px * var(--audio-amp, 0.5)) #ffffff,
+    0 0 calc(12px + 28px * var(--audio-amp, 0.5)) #38bdf8;
+}
+
+/* Backward compatibility overdrive state */
+.stark-arc-reactor.overdrive:not([class*="state-"]) {
   box-shadow:
     0 0 12px #38bdf8,
     0 0 24px rgba(56, 189, 248, 0.432);
 }
-
-.stark-arc-reactor.overdrive .reactor-rotor {
+.stark-arc-reactor.overdrive:not([class*="state-"]) .reactor-rotor {
   animation-duration: 3.5s;
   filter: drop-shadow(0 0 6px #38bdf8);
 }
-
-.stark-arc-reactor.overdrive .reactor-stator {
+.stark-arc-reactor.overdrive:not([class*="state-"]) .reactor-stator {
   filter: drop-shadow(0 0 6px #38bdf8);
 }
-
-.stark-arc-reactor.overdrive .core-plasma-disc {
+.stark-arc-reactor.overdrive:not([class*="state-"]) .core-plasma-disc {
   box-shadow:
     0 0 8px #ffffff,
     0 0 16px #38bdf8;
+}
+
+@keyframes reactor-listening-pulse {
+  0% {
+    box-shadow:
+      0 0 12px rgba(56, 189, 248, 0.65),
+      0 0 24px rgba(56, 189, 248, 0.3),
+      inset 0 0 10px rgba(56, 189, 248, 0.45);
+  }
+  100% {
+    box-shadow:
+      0 0 20px rgba(56, 189, 248, 0.95),
+      0 0 38px rgba(56, 189, 248, 0.55),
+      inset 0 0 18px rgba(56, 189, 248, 0.75);
+  }
+}
+
+@keyframes reactor-thinking-pulse {
+  0% {
+    box-shadow:
+      0 0 14px #10b981,
+      0 0 28px rgba(245, 158, 11, 0.35),
+      inset 0 0 10px #10b981;
+  }
+  100% {
+    box-shadow:
+      0 0 22px #10b981,
+      0 0 44px rgba(245, 158, 11, 0.6),
+      inset 0 0 18px #10b981;
+  }
 }
 
 /* ========================================================= */
@@ -2488,5 +2645,90 @@ body {
     height: 24px;
   }
 }
+
+/* ========================================================= */
+/* 4. HOLOGRAPHIC FIGHTER-JET CORNER RETICLES (VISOR FRAME)  */
+/* ========================================================= */
+.hud-corner-reticles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+  overflow: hidden;
+}
+
+.hud-reticle {
+  position: absolute;
+  width: clamp(40px, 3.8vw, 56px);
+  height: clamp(40px, 3.8vw, 56px);
+  color: var(--cyan-neon);
+  filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.45));
+  opacity: 0.65;
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.hud-reticle:hover {
+  opacity: 0.95;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.7));
+}
+
+.hud-reticle.top-left {
+  top: clamp(6px, 1.2vh, 14px);
+  left: clamp(6px, 1.2vw, 16px);
+}
+
+.hud-reticle.top-right {
+  top: clamp(6px, 1.2vh, 14px);
+  right: clamp(6px, 1.2vw, 16px);
+}
+
+.hud-reticle.bottom-left {
+  bottom: clamp(6px, 1.2vh, 14px);
+  left: clamp(6px, 1.2vw, 16px);
+}
+
+.hud-reticle.bottom-right {
+  bottom: clamp(6px, 1.2vh, 14px);
+  right: clamp(6px, 1.2vw, 16px);
+}
+
+.reticle-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.reticle-tag {
+  position: absolute;
+  font-family: 'Rajdhani', 'Orbitron', monospace;
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  color: rgba(56, 189, 248, 0.45);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hud-reticle.top-left .reticle-tag {
+  top: 2px;
+  left: 36px;
+}
+
+.hud-reticle.top-right .reticle-tag {
+  top: 2px;
+  right: 36px;
+}
+
+.hud-reticle.bottom-left .reticle-tag {
+  bottom: 2px;
+  left: 36px;
+}
+
+.hud-reticle.bottom-right .reticle-tag {
+  bottom: 2px;
+  right: 36px;
+}
+
 
 

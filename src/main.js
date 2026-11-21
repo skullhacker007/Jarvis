@@ -75,6 +75,9 @@ async function invoke(cmd, args = {}) {
         { name: "CODE", cpu_usage: +(1.4 + Math.random() * 2.0).toFixed(1), memory_mb: +(445.0 + (Math.random() - 0.5) * 30).toFixed(0) },
         { name: "OLLAMA", cpu_usage: +(0.4 + Math.random() * 0.6).toFixed(1), memory_mb: 2360.0 }
       ],
+      is_whatsapp_running: true,
+      is_spotify_running: true,
+      is_chrome_running: true,
       model_metrics: {
         name: "qwen3.5:2b",
         parameter_size: "1.9B",
@@ -468,6 +471,64 @@ function drawSparkline(canvas, ctx, history, strokeColor, fillColor, maxVal = 10
   ctx.fillStyle = fillColor;
   ctx.fill();
 }
+
+// -------------------------------------------------------------
+// ARC REACTOR AUDIO PULSE & VOCAL GLOW SYNCHRONIZER
+// -------------------------------------------------------------
+const audioTimeData = new Uint8Array(256);
+let liveMicAmp = 0.0;
+let speechVocalAmp = 0.0;
+let speechTargetAmp = 0.0;
+
+function updateArcReactorAudio() {
+  requestAnimationFrame(updateArcReactorAudio);
+
+  let currentAudioAmp = 0.0;
+
+  if (currentState === "speaking") {
+    // Speech synthesis amplitude envelope
+    if (isSpeakingTTS) {
+      speechTargetAmp = Math.max(0.12, speechTargetAmp * 0.93);
+      speechVocalAmp = speechVocalAmp * 0.78 + speechTargetAmp * 0.22;
+    } else {
+      speechTargetAmp = 0.0;
+      speechVocalAmp = Math.max(0.0, speechVocalAmp * 0.85);
+    }
+    const t = performance.now() * 0.015;
+    const microMod = 0.88 + 0.12 * Math.sin(t * 3.1);
+    currentAudioAmp = Math.min(1.0, speechVocalAmp * microMod);
+
+  } else if (currentState === "listening" && analyser) {
+    // Real microphone live vocal amplitude
+    analyser.getByteTimeDomainData(audioTimeData);
+    let sumSquares = 0.0;
+    for (let i = 0; i < audioTimeData.length; i++) {
+      const norm = (audioTimeData[i] - 128) / 128.0;
+      sumSquares += norm * norm;
+    }
+    const rms = Math.sqrt(sumSquares / audioTimeData.length);
+    const targetAmp = Math.min(1.0, Math.pow(rms * 4.5, 0.85));
+    if (targetAmp > liveMicAmp) {
+      liveMicAmp = liveMicAmp * 0.28 + targetAmp * 0.72; // instant attack
+    } else {
+      liveMicAmp = liveMicAmp * 0.88 + targetAmp * 0.12; // smooth decay
+    }
+    currentAudioAmp = Math.max(0.0, Math.min(1.0, liveMicAmp));
+
+  } else {
+    // Idle / thinking state: decay smoothly to 0
+    liveMicAmp = Math.max(0.0, liveMicAmp * 0.85);
+    speechVocalAmp = Math.max(0.0, speechVocalAmp * 0.85);
+    currentAudioAmp = 0.0;
+  }
+
+  const arcReactorEl = document.getElementById("stark-arc-reactor");
+  if (arcReactorEl) {
+    arcReactorEl.style.setProperty("--audio-amp", currentAudioAmp.toFixed(3));
+    arcReactorEl.style.setProperty("--speech-amp", currentAudioAmp.toFixed(3));
+  }
+}
+requestAnimationFrame(updateArcReactorAudio);
 
 // -------------------------------------------------------------
 // REAL-TIME HARDWARE & TOKEN TELEMETRY POLLER (100% DYNAMIC)
@@ -1607,10 +1668,10 @@ function setSystemState(state) {
 
   const arcReactorEl = document.getElementById("stark-arc-reactor");
   if (arcReactorEl) {
+    arcReactorEl.classList.remove("state-idle", "state-listening", "state-thinking", "state-speaking", "overdrive");
+    arcReactorEl.classList.add(`state-${state}`);
     if (state === "thinking" || state === "speaking") {
       arcReactorEl.classList.add("overdrive");
-    } else {
-      arcReactorEl.classList.remove("overdrive");
     }
   }
 }
@@ -1638,11 +1699,25 @@ function speakResponse(text) {
 
   utterance.onstart = () => {
     isSpeakingTTS = true;
+    speechTargetAmp = 0.85;
+    speechVocalAmp = 0.85;
     setSystemState("speaking");
+  };
+
+  utterance.onboundary = (event) => {
+    // Exact word / syllable boundary event from SpeechSynthesis
+    const charIdx = event.charIndex || 0;
+    const remaining = clean.slice(charIdx, charIdx + 12);
+    const vowelCount = (remaining.match(/[aeiouyAEIOUY]/g) || []).length;
+    const energy = Math.min(1.0, 0.65 + vowelCount * 0.12 + Math.random() * 0.18);
+    speechTargetAmp = energy;
+    speechVocalAmp = Math.max(speechVocalAmp, energy * 0.85);
   };
 
   utterance.onend = () => {
     isSpeakingTTS = false;
+    speechTargetAmp = 0.0;
+    speechVocalAmp = 0.0;
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
     setTimeout(() => {
       resumeListeningIfAllowed();
@@ -1651,6 +1726,8 @@ function speakResponse(text) {
 
   utterance.onerror = () => {
     isSpeakingTTS = false;
+    speechTargetAmp = 0.0;
+    speechVocalAmp = 0.0;
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
     resumeListeningIfAllowed();
   };
