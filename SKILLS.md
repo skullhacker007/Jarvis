@@ -6,7 +6,7 @@ This document details the complete functional skills, system actions, execution 
 
 ## 🎯 Action Taxonomy
 
-J.A.R.V.I.S. interprets natural language and speech into five discrete system action types. Every directive dispatched by the local neural core or fast-path engine resolves to one of the following:
+J.A.R.V.I.S. interprets natural language and speech into discrete system actions. Directives dispatched by the local neural core or fast-path engine resolve to one of the following:
 
 | Action ID | Description | Target Syntax | Example Directives |
 | :--- | :--- | :--- | :--- |
@@ -15,6 +15,13 @@ J.A.R.V.I.S. interprets natural language and speech into five discrete system ac
 | `focus_app` | Restores and brings an active taskbar window to the foreground. | Window title or process name substring. | *"focus code"*, *"switch to spotify"*, *"bring up terminal"* |
 | `run_cmd` | Executes an administrative shell command or URL. | Shell command string or URL. | *"open youtube"*, *"run ipconfig"*, *"open downloads"* |
 | `system_ctrl`| Modifies Windows workstation state or audio levels. | Specific system control verbs. | *"lock pc"*, *"mute audio"*, *"volume up"*, *"screenshot"* |
+| `click_element` | Coordinate-free control click via UI Automation. | Control text, button label, or accessibility name. | *"click submit"*, *"click save button"*, *"press ok"* |
+| `enable_auto_startup` | Registers app in Windows Registry Run key. | Empty (`""`). | *"enable auto startup"*, *"start with windows"* |
+| `disable_auto_startup`| Removes app from Windows Registry Run key. | Empty (`""`). | *"disable auto startup"*, *"don't start with windows"* |
+| `memory_store` | Embeds and stores a fact in persistent vector RAG memory. | Text note or fact statement. | *"remember that my phone is pixel 9"*, *"store note"* |
+| `memory_recall` | Semantic search over vector memory with cosine similarity. | Search topic or query. | *"recall phone model"*, *"what did I say about..."* |
+| `airdrop_file` | Beams local file to Android device `/sdcard/Download/`. | Local file path. | *"airdrop invoice.pdf"*, drag-and-drop overlay |
+| `file_search` | High-speed semantic local drive file search. | File name or search keywords. | *"find file report.docx"*, *"search documents"* |
 | `none` | Pure conversational or factual response; no action executed. | Empty (`""`). | *"what is your status"*, *"who made you"*, *"tell me a joke"* |
 
 ---
@@ -23,7 +30,6 @@ J.A.R.V.I.S. interprets natural language and speech into five discrete system ac
 
 ### 1. Application Management (`open_app`)
 Handles process spawning via Windows PowerShell / Win32 `Start-Process` with silent flags:
-
 - **Notepad**: `Start-Process 'notepad' -WindowStyle Normal`
 - **Visual Studio Code**: `Start-Process 'code' -WindowStyle Normal`
 - **Calculator**: `Start-Process 'calc' -WindowStyle Normal`
@@ -33,8 +39,7 @@ Handles process spawning via Windows PowerShell / Win32 `Start-Process` with sil
 - **Paint**: `Start-Process 'mspaint' -WindowStyle Normal`
 - **Spotify**: `Start-Process 'spotify' -WindowStyle Normal`
 - **WhatsApp**: `Start-Process 'whatsapp' -WindowStyle Normal`
-- **Phone Link / Calls**: `Start-Process 'ms-phone:' -WindowStyle Normal`
-- **Outlook Mail**: `Start-Process 'mailto:' -WindowStyle Normal`
+- **Phone Link / Calls**: Managed natively inside the HUD dialer
 
 ### 2. Process Termination (`close_app`)
 Safely terminates targets using PowerShell `Stop-Process -Name <target> -Force`:
@@ -47,23 +52,58 @@ Uses Win32 `EnumWindows`, `ShowWindow(SW_RESTORE)`, and `SetForegroundWindow`:
 - Matches window titles or process identifiers.
 - Clicking any active app chip in the **Active Running Apps** deck immediately brings that window to the foreground.
 
-### 4. Workstation Control (`system_ctrl`)
-Administrative system state controls:
-- **Lock Workstation**: `rundll32.exe user32.dll,LockWorkStation`
-- **Audio Controls**: System volume up, volume down, and mute toggles via Windows virtual key codes (`0xAF`, `0xAE`, `0xAD`).
-- **Screen Capture**: Dispatches Windows Snip & Sketch (`ms-screenclip:`).
+### 4. Windows UI Automation COM Engine (`click_element`)
+Coordinate-free control targeting:
+- Scans visible child controls in foreground window via Win32 `EnumChildWindows`.
+- Matches child control window text or class name against the target.
+- Queries `GetWindowRect`, computes control center coordinate `(center_x, center_y)`, and synthesizes a native Win32 left-click without user-specified coordinates.
+- Triggered by directives: *"click Save"*, *"click Next"*, *"click OK"*, *"press submit"*.
 
-### 5. Web & Direct Navigation (`run_cmd`)
-Launches URLs directly in the user's default browser:
-- `start https://youtube.com`
-- `start https://google.com`
-- `start https://github.com`
+### 5. Windows Auto-Startup (`enable_auto_startup` / `disable_auto_startup`)
+Native Windows registry integration:
+- **Registry Key**: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+- **Value Name**: `Jarvis`
+- **Value Data**: Quoted path to active `Jarvis.exe` binary.
+- Triggered by voice or text: *"start with windows"*, *"enable auto startup"*, *"disable auto startup"*.
+
+### 6. Persistent Hybrid Vector Memory (`memory_store` / `memory_recall`)
+- Embeds incoming facts into 128-dimensional L2-normalized vectors.
+- Ranks stored memories using cosine similarity against query vectors.
+- Persists records across restarts in local JSON storage (`~/.jarvis/memory.json`).
+- Triggered by directives: *"remember that [fact]"*, *"recall [topic]"*.
+
+### 7. Holographic Phone Mirroring & Notifications (`get_phone_notifications`)
+- Background ADB engine queries `dumpsys notification --noredact` every 4.5 seconds.
+- Automatically mirrors incoming WhatsApp, Telegram, Slack, Mail, SMS, and Phone notifications into cyber glass HUD toasts.
+- Displays app name, sender title, message snippet, and timestamp with alert chime.
+
+### 8. Wireless P2P AirDrop (`airdrop_file`)
+- Direct high-speed push of dropped or selected files directly to Android `/sdcard/Download/` via ADB.
+- Visual holographic dropzone overlay activates on file drag-over.
+
+### 9. Semantic Local File Search (`file_search`)
+- Traverses user document, code, and download directories.
+- Returns ranked matches with file name, file size in KB, extension, and modification date.
+- Modal interface supports instant one-click file opening via Windows shell.
+
+### 10. Developer Agent (`write_code_jarvis`)
+- Synthesizes modern production code (React, Python, JavaScript, HTML, algorithms) via Groq LPU (`qwen/qwen3.8-27b`) with local Queen failsafe.
+- Injects clean code directly into active editor (Notepad, VS Code) using native Win32 clipboard paste with verified focus restoration.
+
+### 11. Hands-Free Desktop & Form Automation
+- **Browser & Tabs**: New tab (`Ctrl+T`), close tab (`Ctrl+W`), reopen tab (`Ctrl+Shift+T`), switch tabs (`Ctrl+Tab`), refresh (`F5`), back/forward (`Alt+Left`/`Alt+Right`).
+- **Voice Form Filler**: Hands-free web form entry: *"type [text]"*, *"next field"* (`Tab`), *"previous field"* (`Shift+Tab`), *"clear field"* (`Ctrl+A` + Backspace), *"submit form"* (`Enter`).
+- **Safety Guardrail**: Automatically halts sensitive transactions (payments, purchases, checkout, data wipe) and demands explicit voice confirmation (*"Confirm submission"*).
+- **Voice Barge-In**: Instant audio interruption — speaking a new command or saying *"stop"* / *"cancel"* cancels TTS immediately without disabling the microphone.
+- **Media Controller**: Global play/pause, next track, previous track, stop (`play`, `pause`, `resume`, `next song`, `stop music`).
+- **Mouse & Scrolling**: Real-time wheel scrolling (`scroll down`, `scroll up`, `scroll to top`, `scroll to bottom`), left click, right click, double click.
+- **Keyboard Shortcuts**: Save (`Ctrl+S`), copy (`Ctrl+C`), paste (`Ctrl+V`), select all (`Ctrl+A`), undo (`Ctrl+Z`), redo (`Ctrl+Y`), enter, escape, backspace, tab.
 
 ---
 
 ## ⚡ Execution Mechanics: Zero-Window Rule
 
-All shell invocations originating from J.A.R.V.I.S. (via `silent_command` in `src-tauri/src/lib.rs`) enforce the **Zero-Window Rule**:
+All shell invocations originating from J.A.R.V.I.S. enforce the **Zero-Window Rule**:
 ```rust
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -74,74 +114,22 @@ cmd.args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
 - No flashing black console or PowerShell windows ever appear on the user's screen.
 - Command execution is clean, instantaneous, and silent.
 
-### 5. Holographic Screen Vision (`inspect_screen`)
-Powered by the **Vision Agent** (`llama-3.2-11b-vision-preview` on Groq LPU with `qwen/qwen3.8-27b` failsafe):
-- In-memory Win32 GDI screen capture directly to RAM bytes (zero disk file writes).
-- Real-time UI element hierarchy inspection via `EnumChildWindows` (buttons, inputs, edit boxes, labels).
-- Triggered by saying *"Jarvis, inspect my screen"*, *"what is on my screen"*, *"debug screen"*, or clicking the **👁️ Vision** icon in the dock.
-- Provides concise tactical spoken analysis of active applications, open code, and screen context.
-
-### 6. Live Web Research Agent (`web_search`)
-Powered by real-time intelligence feeds (Google News RSS & Wikipedia APIs):
-- Automatic live web grounding with real-time news, facts, and financial updates.
-- Triggered by saying *"search for [query]"*, *"who is [name]"*, *"what is [topic]"*, *"latest news on [topic]"*, or clicking the **🌐 Web** icon in the dock.
-- Summarizes live intelligence directly into a crisp spoken response without opening browser clutter.
-
-### 7. Groq Whisper LPU Audio Engine (`whisper-large-v3-turbo`)
-- Studio-grade cloud speech recognition operating at <200ms latency.
-- Accessible via the Visor Microphone button (Push-to-Talk) alongside the silent offline Windows speech worker.
-
-### 8. Developer Agent (`write_code_jarvis`)
-Powered by `qwen/qwen3.8-27b` on Groq LPU with local `qwen3.5:2b` failsafe:
-- Generates complete, modern, production-grade source code (React, Python, JavaScript, HTML, algorithms, etc.).
-- Automatically detects target editor, focusing or launching **Notepad** (or **VS Code**).
-- Injects clean code directly into the active editor using native Win32 clipboard paste (`Ctrl+V`) with verified focus restoration and zero dropped characters.
-- Triggered by voice or text:
-  - *"open notepad and write code"*
-  - *"open notepad and write a react code"*
-  - *"write a react code"*
-  - *"write python script in vs code"*
-  - *"type hello world in notepad"*
-
-### 9. System Agent: Complete Desktop, Media, Mouse, Keyboard & Form Automation
-Provides full hands-free voice control across Windows without touching keyboard or mouse:
-- **Window Focus Manager & Verification**: Continuous background tracking of external foreground window (`LAST_EXTERNAL_HWND`). Automatically breaks foreground lock via Win32 `AttachThreadInput` and verifies focus before executing input actions.
-- **Browser & Tabs**: New tab (`Ctrl+T`), close tab (`Ctrl+W`), reopen tab (`Ctrl+Shift+T`), switch tabs (`Ctrl+Tab`), refresh (`F5`), back/forward (`Alt+Left`/`Alt+Right`). Naturally understands *"open new tab in chrome"*, *"new tab in edge"*, *"open new tab while I opened Chrome"*.
-- **Voice Form Filler**: Hands-free web form entry: *"type [text]"*, *"next field"* (`VK_TAB`), *"previous field"* (`Shift+Tab`), *"clear field"* (`Ctrl+A` + Backspace), *"submit form"* (`VK_RETURN`).
-- **Safety Guardrail**: Automatically halts sensitive transactions (payments, purchases, checkout, data wipe) and demands explicit voice confirmation (*"Confirm submission"*).
-- **Voice Barge-In**: Instant audio interruption — speaking a new command or saying *"stop"* / *"cancel"* cancels TTS immediately without disabling the microphone.
-- **Media Controller**: Global play/pause, next track, previous track, stop (`play`, `pause`, `resume`, `play music`, `next song`, `previous song`, `stop music`).
-- **Mouse & Scrolling**: Real-time wheel scrolling (`scroll down`, `scroll up`, `scroll to top`, `scroll to bottom`), left click, right click, double click.
-- **Keyboard Shortcuts**: Save (`Ctrl+S`), copy (`Ctrl+C`), paste (`Ctrl+V`), select all (`Ctrl+A`), undo (`Ctrl+Z`), redo (`Ctrl+Y`), enter, escape, backspace, tab.
-- **Window Management**: Maximize, minimize, restore, snap left (`Win+Left`), snap right (`Win+Right`), switch window (`Alt+Tab`), close window (`Alt+F4`).
-- **Direct Typing**: Dictates and pastes text into any active field (`type [text]`, `enter [text]`).
-- **App Switching**: Focus any running window (`focus [app]`, `switch to [app]`).
-
 ---
 
 ## 🔌 How to Add New Skills
 
 To register a new skill or tool in J.A.R.V.I.S.:
 
-1. **Add Target Mapping to the Queen Prompt** in [src-tauri/src/lib.rs](file:///c:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs):
+1. **Add Target Mapping to Queen Prompt Rules** in [src-tauri/src/lib.rs](file:///c:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs).
+2. **Add Execution Case in `run_direct_action`**:
    ```rust
-   // Add target synonym to system_prompt rules:
-   "- Target mapping: 'blender'->'blender', 'figma'->'figma'..."
-   ```
-2. **Add Execution Case in `execute_system_action`**:
-   ```rust
-   "open_app" => {
-       match target.to_lowercase().as_str() {
-           "blender" => silent_command("Start-Process 'blender' -WindowStyle Normal"),
-           ...
-       }
+   "my_new_action" => {
+       // Perform action logic
+       Ok("Action completed, sir.".to_string())
    }
    ```
-3. **Register Speech Recognition Keywords** in `listen_mic`:
-   ```powershell
-   $targets.Add(@('blender', 'figma', 'discord', 'docker'))
-   ```
+3. **Register Fast-Path Matcher in `check_fast_path`** for instant sub-5ms heuristic dispatch.
 4. **Compile and Verify**:
    ```powershell
-   pnpm run build:exe
+   npm run build:exe
    ```

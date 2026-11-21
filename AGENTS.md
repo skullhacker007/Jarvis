@@ -12,14 +12,15 @@ The core brain of J.A.R.V.I.S. is the **Queen Model**, hosted locally on Ollama 
 - **Identity**: Stark Industries AI Desktop Controller for Windows.
 - **Authority**: Full administrator privileges on the local workstation.
 - **Objective**: Rapidly parse user directives (voice or text), formulate execution plans, trigger the appropriate system action, and provide a concise, spoken status reply.
+- **Token Streaming (SSE / IPC Channel)**: Emits `jarvis://stream_token` word-by-word into the holographic Visor HUD in real time, eliminating conversational latency before full response completion.
 
 ### 2. Behavioral Constraints & Guardrails
 - **Strict Single-Dispatch**: The model MUST execute ONLY the single specific task requested. It never chains unrelated tasks or opens multiple instances of the same tool.
 - **Pure JSON Output**:
   ```json
   {
-    "action": "open_app" | "close_app" | "run_cmd" | "system_ctrl" | "none",
-    "target": "<app, executable, or shell command>",
+    "action": "open_app" | "close_app" | "run_cmd" | "system_ctrl" | "click_element" | "none",
+    "target": "<app, executable, UI element name, or shell command>",
     "reply": "<spoken response under 12 words>"
   }
   ```
@@ -30,8 +31,6 @@ The core brain of J.A.R.V.I.S. is the **Queen Model**, hosted locally on Ollama 
 
 ## 🤖 Multi-Agent Expansion Roadmap
 
-As J.A.R.V.I.S. evolves into an autonomous operating companion, the architecture is designed to support specialized subagents operating under the Queen Model's coordination:
-
 ```mermaid
 flowchart TD
     User([User Voice / Text]) --> Visor[Holographic Visor & Speech Engine]
@@ -40,16 +39,22 @@ flowchart TD
     Queen -->|Direct PC Action| FastPath[Fast-Path & Win32 Core]
     Queen -->|Complex Workflow| SubagentRouter[Subagent Dispatcher]
     
-    SubagentRouter --> Agent1[Sentinel Agent\nHardware & Security Monitor]
+    SubagentRouter --> Agent1[Sentinel Agent\nHardware & Telemetry Monitor]
     SubagentRouter --> Agent2[Vision Agent\nScreen & Window Inspector]
     SubagentRouter --> Agent3[Developer Agent\nTerminal, Git & Code Automation]
     SubagentRouter --> Agent4[Web Research Agent\nLive Search & Data Retrieval]
+    SubagentRouter --> Agent5[UIA Agent\nZero-Coord Accessibility Engine]
+    SubagentRouter --> Agent6[Phone Sync Agent\nADB Mirroring & HUD Toasts]
+    SubagentRouter --> Agent7[Memory Agent\nVector RAG & Cosine Store]
 
     FastPath --> WindowsOS[Windows 11 Kernel & Desktop]
     Agent1 --> WindowsOS
     Agent2 --> WindowsOS
     Agent3 --> WindowsOS
     Agent4 --> WindowsOS
+    Agent5 --> WindowsOS
+    Agent6 --> WindowsOS
+    Agent7 --> WindowsOS
 ```
 
 ### Subagent Implementation Status
@@ -65,7 +70,7 @@ flowchart TD
    - *Trigger*: *"search [topic]"*, *"who is [name]"*, *"latest news on [topic]"*, or dock icon `🌐`.
 
 3. **Sentinel Agent (System Telemetry & Security)** - **ACTIVE**:
-   - *Role*: Continuous background monitoring of hardware health (CPU, 64GB RAM, Network I/O, WinMM mic).
+   - *Role*: Continuous background monitoring of hardware health (CPU, RAM, GPU utilization engine, Network I/O, physical WinMM microphone polling).
 
 4. **Developer Agent (Code Generation & Automatic Editor Typing)** - **ACTIVE**:
    - *Role*: Live code synthesis (React, Python, JavaScript, HTML, algorithms) and direct injection into target editors (Notepad, VS Code) via native Win32 clipboard paste with verified focus restoration.
@@ -84,7 +89,25 @@ flowchart TD
      - **Keyboard & Shortcuts**: Ctrl+S (Save), Ctrl+C (Copy), Ctrl+V (Paste), Ctrl+A (Select All), Ctrl+Z (Undo), Ctrl+Y (Redo), Enter, Escape, Backspace, Tab.
      - **Window Management**: Maximize, minimize, restore, snap left, snap right, switch window (Alt+Tab), close window (Alt+F4).
      - **Direct Typing**: Voice dictation typing into any active window or text field.
-   - *Trigger*: Voice directives: *"new tab in chrome"*, *"type John Doe"*, *"next field"*, *"submit form"*, *"play"*, *"pause"*, *"scroll down"*, *"maximize"*, etc.
+
+6. **Windows UI Automation (UIA) Engine** - **ACTIVE**:
+   - *Role*: Zero-coordinate accessibility-tree element interaction. Searches visible child controls in foreground window by text or class name, computes bounding `RECT`, and targets control center coordinates without manual pixel inputs (`win32_system_agent::click_element_by_name`).
+   - *Trigger*: *"click [button name]"*, *"press [control name]"*, action `click_element` or `uia_click`.
+
+7. **Phone Mirroring & Holographic Toast Agent** - **ACTIVE**:
+   - *Role*: ADB background notification mirroring (`get_phone_notifications`), real-time battery and temperature telemetry (`get_phone_telemetry`), high-speed P2P AirDrop (`airdrop_file`), and holographic glass HUD toasts for incoming Android notifications (WhatsApp, Telegram, Slack, Mail, Calls).
+   - *Trigger*: Automatic background polling (4.5s) or voice command *"airdrop [file]"*.
+
+8. **Persistent Hybrid Vector Memory Agent (RAG Store)** - **ACTIVE**:
+   - *Role*: 128-dimensional L2-normalized vector embeddings with cosine similarity ranking and persistent JSON store for long-term fact retention.
+   - *Trigger*: *"remember [fact]"*, *"recall [topic]"*, or IPC endpoints `save_memory_item` / `get_memory_items`.
+
+9. **Offline Wake-Word Detection & Neural TTS** - **ACTIVE**:
+   - *Role*: Background keyword spotting for "Hey Jarvis" / "Jarvis" emitting `jarvis://wake_word`, with dual speech delivery: local offline neural Piper TTS model (`localhost:5000`) and Paul Bettany British acoustic voice matrix (`en-GB`, pitch 0.92, rate 1.02).
+
+10. **Windows Auto-Startup Manager** - **ACTIVE**:
+    - *Role*: Native Windows Registry Run key automation (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`), enabling or disabling auto-launch on Windows login.
+    - *Trigger*: *"start with windows"*, *"enable auto startup"*, *"disable auto startup"*, or IPC endpoint `set_auto_startup`.
 
 ---
 
@@ -94,14 +117,13 @@ Different tasks and hardware configurations benefit from targeted model selectio
 
 | Model | Size | Quant | Inference Speed (CPU) | Best Used For |
 | :--- | :--- | :--- | :--- | :--- |
-| **`qwen3.5:2b`** *(Current)* | 1.9B | Q8_0 | ~14 tokens/s (2.5s) | Default balance: High accuracy instruction parsing with low memory footprint. |
+| **`qwen3.5:2b`** *(Default)* | 1.9B | Q8_0 | ~14 tokens/s (2.5s) | Default balance: High accuracy instruction parsing with low memory footprint. |
 | **`qwen2.5:1.5b`** | 1.5B | Q4_K_M | ~22 tokens/s (1.1s) | **Ultra-Low Latency Mode**: Recommended for near-instant voice dialogues on CPU. |
 | **`qwen2.5:0.5b`** | 0.5B | Q4_K_M | ~40 tokens/s (0.4s) | **Lightning Mode**: Instant PC control on low-resource machines. |
 | **`qwen2.5:7b`** | 7.6B | Q4_K_M | ~4 tokens/s (GPU req.) | Deep reasoning, script generation, and multi-step complex automation (requires NVIDIA GPU). |
 
-### Switching the Active Model
-To switch models in Ollama, simply pull the target model:
-```powershell
-ollama pull qwen2.5:1.5b
+### In-App Dynamic Model Management
+Models can be pulled dynamically in the HUD UI via the Ollama Model Puller row or via IPC:
+```javascript
+await invoke("pull_ollama_model", { modelName: "qwen2.5:1.5b" });
 ```
-The Rust backend automatically queries `/api/ps` dynamically and binds the loaded model to the neural network matrix without code modifications.
