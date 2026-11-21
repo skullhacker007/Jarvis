@@ -2,11 +2,6 @@
 // 100% Dynamic Hardware Telemetry (CPU, 64GB RAM, I7 CPU, Network, Active Apps)
 // Real Token Activity (Reference Matrix & Metrics) + Borderless App Dock (Phone, Outlook, WhatsApp, Spotify)
 
-let simCpu = 14.5;
-let simRamGb = 16.4;
-let simNetRx = 142.0;
-let simNetTx = 28.5;
-
 function getTauriInvoke() {
   if (typeof window !== "undefined") {
     if (window.__TAURI__?.core?.invoke) return window.__TAURI__.core.invoke;
@@ -28,71 +23,42 @@ async function invoke(cmd, args = {}) {
     }
   }
 
-  // 100% Dynamic realistic hardware telemetry simulation for standalone browser mode
+  // Pure dynamic defaults when running without native host
   if (cmd === "get_bluetooth_watch_status") {
     return {
-      has_connected_watch: isWatchPaired,
-      connected_watch_name: watchDeviceName,
-      has_connected_phone: isPhoneConnected,
-      connected_phone_name: connectedPhoneName,
-      devices: [
-        { name: "Navi Blue", is_connected: true, is_paired: true, class_of_device: 0x5A420C, is_watch_device: false, is_phone_device: true },
-        { name: "Soundcore Q10i", is_connected: false, is_paired: true, class_of_device: 0x240404, is_watch_device: false, is_phone_device: false },
-        { name: "realme Buds T310", is_connected: false, is_paired: true, class_of_device: 0x240404, is_watch_device: false, is_phone_device: false },
-        { name: "Xbox Wireless Controller", is_connected: false, is_paired: true, class_of_device: 0x002508, is_watch_device: false, is_phone_device: false }
-      ]
+      has_connected_watch: Boolean(isWatchPaired),
+      connected_watch_name: watchDeviceName || null,
+      has_connected_phone: Boolean(isPhoneConnected),
+      connected_phone_name: connectedPhoneName || null,
+      devices: []
     };
   }
 
   if (cmd === "dial_phone_call") {
-    console.log(`[Phone Dialer] Direct dialing ${args.number} via phone uplink...`);
     return `Dialing ${args.number}`;
   }
 
   if (cmd === "get_system_telemetry") {
-    simCpu = Math.max(9.0, Math.min(36.0, simCpu + (Math.random() - 0.48) * 3.8));
-    simRamGb = Math.max(16.1, Math.min(17.6, simRamGb + (Math.random() - 0.49) * 0.12));
-    const ramPct = (simRamGb / 64.0) * 100.0;
-    simNetRx = Math.max(35.0, Math.min(680.0, simNetRx + (Math.random() - 0.48) * 45.0));
-    simNetTx = Math.max(12.0, Math.min(160.0, simNetTx + (Math.random() - 0.48) * 15.0));
-
     return {
-      gpu_usage: 18.5,
-      gpu_brand: "INTEL(R) UHD GRAPHICS 630",
-      gpu_mem_used_gb: 1.2,
-      gpu_mem_total_gb: 32.0,
-      gpu_percent: 3.75,
-      cpu_usage: simCpu,
-      ram_used_gb: simRamGb,
-      ram_total_gb: 64.0,
-      ram_percent: ramPct,
-      net_rx_kb: simNetRx,
-      net_tx_kb: simNetTx,
-      top_apps: [
-        { name: "CHROME", cpu_usage: +(2.5 + Math.random() * 3.5).toFixed(1), memory_mb: +(810.0 + (Math.random() - 0.5) * 40).toFixed(0) },
-        { name: "SPOTIFY", cpu_usage: +(0.6 + Math.random() * 0.8).toFixed(1), memory_mb: +(235.0 + (Math.random() - 0.5) * 15).toFixed(0) },
-        { name: "WHATSAPP", cpu_usage: +(0.8 + Math.random() * 1.0).toFixed(1), memory_mb: +(192.0 + (Math.random() - 0.5) * 12).toFixed(0) },
-        { name: "CODE", cpu_usage: +(1.4 + Math.random() * 2.0).toFixed(1), memory_mb: +(445.0 + (Math.random() - 0.5) * 30).toFixed(0) },
-        { name: "OLLAMA", cpu_usage: +(0.4 + Math.random() * 0.6).toFixed(1), memory_mb: 2360.0 }
-      ],
-      is_whatsapp_running: true,
-      is_spotify_running: true,
-      is_chrome_running: true,
-      model_metrics: {
-        name: "qwen3.5:2b",
-        parameter_size: "1.9B",
-        quantization: "Q8_0",
-        context_length: 4096,
-        memory_mb: 2260.0,
-        eval_tokens_per_sec: +(11.8 + Math.random() * 0.6).toFixed(1),
-        last_eval_count: Math.round(10 + Math.random() * 3),
-        last_prompt_eval_count: 13,
-        last_latency_ms: Math.round(810 + Math.random() * 40),
-        is_loaded: true
-      }
+      gpu_usage: 0,
+      gpu_brand: "STANDBY",
+      gpu_mem_used_gb: 0,
+      gpu_mem_total_gb: 0,
+      gpu_percent: 0,
+      cpu_usage: 0,
+      ram_used_gb: 0,
+      ram_total_gb: 0,
+      ram_percent: 0,
+      net_rx_kb: 0,
+      net_tx_kb: 0,
+      top_apps: [],
+      is_whatsapp_running: false,
+      is_spotify_running: false,
+      is_chrome_running: false,
+      model_metrics: null
     };
   }
-  return { reply: `Executed ${args.action || args.prompt || args.target}`, action: null, latency_ms: 18 };
+  return { reply: `Executed ${args.action || args.prompt || args.target}`, action: null, latency_ms: 0 };
 }
 
 // DOM References
@@ -136,7 +102,7 @@ const decodingSpeed = document.getElementById("decoding-speed");
 const stopCondition = document.getElementById("stop-condition");
 
 // Model Tracking
-let currentActiveModelName = "GROQ QWEN 3.8 27B";
+let currentActiveModelName = "";
 
 // Apps & Models DOM
 const appsList = document.getElementById("apps-list");
@@ -1517,15 +1483,15 @@ async function refreshSystemTelemetry() {
         visorStatusLabel.textContent = `${currentActiveModelName} // ONLINE`;
       }
 
-      if (modelNameLabel) modelNameLabel.textContent = (mm.name || currentActiveModelName).toUpperCase();
-      if (nnParams) nnParams.textContent = mm.parameter_size || (currentActiveModelName.includes("120B") ? "120B" : currentActiveModelName.includes("LOCAL") ? "1.9B" : "27B");
-      if (nnQuant) nnQuant.textContent = mm.quantization || (currentActiveModelName.includes("LOCAL") ? "Q8_0" : "FP16 LPU");
+      if (modelNameLabel) modelNameLabel.textContent = (mm.name || currentActiveModelName || "--").toUpperCase();
+      if (nnParams) nnParams.textContent = mm.parameter_size || "--";
+      if (nnQuant) nnQuant.textContent = mm.quantization || "--";
       
-      const ctxDisplay = mm.context_length >= 1024 ? `${Math.round(mm.context_length / 1024)}K` : `${mm.context_length || "131K"}`;
+      const ctxDisplay = mm.context_length > 0 ? (mm.context_length >= 1024 ? `${Math.round(mm.context_length / 1024)}K` : `${mm.context_length}`) : "--";
       if (nnCtx) nnCtx.textContent = ctxDisplay;
       
       if (nnLatency) {
-        nnLatency.textContent = mm.last_latency_ms > 0 ? `${mm.last_latency_ms}ms` : (currentActiveModelName.includes("LOCAL") ? "14ms" : "267ms");
+        nnLatency.textContent = mm.last_latency_ms > 0 ? `${mm.last_latency_ms}ms` : "--";
       }
 
       if (neuralEngineState) {
