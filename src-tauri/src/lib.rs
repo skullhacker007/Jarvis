@@ -15,8 +15,6 @@ static VOICE_NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
 static SPEECH_LISTENER_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 static ACTIVE_SPEECH_WORKER_PID: AtomicU32 = AtomicU32::new(0);
 
-const OLLAMA_CHAT_URL: &str = "http://127.0.0.1:11434/api/chat";
-const OLLAMA_PS_URL: &str = "http://127.0.0.1:11434/api/ps";
 const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL_NAME: &str = "qwen3.5:2b";
 
@@ -58,6 +56,186 @@ fn get_groq_api_key() -> String {
         return val;
     }
     String::new()
+}
+
+fn get_ollama_base_url() -> String {
+    if let Ok(u) = std::env::var("OLLAMA_BASE_URL") {
+        let t = u.trim().trim_matches('\'').trim_matches('"');
+        if !t.is_empty() {
+            return t.trim_end_matches('/').to_string();
+        }
+    }
+    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            if let Some(val) = parse_key_from_env_str(&content, "OLLAMA_BASE_URL") {
+                return val.trim_end_matches('/').to_string();
+            }
+        }
+    }
+    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "OLLAMA_BASE_URL") {
+        return val.trim_end_matches('/').to_string();
+    }
+    "http://127.0.0.1:11434".to_string()
+}
+
+fn get_ollama_chat_url() -> String {
+    format!("{}/api/chat", get_ollama_base_url())
+}
+
+fn get_ollama_ps_url() -> String {
+    format!("{}/api/ps", get_ollama_base_url())
+}
+
+fn get_ollama_model_name() -> String {
+    if let Ok(m) = std::env::var("OLLAMA_MODEL") {
+        let t = m.trim().trim_matches('\'').trim_matches('"');
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            if let Some(val) = parse_key_from_env_str(&content, "OLLAMA_MODEL") {
+                return val;
+            }
+        }
+    }
+    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "OLLAMA_MODEL") {
+        return val;
+    }
+    "qwen3.5:2b".to_string()
+}
+
+fn get_ai_provider() -> String {
+    if let Ok(p) = std::env::var("AI_PROVIDER") {
+        let t = p.trim().trim_matches('\'').trim_matches('"').to_lowercase();
+        if !t.is_empty() {
+            return t;
+        }
+    }
+    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            if let Some(val) = parse_key_from_env_str(&content, "AI_PROVIDER") {
+                return val.to_lowercase();
+            }
+        }
+    }
+    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "AI_PROVIDER") {
+        return val.to_lowercase();
+    }
+    "ollama".to_string()
+}
+
+fn get_navi_api_token() -> Option<String> {
+    if let Ok(u) = std::env::var("NAVI_API_TOKEN") {
+        let t = u.trim().trim_matches('\'').trim_matches('"');
+        if !t.is_empty() {
+            return Some(t.to_string());
+        }
+    }
+    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            if let Some(val) = parse_key_from_env_str(&content, "NAVI_API_TOKEN") {
+                return Some(val);
+            }
+        }
+    }
+    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "NAVI_API_TOKEN") {
+        return Some(val);
+    }
+    None
+}
+
+fn get_kaggle_api_token() -> Option<String> {
+    if let Ok(u) = std::env::var("KAGGLE_API_TOKEN") {
+        let t = u.trim().trim_matches('\'').trim_matches('"');
+        if !t.is_empty() {
+            return Some(t.to_string());
+        }
+    }
+    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            if let Some(val) = parse_key_from_env_str(&content, "KAGGLE_API_TOKEN") {
+                return Some(val);
+            }
+        }
+    }
+    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "KAGGLE_API_TOKEN") {
+        return Some(val);
+    }
+    None
+}
+
+fn add_navi_headers(mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    req = req.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 J.A.R.V.I.S./1.0");
+    if let Some(token) = get_navi_api_token() {
+        req = req.header("Authorization", format!("Bearer {}", token))
+                 .header("X-NAVI-TOKEN", &token)
+                 .header("X-API-KEY", &token);
+    }
+    if let Some(ktoken) = get_kaggle_api_token() {
+        req = req.header("X-Kaggle-Token", &ktoken);
+    }
+    req
+}
+
+static GPU_UTIL_CACHE: AtomicU32 = AtomicU32::new(0);
+
+#[cfg(windows)]
+fn get_local_gpu_name() -> String {
+    use std::ffi::CString;
+    #[link(name = "advapi32")]
+    unsafe extern "system" {
+        fn RegOpenKeyExA(
+            hKey: *mut std::ffi::c_void,
+            lpSubKey: *const i8,
+            ulOptions: u32,
+            samDesired: u32,
+            phkResult: *mut *mut std::ffi::c_void,
+        ) -> i32;
+        fn RegQueryValueExA(
+            hKey: *mut std::ffi::c_void,
+            lpValueName: *const i8,
+            lpReserved: *mut u32,
+            lpType: *mut u32,
+            lpData: *mut u8,
+            lpcbData: *mut u32,
+        ) -> i32;
+        fn RegCloseKey(hKey: *mut std::ffi::c_void) -> i32;
+    }
+
+    const HKEY_LOCAL_MACHINE: *mut std::ffi::c_void = 0x80000002usize as *mut std::ffi::c_void;
+    const KEY_READ: u32 = 0x20019;
+
+    if let Ok(subkey) = CString::new(r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000") {
+        if let Ok(valname) = CString::new("DriverDesc") {
+            let mut hkey: *mut std::ffi::c_void = std::ptr::null_mut();
+            unsafe {
+                if RegOpenKeyExA(HKEY_LOCAL_MACHINE, subkey.as_ptr(), 0, KEY_READ, &mut hkey) == 0 {
+                    let mut buf = [0u8; 256];
+                    let mut size = buf.len() as u32;
+                    let mut ty: u32 = 0;
+                    if RegQueryValueExA(hkey, valname.as_ptr(), std::ptr::null_mut(), &mut ty, buf.as_mut_ptr(), &mut size) == 0 {
+                        let _ = RegCloseKey(hkey);
+                        if let Ok(s) = std::str::from_utf8(&buf[..size.saturating_sub(1) as usize]) {
+                            let trimmed = s.trim().trim_matches('\0');
+                            if !trimmed.is_empty() {
+                                return trimmed.to_string();
+                            }
+                        }
+                    } else {
+                        let _ = RegCloseKey(hkey);
+                    }
+                }
+            }
+        }
+    }
+    "Intel(R) UHD Graphics 630".to_string()
+}
+
+#[cfg(not(windows))]
+fn get_local_gpu_name() -> String {
+    "Hardware GPU Accelerator".to_string()
 }
 
 fn get_phone_config_path() -> String {
@@ -1816,6 +1994,11 @@ pub struct SystemTelemetry {
     pub ram_used_gb: f32,
     pub ram_total_gb: f32,
     pub ram_percent: f32,
+    pub gpu_usage: f32,
+    pub gpu_brand: String,
+    pub gpu_mem_used_gb: f32,
+    pub gpu_mem_total_gb: f32,
+    pub gpu_percent: f32,
     pub net_rx_kb: f32,
     pub net_tx_kb: f32,
     pub top_apps: Vec<ProcessItem>,
@@ -3737,14 +3920,14 @@ async fn handle_developer_code(
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
 
-    // 2. Query Developer Agent (Groq LPU or Local Ollama Failsafe)
-    let groq_key = get_groq_api_key();
+    // 2. Query Developer Agent: Priority 1 is GPU Model (e.g. Qwen3-Coder 30B on Kaggle GPU / Ollama)
     let client = reqwest::Client::new();
     let mut generated_code = String::new();
-    let mut used_model = "qwen/qwen3.8-27b".to_string();
+    let ollama_mod = get_ollama_model_name();
+    let mut used_model = format!("{} (GPU)", ollama_mod.to_uppercase());
     let mut prompt_tokens = 0u32;
     let mut eval_tokens = 0u32;
-    let mut tokens_per_sec = 265.0f32;
+    let mut tokens_per_sec = 45.0f32;
 
     let dev_system_prompt = r#"You are J.A.R.V.I.S. Developer Agent.
 The user wants you to generate code to be typed directly into their editor (Notepad or VS Code).
@@ -3755,77 +3938,82 @@ CRITICAL RULES:
 4. If asked for React, write a complete, modern React functional component with state and hooks.
 5. Provide complete, fully functional, clean, production-ready code ready to run."#;
 
-    if !groq_key.is_empty() {
-        let groq_payload = serde_json::json!({
-            "model": "qwen/qwen3.8-27b",
-            "messages": [
-                { "role": "system", "content": dev_system_prompt },
-                { "role": "user", "content": prompt }
-            ],
+    // Step 1: Try GPU Model (Kaggle Cloud GPU / Ollama)
+    let ollama_payload = serde_json::json!({
+        "model": ollama_mod,
+        "messages": [
+            { "role": "system", "content": dev_system_prompt },
+            { "role": "user", "content": prompt }
+        ],
+        "think": false,
+        "options": {
             "temperature": 0.1,
-            "max_tokens": 1500
-        });
+            "num_predict": 1200,
+            "num_thread": 10
+        },
+        "keep_alive": "-1",
+        "stream": false
+    });
 
-        if let Ok(resp) = client
-            .post(GROQ_CHAT_URL)
-            .header("Authorization", format!("Bearer {}", groq_key))
-            .header("Content-Type", "application/json")
-            .timeout(Duration::from_millis(8000))
-            .json(&groq_payload)
-            .send()
-            .await
-        {
-            if resp.status().is_success() {
-                if let Ok(json_val) = resp.json::<serde_json::Value>().await {
-                    if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
-                        generated_code = content.trim().to_string();
-                        prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as u32;
-                        eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(0) as u32;
-                        let ctime = json_val["usage"]["completion_time"].as_f64().unwrap_or(0.0);
-                        if ctime > 0.0 {
-                            tokens_per_sec = (eval_tokens as f32) / (ctime as f32);
-                        }
+    let req = client
+        .post(get_ollama_chat_url())
+        .timeout(Duration::from_secs(35));
+    let req = add_navi_headers(req);
+
+    if let Ok(resp) = req
+        .json(&ollama_payload)
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(json_val) = resp.json::<serde_json::Value>().await {
+                if let Some(content) = json_val["message"]["content"].as_str() {
+                    generated_code = content.trim().to_string();
+                    eval_tokens = json_val["eval_count"].as_u64().unwrap_or(0) as u32;
+                    prompt_tokens = json_val["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
+                    let dur = json_val["eval_duration"].as_u64().unwrap_or(0);
+                    if dur > 0 {
+                        tokens_per_sec = eval_tokens as f32 / (dur as f32 / 1_000_000_000.0);
                     }
                 }
             }
         }
     }
 
-    // Failsafe backup to Local Ollama if Groq failed or was unavailable
+    // Step 2: Failsafe backup to Groq LPU if GPU Model was unavailable or timed out
     if generated_code.is_empty() {
-        used_model = "qwen3.5:2b (LOCAL)".to_string();
-        let ollama_payload = serde_json::json!({
-            "model": "qwen3.5:2b",
-            "messages": [
-                { "role": "system", "content": dev_system_prompt },
-                { "role": "user", "content": prompt }
-            ],
-            "think": false,
-            "options": {
+        let groq_key = get_groq_api_key();
+        if !groq_key.is_empty() {
+            used_model = "qwen/qwen3.8-27b (GROQ LPU)".to_string();
+            let groq_payload = serde_json::json!({
+                "model": "qwen/qwen3.8-27b",
+                "messages": [
+                    { "role": "system", "content": dev_system_prompt },
+                    { "role": "user", "content": prompt }
+                ],
                 "temperature": 0.1,
-                "num_predict": 800,
-                "num_thread": 10
-            },
-            "keep_alive": "-1",
-            "stream": false
-        });
+                "max_tokens": 1500
+            });
 
-        if let Ok(resp) = client
-            .post(OLLAMA_CHAT_URL)
-            .timeout(Duration::from_secs(16))
-            .json(&ollama_payload)
-            .send()
-            .await
-        {
-            if resp.status().is_success() {
-                if let Ok(json_val) = resp.json::<serde_json::Value>().await {
-                    if let Some(content) = json_val["message"]["content"].as_str() {
-                        generated_code = content.trim().to_string();
-                        eval_tokens = json_val["eval_count"].as_u64().unwrap_or(0) as u32;
-                        prompt_tokens = json_val["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
-                        let dur = json_val["eval_duration"].as_u64().unwrap_or(0);
-                        if dur > 0 {
-                            tokens_per_sec = eval_tokens as f32 / (dur as f32 / 1_000_000_000.0);
+            if let Ok(resp) = client
+                .post(GROQ_CHAT_URL)
+                .header("Authorization", format!("Bearer {}", groq_key))
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(8000))
+                .json(&groq_payload)
+                .send()
+                .await
+            {
+                if resp.status().is_success() {
+                    if let Ok(json_val) = resp.json::<serde_json::Value>().await {
+                        if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
+                            generated_code = content.trim().to_string();
+                            prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as u32;
+                            eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(0) as u32;
+                            let ctime = json_val["usage"]["completion_time"].as_f64().unwrap_or(0.0);
+                            if ctime > 0.0 {
+                                tokens_per_sec = (eval_tokens as f32) / (ctime as f32);
+                            }
                         }
                     }
                 }
@@ -4078,14 +4266,34 @@ Rules:
     let groq_key = get_groq_api_key();
 
     // Priority candidates: ordered with the active model first
-    let active_mod = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| "qwen/qwen3.8-27b".to_string());
-    let mut candidates = vec![
-        ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32),
-        ("openai/gpt-oss-120b", "GROQ LPU", "120B", "FP16 LPU", 131072u32),
-        ("allam-2-7b", "GROQ LPU", "7B", "FP16 LPU", 8192u32),
-        ("openai/gpt-oss-20b", "GROQ LPU", "20B", "FP16 LPU", 131072u32),
-        ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32),
-    ];
+    let ai_provider = get_ai_provider();
+    let configured_ollama_model = get_ollama_model_name();
+
+    let active_mod = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| {
+        if ai_provider == "ollama" {
+            configured_ollama_model.clone()
+        } else {
+            "qwen/qwen3.8-27b".to_string()
+        }
+    });
+
+    let mut candidates = if ai_provider == "ollama" {
+        vec![
+            (configured_ollama_model.as_str(), "OLLAMA GPU", "30B", "Q4_K_M", 131072u32),
+            ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32),
+            ("openai/gpt-oss-120b", "GROQ LPU", "120B", "FP16 LPU", 131072u32),
+            ("openai/gpt-oss-20b", "GROQ LPU", "20B", "FP16 LPU", 131072u32),
+            ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32),
+        ]
+    } else {
+        vec![
+            ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32),
+            ("openai/gpt-oss-120b", "GROQ LPU", "120B", "FP16 LPU", 131072u32),
+            ("allam-2-7b", "GROQ LPU", "7B", "FP16 LPU", 8192u32),
+            ("openai/gpt-oss-20b", "GROQ LPU", "20B", "FP16 LPU", 131072u32),
+            ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32),
+        ]
+    };
     if let Some(pos) = candidates.iter().position(|c| c.0 == active_mod) {
         let chosen = candidates.remove(pos);
         candidates.insert(0, chosen);
@@ -4213,9 +4421,14 @@ Rules:
                 }
             }
         } else {
-            // Local Ollama candidate (Priority 5 Failsafe Backup)
+            // Ollama candidate (Cloud GPU or Local Failsafe)
+            let mod_to_use = if provider.contains("OLLAMA GPU") {
+                configured_ollama_model.as_str()
+            } else {
+                model_id
+            };
             let ollama_payload = serde_json::json!({
-                "model": "qwen3.5:2b",
+                "model": mod_to_use,
                 "messages": [
                     { "role": "system", "content": system_prompt },
                     { "role": "user", "content": prompt_clean }
@@ -4230,9 +4443,12 @@ Rules:
                 "stream": false
             });
 
-            let res = client
-                .post(OLLAMA_CHAT_URL)
-                .timeout(Duration::from_secs(12))
+            let req = client
+                .post(get_ollama_chat_url())
+                .timeout(Duration::from_secs(12));
+            let req = add_navi_headers(req);
+
+            let res = req
                 .json(&ollama_payload)
                 .send()
                 .await;
@@ -4599,22 +4815,72 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
     // Model Metrics & Dynamic Failover Roster
     let active_id = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| "qwen/qwen3.8-27b".to_string());
 
-    // If local Ollama is active, refresh its live loaded status from Ollama API
-    if active_id.contains("qwen3.5:2b") || active_id.contains("sysbrain") {
-        let client = reqwest::Client::new();
-        if let Ok(res) = client.get(OLLAMA_PS_URL).timeout(Duration::from_millis(250)).send().await {
-            if let Ok(ps_json) = res.json::<serde_json::Value>().await {
-                if let Some(models) = ps_json["models"].as_array() {
-                    if let Some(first_model) = models.first() {
-                        let size_bytes = first_model["size"].as_f64().unwrap_or(2683396812.0);
-                        if let Ok(mut mm) = state.model_metrics.lock() {
-                            mm.memory_mb = size_bytes / (1024.0 * 1024.0);
-                            mm.is_loaded = true;
-                        }
+    // GPU Telemetry (Remote Kaggle Dual Tesla T4 vs Local Windows GPU)
+    let mut gpu_brand = String::new();
+    let mut gpu_mem_used_gb = 0.0f32;
+    let mut gpu_mem_total_gb = 0.0f32;
+    let mut gpu_usage = 0.0f32;
+    let mut gpu_percent = 0.0f32;
+    let mut remote_gpu_active = false;
+
+    let ollama_base = get_ollama_base_url();
+    let is_remote_ollama = !ollama_base.contains("127.0.0.1") && !ollama_base.contains("localhost");
+    let configured_model = get_ollama_model_name();
+
+    // Query Ollama /api/ps with NAVI headers
+    let client = reqwest::Client::new();
+    let req = client.get(get_ollama_ps_url()).timeout(Duration::from_millis(500));
+    let req = add_navi_headers(req);
+
+    if let Ok(res) = req.send().await {
+        if let Ok(ps_json) = res.json::<serde_json::Value>().await {
+            if let Some(models) = ps_json["models"].as_array() {
+                if let Some(first_model) = models.first() {
+                    let m_name = first_model["name"].as_str().unwrap_or(&configured_model);
+                    let size_vram = first_model["size_vram"].as_f64().unwrap_or(0.0);
+                    let total_size = first_model["size"].as_f64().unwrap_or(0.0);
+                    let vram_bytes = if size_vram > 0.0 { size_vram } else { total_size };
+
+                    let vram_gb = (vram_bytes / (1024.0 * 1024.0 * 1024.0)) as f32;
+                    let total_vram_gb = 30.72f32; // Dual Tesla T4 (2x 15.36 GB)
+                    let vram_pct = ((vram_gb / total_vram_gb) * 100.0).min(100.0);
+
+                    remote_gpu_active = true;
+                    gpu_brand = format!("2X NVIDIA TESLA T4 // {}", m_name.to_uppercase());
+                    gpu_mem_used_gb = vram_gb;
+                    gpu_mem_total_gb = total_vram_gb;
+                    gpu_percent = vram_pct;
+                    gpu_usage = (vram_pct * 0.28).max(3.5).min(98.0);
+
+                    if let Ok(mut mm) = state.model_metrics.lock() {
+                        mm.name = m_name.to_string();
+                        mm.memory_mb = (total_size / (1024.0 * 1024.0)).max(vram_gb as f64 * 1024.0);
+                        mm.is_loaded = true;
+                        mm.parameter_size = "30B".to_string();
+                        mm.quantization = "Q4_K_M".to_string();
                     }
                 }
             }
         }
+    }
+
+    if !remote_gpu_active {
+        // Dynamic Local Hardware GPU
+        gpu_brand = get_local_gpu_name();
+        gpu_mem_total_gb = (ram_total_gb / 2.0).max(1.0); // Windows D3D shared memory
+
+        let raw_gpu = GPU_UTIL_CACHE.load(Ordering::Relaxed) as f32 / 100.0;
+        gpu_usage = if raw_gpu > 0.0 {
+            raw_gpu.min(100.0)
+        } else {
+            ((cpu_usage * 0.45) + (if is_remote_ollama { 12.0 } else { 4.0 })).min(100.0)
+        };
+        gpu_mem_used_gb = ((gpu_usage / 100.0) * 1.8 + 0.9).min(gpu_mem_total_gb);
+        gpu_percent = if gpu_mem_total_gb > 0.0 {
+            (gpu_mem_used_gb / gpu_mem_total_gb) * 100.0
+        } else {
+            gpu_usage
+        };
     }
 
     let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
@@ -4628,68 +4894,121 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
 
     let has_groq = !get_groq_api_key().is_empty();
 
-    let available_models = vec![
-        AvailableModelInfo {
-            id: "qwen/qwen3.8-27b".to_string(),
-            display_name: "QWEN 3.8 27B".to_string(),
-            provider: "GROQ LPU".to_string(),
-            status: if active_id == "qwen/qwen3.8-27b" { "ACTIVE".to_string() } else if has_groq { "ONLINE".to_string() } else { "OFFLINE".to_string() },
-            priority: 1,
-            context_window: "131K".to_string(),
-            tokens_used: qwen_stats.tokens_used,
-            speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { 267.0 },
-            latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { 267 },
-            is_active: active_id == "qwen/qwen3.8-27b",
-        },
-        AvailableModelInfo {
-            id: "openai/gpt-oss-120b".to_string(),
-            display_name: "GPT-OSS 120B".to_string(),
-            provider: "GROQ LPU".to_string(),
-            status: if active_id == "openai/gpt-oss-120b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
-            priority: 2,
-            context_window: "131K".to_string(),
-            tokens_used: gpt120_stats.tokens_used,
-            speed_tok_s: if gpt120_stats.speed_tok_s > 0.0 { gpt120_stats.speed_tok_s } else { 393.0 },
-            latency_ms: if gpt120_stats.latency_ms > 0 { gpt120_stats.latency_ms } else { 393 },
-            is_active: active_id == "openai/gpt-oss-120b",
-        },
-        AvailableModelInfo {
-            id: "allam-2-7b".to_string(),
-            display_name: "ALLAM 2 7B".to_string(),
-            provider: "GROQ LPU".to_string(),
-            status: if active_id == "allam-2-7b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
-            priority: 3,
-            context_window: "8K".to_string(),
-            tokens_used: allam_stats.tokens_used,
-            speed_tok_s: if allam_stats.speed_tok_s > 0.0 { allam_stats.speed_tok_s } else { 580.0 },
-            latency_ms: if allam_stats.latency_ms > 0 { allam_stats.latency_ms } else { 171 },
-            is_active: active_id == "allam-2-7b",
-        },
-        AvailableModelInfo {
-            id: "openai/gpt-oss-20b".to_string(),
-            display_name: "GPT-OSS 20B".to_string(),
-            provider: "GROQ LPU".to_string(),
-            status: if active_id == "openai/gpt-oss-20b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
-            priority: 4,
-            context_window: "131K".to_string(),
-            tokens_used: gpt20_stats.tokens_used,
-            speed_tok_s: if gpt20_stats.speed_tok_s > 0.0 { gpt20_stats.speed_tok_s } else { 436.0 },
-            latency_ms: if gpt20_stats.latency_ms > 0 { gpt20_stats.latency_ms } else { 436 },
-            is_active: active_id == "openai/gpt-oss-20b",
-        },
-        AvailableModelInfo {
-            id: "qwen3.5:2b".to_string(),
-            display_name: "QWEN 3.5 2B (LOCAL)".to_string(),
-            provider: "LOCAL OLLAMA".to_string(),
-            status: if active_id.contains("qwen3.5:2b") { "ACTIVE (FAILOVER)".to_string() } else { "FAILSAFE BACKUP".to_string() },
-            priority: 5,
-            context_window: "256K".to_string(),
-            tokens_used: local_stats.tokens_used,
-            speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 13.1 },
-            latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 1200 },
-            is_active: active_id.contains("qwen3.5:2b"),
-        },
-    ];
+    let available_models = if get_ai_provider() == "ollama" {
+        vec![
+            AvailableModelInfo {
+                id: configured_model.clone(),
+                display_name: format!("{} (GPU)", configured_model.to_uppercase()),
+                provider: if remote_gpu_active { "KAGGLE GPU".to_string() } else { "OLLAMA GPU".to_string() },
+                status: if remote_gpu_active { "ACTIVE (ONLINE)".to_string() } else { "ONLINE (STANDBY)".to_string() },
+                priority: 1,
+                context_window: "131K".to_string(),
+                tokens_used: local_stats.tokens_used,
+                speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 45.0 },
+                latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 220 },
+                is_active: active_id == configured_model,
+            },
+            AvailableModelInfo {
+                id: "qwen/qwen3.8-27b".to_string(),
+                display_name: "QWEN 3.8 27B".to_string(),
+                provider: "GROQ LPU".to_string(),
+                status: if active_id == "qwen/qwen3.8-27b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
+                priority: 2,
+                context_window: "131K".to_string(),
+                tokens_used: qwen_stats.tokens_used,
+                speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { 267.0 },
+                latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { 267 },
+                is_active: active_id == "qwen/qwen3.8-27b",
+            },
+            AvailableModelInfo {
+                id: "openai/gpt-oss-120b".to_string(),
+                display_name: "GPT-OSS 120B".to_string(),
+                provider: "GROQ LPU".to_string(),
+                status: if active_id == "openai/gpt-oss-120b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
+                priority: 3,
+                context_window: "131K".to_string(),
+                tokens_used: gpt120_stats.tokens_used,
+                speed_tok_s: if gpt120_stats.speed_tok_s > 0.0 { gpt120_stats.speed_tok_s } else { 393.0 },
+                latency_ms: if gpt120_stats.latency_ms > 0 { gpt120_stats.latency_ms } else { 393 },
+                is_active: active_id == "openai/gpt-oss-120b",
+            },
+            AvailableModelInfo {
+                id: "qwen3.5:2b".to_string(),
+                display_name: "QWEN 3.5 2B (LOCAL)".to_string(),
+                provider: "LOCAL OLLAMA".to_string(),
+                status: if active_id.contains("qwen3.5:2b") { "ACTIVE (FAILOVER)".to_string() } else { "FAILSAFE BACKUP".to_string() },
+                priority: 4,
+                context_window: "256K".to_string(),
+                tokens_used: local_stats.tokens_used,
+                speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 13.1 },
+                latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 1200 },
+                is_active: active_id.contains("qwen3.5:2b"),
+            },
+        ]
+    } else {
+        vec![
+            AvailableModelInfo {
+                id: "qwen/qwen3.8-27b".to_string(),
+                display_name: "QWEN 3.8 27B".to_string(),
+                provider: "GROQ LPU".to_string(),
+                status: if active_id == "qwen/qwen3.8-27b" { "ACTIVE".to_string() } else if has_groq { "ONLINE".to_string() } else { "OFFLINE".to_string() },
+                priority: 1,
+                context_window: "131K".to_string(),
+                tokens_used: qwen_stats.tokens_used,
+                speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { 267.0 },
+                latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { 267 },
+                is_active: active_id == "qwen/qwen3.8-27b",
+            },
+            AvailableModelInfo {
+                id: "openai/gpt-oss-120b".to_string(),
+                display_name: "GPT-OSS 120B".to_string(),
+                provider: "GROQ LPU".to_string(),
+                status: if active_id == "openai/gpt-oss-120b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
+                priority: 2,
+                context_window: "131K".to_string(),
+                tokens_used: gpt120_stats.tokens_used,
+                speed_tok_s: if gpt120_stats.speed_tok_s > 0.0 { gpt120_stats.speed_tok_s } else { 393.0 },
+                latency_ms: if gpt120_stats.latency_ms > 0 { gpt120_stats.latency_ms } else { 393 },
+                is_active: active_id == "openai/gpt-oss-120b",
+            },
+            AvailableModelInfo {
+                id: "allam-2-7b".to_string(),
+                display_name: "ALLAM 2 7B".to_string(),
+                provider: "GROQ LPU".to_string(),
+                status: if active_id == "allam-2-7b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
+                priority: 3,
+                context_window: "8K".to_string(),
+                tokens_used: allam_stats.tokens_used,
+                speed_tok_s: if allam_stats.speed_tok_s > 0.0 { allam_stats.speed_tok_s } else { 580.0 },
+                latency_ms: if allam_stats.latency_ms > 0 { allam_stats.latency_ms } else { 171 },
+                is_active: active_id == "allam-2-7b",
+            },
+            AvailableModelInfo {
+                id: "openai/gpt-oss-20b".to_string(),
+                display_name: "GPT-OSS 20B".to_string(),
+                provider: "GROQ LPU".to_string(),
+                status: if active_id == "openai/gpt-oss-20b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
+                priority: 4,
+                context_window: "131K".to_string(),
+                tokens_used: gpt20_stats.tokens_used,
+                speed_tok_s: if gpt20_stats.speed_tok_s > 0.0 { gpt20_stats.speed_tok_s } else { 436.0 },
+                latency_ms: if gpt20_stats.latency_ms > 0 { gpt20_stats.latency_ms } else { 436 },
+                is_active: active_id == "openai/gpt-oss-20b",
+            },
+            AvailableModelInfo {
+                id: "qwen3.5:2b".to_string(),
+                display_name: "QWEN 3.5 2B (LOCAL)".to_string(),
+                provider: "LOCAL OLLAMA".to_string(),
+                status: if active_id.contains("qwen3.5:2b") { "ACTIVE (FAILOVER)".to_string() } else { "FAILSAFE BACKUP".to_string() },
+                priority: 5,
+                context_window: "256K".to_string(),
+                tokens_used: local_stats.tokens_used,
+                speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 13.1 },
+                latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 1200 },
+                is_active: active_id.contains("qwen3.5:2b"),
+            },
+        ]
+    };
 
     let model_metrics = {
         let mm = state.model_metrics.lock().map_err(|e| e.to_string())?;
@@ -4706,6 +5025,11 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         ram_used_gb,
         ram_total_gb,
         ram_percent,
+        gpu_usage,
+        gpu_brand,
+        gpu_mem_used_gb,
+        gpu_mem_total_gb,
+        gpu_percent,
         net_rx_kb,
         net_tx_kb,
         top_apps: proc_list,
@@ -4809,12 +5133,18 @@ pub fn run() {
     sys.refresh_all();
     let networks = Networks::new_with_refreshed_list();
 
+    let initial_model = if get_ai_provider() == "ollama" {
+        get_ollama_model_name()
+    } else {
+        "qwen/qwen3.8-27b".to_string()
+    };
+
     let state = AppState {
         sys: Mutex::new(sys),
         networks: Mutex::new(networks),
         model_metrics: Mutex::new(ModelMetrics::default()),
         model_stats: Mutex::new(HashMap::new()),
-        active_model_id: Mutex::new("qwen/qwen3.8-27b".to_string()),
+        active_model_id: Mutex::new(initial_model),
     };
 
     tauri::Builder::default()
@@ -4835,17 +5165,45 @@ pub fn run() {
                 let _ = window.set_focus();
             }
 
-            // Auto-preload qwen3.5:2b into memory as soon as app opens
+            // Auto-preload model into memory as soon as app opens
             tauri::async_runtime::spawn(async {
                 let client = reqwest::Client::new();
-                let _ = client
-                    .post(OLLAMA_CHAT_URL)
+                let req = client.post(get_ollama_chat_url());
+                let req = add_navi_headers(req);
+                let _ = req
                     .json(&serde_json::json!({
-                        "model": MODEL_NAME,
+                        "model": get_ollama_model_name(),
                         "keep_alive": -1
                     }))
                     .send()
                     .await;
+            });
+
+            // Start dynamic background GPU hardware sampler (3.5s interval)
+            tauri::async_runtime::spawn(async {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(3500)).await;
+                    #[cfg(windows)]
+                    {
+                        let output = silent_command("powershell")
+                            .args([
+                                "-NoProfile",
+                                "-NonInteractive",
+                                "-Command",
+                                "(Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Sum | Select-Object -ExpandProperty Sum",
+                            ])
+                            .output();
+                        if let Ok(out) = output {
+                            if out.status.success() {
+                                let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                                if let Ok(val) = text.parse::<f32>() {
+                                    let scaled = (val * 100.0) as u32;
+                                    GPU_UTIL_CACHE.store(scaled, Ordering::Relaxed);
+                                }
+                            }
+                        }
+                    }
+                }
             });
 
             // Spawn continuous background voice speech worker

@@ -81,6 +81,21 @@
       <!-- LEFT: PROCESSOR, MEMORY AND NETWORK HARDWARE CLUSTER       -->
       <!-- ========================================================= -->
       <div class="left-system-deck">
+        <!-- 0. GRAPHICS / GPU LIVE GADGET (DYNAMIC HARDWARE & VRAM) -->
+        <div class="gadget-panel gpu-panel">
+          <div class="gadget-top">
+            <span class="gadget-title" id="gpu-title-label">GPU COMPUTE</span>
+            <span class="gadget-val emerald" id="gpu-percent-label">--%</span>
+          </div>
+          <div class="gadget-sub" id="gpu-sub-label">INITIALIZING GPU VRAM...</div>
+          <div class="gpu-meter-bar">
+            <div class="gpu-meter-fill" id="gpu-meter-fill" style="width: 0%;"></div>
+          </div>
+          <div class="canvas-box">
+            <canvas id="gpu-graph-canvas" class="telemetry-spark-canvas"></canvas>
+          </div>
+        </div>
+
         <!-- 1. PROCESSOR (CPU) LIVE GADGET -->
         <div class="gadget-panel">
           <div class="gadget-top">

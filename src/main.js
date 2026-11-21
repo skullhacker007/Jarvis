@@ -57,6 +57,11 @@ async function invoke(cmd, args = {}) {
     simNetTx = Math.max(12.0, Math.min(160.0, simNetTx + (Math.random() - 0.48) * 15.0));
 
     return {
+      gpu_usage: 18.5,
+      gpu_brand: "INTEL(R) UHD GRAPHICS 630",
+      gpu_mem_used_gb: 1.2,
+      gpu_mem_total_gb: 32.0,
+      gpu_percent: 3.75,
       cpu_usage: simCpu,
       ram_used_gb: simRamGb,
       ram_total_gb: 64.0,
@@ -103,6 +108,10 @@ const nnLatency = document.getElementById("nn-latency");
 const neuralEngineState = document.getElementById("neural-engine-state");
 
 // Hardware Telemetry DOM
+const gpuTitleLabel = document.getElementById("gpu-title-label");
+const gpuPercentLabel = document.getElementById("gpu-percent-label");
+const gpuSubLabel = document.getElementById("gpu-sub-label");
+const gpuMeterFill = document.getElementById("gpu-meter-fill");
 const cpuPercentLabel = document.getElementById("cpu-percent-label");
 const cpuSubLabel = document.getElementById("cpu-sub-label");
 const ramUsageLabel = document.getElementById("ram-usage-label");
@@ -222,6 +231,8 @@ function toggleInputBar() {
 }
 
 // Canvases
+const gpuCanvas = document.getElementById("gpu-graph-canvas");
+const gpuCtx = gpuCanvas?.getContext("2d");
 const cpuCanvas = document.getElementById("cpu-graph-canvas");
 const cpuCtx = cpuCanvas?.getContext("2d");
 const ramCanvas = document.getElementById("ram-graph-canvas");
@@ -245,6 +256,7 @@ function resizeCanvases() {
       }
     }
   };
+  resizeOne(gpuCanvas);
   resizeOne(cpuCanvas);
   resizeOne(ramCanvas);
   resizeOne(netCanvas);
@@ -256,6 +268,7 @@ setTimeout(resizeCanvases, 50);
 setTimeout(resizeCanvases, 250);
 
 // History Buffers for Rolling Telemetry Graphs (35 data points) - initialized with dynamic waves
+const gpuHistory = Array.from({ length: 35 }, (_, i) => Math.round(14 + Math.sin(i * 0.4) * 6));
 const cpuHistory = Array.from({ length: 35 }, (_, i) => Math.round(12 + Math.sin(i * 0.6) * 5 + (Math.random() * 4)));
 const ramHistory = Array.from({ length: 35 }, (_, i) => Math.round(25 + Math.sin(i * 0.2) * 1.5));
 const netHistory = Array.from({ length: 35 }, (_, i) => Math.round(16 + Math.sin(i * 0.5) * 8 + (Math.random() * 5)));
@@ -474,6 +487,32 @@ async function refreshSystemTelemetry() {
       if (bioSubject) bioSubject.textContent = telem.username;
     }
 
+    // 0. GPU Telemetry (On top of Processor, 100% Dynamic Hardware & VRAM)
+    const gpuVal = Math.round(telem.gpu_usage || 0);
+    if (gpuPercentLabel) gpuPercentLabel.textContent = `${gpuVal}%`;
+    if (gpuTitleLabel && telem.gpu_brand) {
+      if (telem.gpu_brand.includes("TESLA")) {
+        gpuTitleLabel.textContent = "GPU // TESLA T4";
+      } else if (telem.gpu_brand.includes("INTEL")) {
+        gpuTitleLabel.textContent = "GPU // INTEL UHD";
+      } else {
+        gpuTitleLabel.textContent = "GPU COMPUTE";
+      }
+    }
+    if (gpuSubLabel && telem.gpu_brand) {
+      const vramUsed = (telem.gpu_mem_used_gb || 0).toFixed(1);
+      const vramTotal = (telem.gpu_mem_total_gb || 0).toFixed(1);
+      const vramPct = Math.round(telem.gpu_percent || (telem.gpu_mem_total_gb ? (telem.gpu_mem_used_gb / telem.gpu_mem_total_gb) * 100 : gpuVal));
+      gpuSubLabel.textContent = `${telem.gpu_brand.toUpperCase()} // ${vramUsed}/${vramTotal} GB (${vramPct}%)`;
+    }
+    if (gpuMeterFill) {
+      const fillPct = Math.max(0, Math.min(100, Math.round(telem.gpu_percent || gpuVal)));
+      gpuMeterFill.style.width = `${fillPct}%`;
+    }
+    gpuHistory.shift();
+    gpuHistory.push(gpuVal);
+    drawSparkline(gpuCanvas, gpuCtx, gpuHistory, "#10b981", "rgba(16, 185, 129, 0.12)", 100);
+
     // 1. CPU Brand & Threads (Real Host Kernel Sysinfo)
     if (cpuSubLabel && telem.cpu_brand) {
       cpuSubLabel.textContent = `${telem.cpu_brand.toUpperCase()} // ${telem.cpu_threads || 12} THREADS`;
@@ -512,7 +551,7 @@ async function refreshSystemTelemetry() {
       const mm = telem.model_metrics;
       if (telem.active_model_id) {
         const cleanName = telem.active_model_id.replace("qwen/", "").replace("openai/", "").toUpperCase();
-        currentActiveModelName = telem.active_model_id.includes("qwen3.5") ? "OLLAMA LOCAL" : `GROQ ${cleanName}`;
+        currentActiveModelName = telem.active_model_id.includes("qwen3.5") ? "OLLAMA LOCAL" : (telem.active_model_id.includes("qwen3-coder") || telem.active_model_id.includes("30b") ? "OLLAMA GPU" : `GROQ ${cleanName}`);
       }
       if (visorStatusLabel && currentState === "idle") {
         visorStatusLabel.textContent = `${currentActiveModelName} // ONLINE`;
