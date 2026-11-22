@@ -47,6 +47,17 @@
 - **Zero-Coordinate Element Clicking**: Inspects visible child controls in foreground windows via Win32 `EnumChildWindows`, computing bounding rectangles to target and click controls by name without user-provided pixel coordinates.
 - **Windows Auto-Startup**: Native Windows Registry Run key automation (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`), toggled via voice directives (*"enable auto startup"*, *"start with windows"*).
 
+### 6. nAvI Labs Holographic Particle Matrix & Multi-Avatar Engine
+- **32,000 True-Color Point Cloud**: Direct canvas pixel-buffer rendering at sustained 60 FPS with micro-quantum particle shimmer (`±0.55px`).
+- **Dynamic Laser Materialization**: High-tech bottom-up assembly with floor emitter beacon and rising ionization plane upon character selection.
+- **5 High-Definition Avatars**:
+  - **nAvI Labs (`navi`)**: Sleek biometric humanoid matrix with cyan phosphor illumination.
+  - **Optimus Prime (`optimus`)**: Autobot Commander matrix with authentic chest windshields, Autobot insignia, and red/blue metallic armor shading.
+  - **Bumblebee (`bumblebee`)**: Cybertronian Scout matrix with authentic weathered yellow armor plating, chest grille, tires, and mechanical joints.
+  - **Spider-Man (`spiderman`)**: 3D web matrix with dual red and blue textured suit shading.
+  - **Tactical Mecha Robo (`mecha`)**: Heavy titanium combat chassis with glowing cyan energy joints.
+- **Header Controls & Voice**: Quick-switch pill buttons (`NAVI`, `PRIME`, `BEE`, `SPIDER`, `MECHA`), master `ON` / `OFF` power toggle, and voice command switching (*"Optimus Prime"*, *"Bumblebee"*, *"Mecha"*, *"Spider-Man"*, *"Cycle avatar"*).
+
 ---
 
 ## 📁 Project Structure
@@ -64,7 +75,7 @@ Jarvis/
 │   ├── index.html                  # HUD layout, Visor, Blueprint, Matrix, Toasts & Stage
 │   ├── main.js                     # Master coordinator and lifecycle orchestration
 │   ├── styles.css                  # Sci-fi holographic neon styling & toast animations
-│   ├── assets/                     # 4K Iron Man plate & rotating Arc Reactor layers
+│   ├── assets/                     # Sound assets & human_particles_preset.js (32,000-pt models)
 │   │
 │   └── modules/                    # Focused ES Modules
 │       ├── soundscape.js           # Pure Web Audio procedural sci-fi synthesizer
@@ -82,7 +93,8 @@ Jarvis/
 │
 └── scripts/
     ├── copy-exe.js                 # Automated release binary extraction script
-    └── speech_worker.ps1           # Silent background speech recognition & wake-word worker
+    ├── speech_worker.ps1           # Silent background speech recognition & wake-word worker
+    └── build_multi_hologram_models.py # Direct image-to-point-cloud sampling pipeline
 ```
 
 ---

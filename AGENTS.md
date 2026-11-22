@@ -109,9 +109,15 @@ flowchart TD
     - *Role*: Native Windows Registry Run key automation (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`), enabling or disabling auto-launch on Windows login.
     - *Trigger*: *"start with windows"*, *"enable auto startup"*, *"disable auto startup"*, or IPC endpoint `set_auto_startup`.
 
-11. **Stark High-Density Human Particles Engine (Python Particle Wind Technique)** - **ACTIVE**:
-    - *Role*: Ultra-high-density 32,000+ particle human point cloud with real-time dynamic wind gusts, thermal aura streamers, and interactive mouse blast physics. Based on the viral Python particles wind technique (`scripts/particle_wind.py` with Pygame & NumPy), features 32,000 fine phosphor particles mapped with authentic anatomical shading, 2,200 swirling energy aura particles (cyan, electric blue, and gold), Hooke's Law spring-damping restoration, and interactive cursor wind dispersal.
-    - *Trigger*: *"burst particles"*, *"reset particles"*, *"wind on"*, *"wind off"*, *"toggle wind"*, UI buttons `RESET`, `BURST`, `WIND`, or running `python scripts/particle_wind.py`.
+11. **nAvI Labs Holographic Particle Matrix & Multi-Avatar Engine** - **ACTIVE**:
+    - *Role*: Ultra-high-density 32,000-particle holographic projection engine with bottom-up quantum materialization assembly effect, sub-pixel quantum shimmer (`±0.55px`), and sustained 60 FPS rendering. Features 5 true-color high-definition character point clouds directly sampled with anatomical depth and specular shading:
+      - **nAvI Labs (`navi`)**: Sleek biometric humanoid matrix with cyan phosphor illumination.
+      - **Optimus Prime (`optimus`)**: Autobot Commander matrix with authentic chest windshields, Autobot insignia, and red/blue metallic armor shading (sampled from authentic concept render).
+      - **Bumblebee (`bumblebee`)**: Cybertronian Scout matrix with weathered yellow armor plating, chest car grille, tires, and mechanical joints (sampled from authentic concept render).
+      - **Spider-Man (`spiderman`)**: 3D web matrix with dual red and blue textured suit shading.
+      - **Tactical Mecha Robo (`mecha`)**: Heavy titanium combat chassis with glowing cyan energy joints.
+    - *UI Controls*: Header character selector pills (`NAVI`, `PRIME`, `BEE`, `SPIDER`, `MECHA`) and master `ON` / `OFF` holographic projection toggle.
+    - *Trigger*: Voice directives: *"optimus"*, *"optimus prime"*, *"switch to optimus"*, *"bumblebee"*, *"bee"*, *"switch to bumblebee"*, *"spider-man"*, *"mecha"*, *"navi labs"*, *"cycle avatar"*, *"next character"*, *"turn on/off projection"*, or UI selector pills.
 
 ---
 

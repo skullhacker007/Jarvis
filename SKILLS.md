@@ -22,6 +22,8 @@ J.A.R.V.I.S. interprets natural language and speech into discrete system actions
 | `memory_recall` | Semantic search over vector memory with cosine similarity. | Search topic or query. | *"recall phone model"*, *"what did I say about..."* |
 | `airdrop_file` | Beams local file to Android device `/sdcard/Download/`. | Local file path. | *"airdrop invoice.pdf"*, drag-and-drop overlay |
 | `file_search` | High-speed semantic local drive file search. | File name or search keywords. | *"find file report.docx"*, *"search documents"* |
+| `select_avatar` | Switches holographic character matrix in nAvI Labs. | Character key (`navi`, `optimus`, `bumblebee`, `spiderman`, `mecha`). | *"optimus prime"*, *"switch to bumblebee"*, *"mecha robo"*, *"spider-man"* |
+| `toggle_hologram` | Activates or powers down the holographic projector. | State (`true` / `false` / `toggle`). | *"turn on projection"*, *"turn off humanoid"*, *"navi labs on"* |
 | `none` | Pure conversational or factual response; no action executed. | Empty (`""`). | *"what is your status"*, *"who made you"*, *"tell me a joke"* |
 
 ---
@@ -98,6 +100,25 @@ Native Windows registry integration:
 - **Media Controller**: Global play/pause, next track, previous track, stop (`play`, `pause`, `resume`, `next song`, `stop music`).
 - **Mouse & Scrolling**: Real-time wheel scrolling (`scroll down`, `scroll up`, `scroll to top`, `scroll to bottom`), left click, right click, double click.
 - **Keyboard Shortcuts**: Save (`Ctrl+S`), copy (`Ctrl+C`), paste (`Ctrl+V`), select all (`Ctrl+A`), undo (`Ctrl+Z`), redo (`Ctrl+Y`), enter, escape, backspace, tab.
+
+### 12. nAvI Labs Holographic Projection & Character Matrix (`select_avatar` / `toggle_hologram`)
+- **32,000 True-Color Point Cloud**: Real-time canvas direct-buffer pixel rendering at sustained 60 FPS with sub-pixel quantum jitter (`±0.55px`).
+- **Dynamic Laser Materialization**: Realistic bottom-up laser emitter assembly animation with rising ionization plane upon character switch.
+- **Character Matrix**:
+  - `navi` (**nAvI Labs**): Sleek cyan biometric humanoid matrix.
+  - `optimus` (**Optimus Prime**): Autobot Commander matrix with authentic chest windshields, Autobot insignia, and red/blue metallic armor shading.
+  - `bumblebee` (**Bumblebee**): Cybertronian Scout matrix with battle-weathered yellow armor plating, chest car grille, tires, and mechanical joints.
+  - `spiderman` (**Spider-Man**): 3D web matrix with dual red and blue textured suit shading.
+  - `mecha` (**Tactical Mecha Robo**): Heavy titanium combat chassis with glowing cyan energy joints.
+- **Directives & Controls**:
+  - *"Optimus"* / *"Optimus Prime"* / *"Switch to Optimus"* $\rightarrow$ `selectAvatar("optimus")`
+  - *"Bumblebee"* / *"Bee"* / *"Switch to Bumblebee"* $\rightarrow$ `selectAvatar("bumblebee")`
+  - *"Spider-Man"* / *"Switch to Spider-Man"* $\rightarrow$ `selectAvatar("spiderman")`
+  - *"Mecha"* / *"Mecha Robo"* / *"Robot"* $\rightarrow$ `selectAvatar("mecha")`
+  - *"nAvI Labs"* / *"Humanoid avatar"* $\rightarrow$ `selectAvatar("navi")`
+  - *"Next character"* / *"Cycle avatar"* $\rightarrow$ `cycleAvatar()`
+  - *"Projection on"* / *"Projection off"* $\rightarrow$ `togglePower(state)`
+  - Header avatar pills: `NAVI`, `PRIME`, `BEE`, `SPIDER`, `MECHA` with master `ON` / `OFF` toggle.
 
 ---
 

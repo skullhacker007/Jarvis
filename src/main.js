@@ -545,97 +545,54 @@ function showVisualTarget(x, y, label = "TARGET ACQUIRED") {
 }
 
 // =============================================================
-// PHASE 3: PYTHON PARTICLES ENGINE // HUMAN AURA & WIND
-// (High-Density 32,000+ Particle Fluid Dynamics & Wind Physics)
+// PHASE 3: nAvI Labs // HOLOGRAPHIC HUMANOID PROJECTION
+// (Stable High-Definition 32,000 Particle Biometric Matrix)
 // =============================================================
 const StarkBiometricHologram = (() => {
   let canvasEl = null;
   let ctx = null;
   let animId = null;
-  let burstBtn = null;
-  let resetBtn = null;
-  let windBtn = null;
-  let windLabel = null;
-  let windStatusEl = null;
-  let auraStatusEl = null;
+  let powerBtn = null;
+  let powerLabel = null;
+  let systemStatusEl = null;
+  let biometricsStatusEl = null;
   let fpsValEl = null;
   let particleCountEl = null;
+  let avatarNameEl = null;
+  let avatarPills = [];
 
   // -------------------------------------------------------------
-  // SIMULATION & WIND STATE
+  // SIMULATION, POWER & MATERIALIZATION STATE
   // -------------------------------------------------------------
   let time = 0;
-  let windActive = true;
-  let isDragging = false;
-  let mouseCanvasPos = { x: -9999, y: -9999, active: false, pressed: false };
+  let powerActive = true;
+  let activeAvatarKey = "navi";
+  let isMaterializing = true;
+  let materializeProgress = 0.0;
+  const MATERIALIZE_DURATION = 1.6; // seconds for bottom-up assembly
   let lastFrameTime = performance.now();
   let frameCount = 0;
   let fpsTimer = 0;
   let currentFps = 60;
-  let currentGust = 0.04;
 
   // Master Particle Buffers (TypedArrays for maximum 60 FPS performance)
   let homeX = null;
   let homeY = null;
-  let posX = null;
-  let posY = null;
-  let velX = null;
-  let velY = null;
   let colorsR = null;
   let colorsG = null;
   let colorsB = null;
   let phases = null;
   let totalParticles = 0;
 
-  // Aura Ribbon Particles (Super-Saiyan / Stark Energy Swirls)
-  const N_AURA = 2200;
-  let auraTheta = new Float32Array(N_AURA);
-  let auraRadii = new Float32Array(N_AURA);
-  let auraY = new Float32Array(N_AURA);
-  let auraSpeeds = new Float32Array(N_AURA);
-  let auraColorsR = new Uint8Array(N_AURA);
-  let auraColorsG = new Uint8Array(N_AURA);
-  let auraColorsB = new Uint8Array(N_AURA);
-
   // -------------------------------------------------------------
-  // INITIALIZATION OF AURA PARTICLES
+  // PARTICLE DATA INGESTION & MODEL LOADER
   // -------------------------------------------------------------
-  function initAuraParticles(h) {
-    for (let i = 0; i < N_AURA; i++) {
-      auraTheta[i] = Math.random() * Math.PI * 2;
-      auraRadii[i] = 45 + Math.random() * 85;
-      auraY[i] = Math.random() * (h || 400);
-      auraSpeeds[i] = 1.0 + Math.random() * 2.4;
-
-      // Electric cyan, deep cobalt, or fiery gold accents
-      const rnd = Math.random();
-      if (rnd < 0.65) {
-        // Cyan / Electric Blue
-        auraColorsR[i] = Math.floor(0 + Math.random() * 40);
-        auraColorsG[i] = Math.floor(210 + Math.random() * 45);
-        auraColorsB[i] = Math.floor(245 + Math.random() * 10);
-      } else if (rnd < 0.85) {
-        // White-hot plasma core
-        auraColorsR[i] = 255;
-        auraColorsG[i] = 255;
-        auraColorsB[i] = 255;
-      } else {
-        // Amber gold flame ember
-        auraColorsR[i] = 255;
-        auraColorsG[i] = Math.floor(180 + Math.random() * 50);
-        auraColorsB[i] = 30;
-      }
-    }
-  }
-
-  // -------------------------------------------------------------
-  // PARTICLE DATA INGESTION & NORMALIZATION
-  // -------------------------------------------------------------
-  function loadHumanParticles(w, h) {
-    let preset = window.STARK_HUMAN_PARTICLE_DATA;
+  function loadAvatarModel(avatarKey, w, h) {
+    activeAvatarKey = avatarKey || activeAvatarKey || "navi";
+    const models = window.STARK_HOLOGRAM_MODELS || {};
+    let preset = models[activeAvatarKey] || window.STARK_HUMAN_PARTICLE_DATA;
 
     if (!preset || !preset.x || preset.x.length === 0) {
-      // Fallback procedural anatomical generator if preset is missing
       generateFallbackHuman(w, h);
       return;
     }
@@ -643,20 +600,18 @@ const StarkBiometricHologram = (() => {
     const n = preset.x.length;
     totalParticles = n;
 
-    homeX = new Float32Array(n);
-    homeY = new Float32Array(n);
-    posX = new Float32Array(n);
-    posY = new Float32Array(n);
-    velX = new Float32Array(n);
-    velY = new Float32Array(n);
-    colorsR = new Uint8Array(n);
-    colorsG = new Uint8Array(n);
-    colorsB = new Uint8Array(n);
-    phases = new Float32Array(n);
+    if (!homeX || homeX.length !== n) {
+      homeX = new Float32Array(n);
+      homeY = new Float32Array(n);
+      colorsR = new Uint8Array(n);
+      colorsG = new Uint8Array(n);
+      colorsB = new Uint8Array(n);
+      phases = new Float32Array(n);
+    }
 
-    // Scaling factors to fit canvas with elegant margins
-    const scaleY = h * 0.90;
-    const scaleX = scaleY * 0.90; // Sleek athletic humanoid proportions
+    // Scaling factors to fit canvas cleanly with sleek proportions
+    const scaleY = h * 0.88;
+    const scaleX = scaleY * 0.88;
     const cx = w * 0.5;
     const cy = h * 0.5;
 
@@ -666,11 +621,6 @@ const StarkBiometricHologram = (() => {
 
       homeX[i] = hx;
       homeY[i] = hy;
-      // Start with subtle organic dispersion
-      posX[i] = hx + (Math.random() - 0.5) * 6;
-      posY[i] = hy + (Math.random() - 0.5) * 6;
-      velX[i] = (Math.random() - 0.5) * 0.2;
-      velY[i] = (Math.random() - 0.5) * 0.2;
 
       colorsR[i] = preset.r[i];
       colorsG[i] = preset.g[i];
@@ -682,8 +632,38 @@ const StarkBiometricHologram = (() => {
     if (particleCountEl) {
       particleCountEl.textContent = `${totalParticles.toLocaleString()} PTS`;
     }
+    if (avatarNameEl) {
+      const name = preset.name || activeAvatarKey.toUpperCase();
+      avatarNameEl.textContent = name.toUpperCase();
+    }
+  }
 
-    initAuraParticles(h);
+  function triggerMaterialize() {
+    isMaterializing = true;
+    materializeProgress = 0.0;
+  }
+
+  function selectAvatar(key) {
+    if (!key) return;
+    activeAvatarKey = key;
+
+    // Update active pill UI
+    if (avatarPills && avatarPills.length > 0) {
+      avatarPills.forEach(pill => {
+        pill.classList.toggle("active", pill.dataset.avatar === key);
+      });
+    }
+
+    if (canvasEl) {
+      loadAvatarModel(key, canvasEl.width, canvasEl.height);
+    }
+
+    triggerMaterialize();
+    JarvisSoundscape.play("wake");
+
+    const models = window.STARK_HOLOGRAM_MODELS || {};
+    const name = models[key]?.name || key;
+    showJarvisFeedback(`Hologram: ${name} initializing...`, "avatar_switch");
   }
 
   function generateFallbackHuman(w, h) {
@@ -693,8 +673,6 @@ const StarkBiometricHologram = (() => {
     homeY = new Float32Array(n);
     posX = new Float32Array(n);
     posY = new Float32Array(n);
-    velX = new Float32Array(n);
-    velY = new Float32Array(n);
     colorsR = new Uint8Array(n);
     colorsG = new Uint8Array(n);
     colorsB = new Uint8Array(n);
@@ -704,7 +682,7 @@ const StarkBiometricHologram = (() => {
     const cy = h * 0.5;
 
     for (let i = 0; i < n; i++) {
-      const u = (Math.random() - 0.5) * 0.6;
+      const u = (Math.random() - 0.5) * 0.5;
       const v = (Math.random() - 0.5) * 1.8;
       homeX[i] = cx + u * (h * 0.4);
       homeY[i] = cy + v * (h * 0.4);
@@ -722,60 +700,40 @@ const StarkBiometricHologram = (() => {
   // -------------------------------------------------------------
   function init() {
     canvasEl = document.getElementById("human-particle-canvas") || document.getElementById("gesture-recognize-canvas");
-    burstBtn = document.getElementById("human-burst-btn");
-    resetBtn = document.getElementById("human-reset-btn");
-    windBtn = document.getElementById("human-wind-toggle-btn") || document.getElementById("gesture-cam-toggle-btn");
-    windLabel = document.getElementById("human-wind-btn-label") || document.getElementById("gesture-cam-btn-label");
-    windStatusEl = document.getElementById("human-wind-status");
-    auraStatusEl = document.getElementById("human-aura-status");
+    powerBtn = document.getElementById("human-power-toggle-btn") || document.getElementById("human-wind-toggle-btn");
+    powerLabel = document.getElementById("human-power-btn-label") || document.getElementById("human-wind-btn-label");
+    systemStatusEl = document.getElementById("human-system-status") || document.getElementById("human-wind-status");
+    biometricsStatusEl = document.getElementById("human-biometrics-status") || document.getElementById("human-aura-status");
+    avatarNameEl = document.getElementById("human-avatar-name");
     fpsValEl = document.getElementById("human-fps-val");
     particleCountEl = document.getElementById("human-particle-count");
+
+    // Avatar selector pills
+    avatarPills = Array.from(document.querySelectorAll(".avatar-pill"));
+    avatarPills.forEach(pill => {
+      pill.addEventListener("click", (e) => {
+        e.preventDefault();
+        const avatar = pill.dataset.avatar;
+        if (avatar) selectAvatar(avatar);
+      });
+    });
 
     if (canvasEl) {
       ctx = canvasEl.getContext("2d", { alpha: false });
       resizeCanvas();
       window.addEventListener("resize", () => {
         resizeCanvas();
-        if (canvasEl) loadHumanParticles(canvasEl.width, canvasEl.height);
-      });
-
-      // Interactive Mouse / Touch Wind Blast
-      canvasEl.addEventListener("mousedown", (e) => {
-        isDragging = true;
-        mouseCanvasPos.pressed = true;
-      });
-
-      window.addEventListener("mousemove", (e) => {
-        if (!canvasEl) return;
-        const rect = canvasEl.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        mouseCanvasPos.x = (e.clientX - rect.left) * dpr;
-        mouseCanvasPos.y = (e.clientY - rect.top) * dpr;
-        mouseCanvasPos.active = (
-          e.clientX >= rect.left && e.clientX <= rect.right &&
-          e.clientY >= rect.top && e.clientY <= rect.bottom
-        );
-      });
-
-      window.addEventListener("mouseup", () => {
-        isDragging = false;
-        mouseCanvasPos.pressed = false;
-      });
-
-      canvasEl.addEventListener("mouseleave", () => {
-        mouseCanvasPos.active = false;
-        mouseCanvasPos.pressed = false;
+        if (canvasEl) loadAvatarModel(activeAvatarKey, canvasEl.width, canvasEl.height);
       });
     }
 
-    // Action Buttons
-    burstBtn?.addEventListener("click", () => burst());
-    resetBtn?.addEventListener("click", () => reset());
-    windBtn?.addEventListener("click", () => toggleWind());
+    // Single ON / OFF Toggle Button
+    powerBtn?.addEventListener("click", () => togglePower());
 
-    // Load initial particles
+    // Load initial avatar particles & trigger materialization
     if (canvasEl) {
-      loadHumanParticles(canvasEl.width, canvasEl.height);
+      loadAvatarModel(activeAvatarKey, canvasEl.width, canvasEl.height);
+      triggerMaterialize();
     }
 
     // Start 60 FPS Render Loop
@@ -798,54 +756,37 @@ const StarkBiometricHologram = (() => {
   }
 
   // -------------------------------------------------------------
-  // BURST & RESET CONTROLS
+  // SINGLE ON / OFF POWER TOGGLE
   // -------------------------------------------------------------
-  function burst() {
-    if (!posX || totalParticles === 0) return;
-    for (let i = 0; i < totalParticles; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 14 + Math.random() * 26;
-      velX[i] += Math.cos(angle) * speed;
-      velY[i] += Math.sin(angle) * speed;
+  function togglePower(forceState) {
+    powerActive = forceState !== undefined ? forceState : !powerActive;
+    if (powerBtn) {
+      powerBtn.classList.toggle("active", powerActive);
+      powerBtn.classList.toggle("enabled", powerActive);
     }
-    JarvisSoundscape.play("confirm");
-    showJarvisFeedback("Python particles blast impulse triggered.", "particle_wind");
-  }
-
-  function reset() {
-    if (!posX || totalParticles === 0) return;
-    for (let i = 0; i < totalParticles; i++) {
-      posX[i] = homeX[i];
-      posY[i] = homeY[i];
-      velX[i] = 0;
-      velY[i] = 0;
+    if (powerLabel) {
+      powerLabel.textContent = powerActive ? "ON" : "OFF";
+    }
+    if (systemStatusEl) {
+      systemStatusEl.textContent = powerActive ? "ACTIVE" : "OFFLINE";
+    }
+    if (biometricsStatusEl) {
+      biometricsStatusEl.textContent = powerActive ? "NOMINAL" : "STANDBY";
     }
     JarvisSoundscape.play("click");
-    showJarvisFeedback("Particles reset to anatomical home matrix.", "particle_wind");
-  }
-
-  function toggleWind(forceState) {
-    windActive = forceState !== undefined ? forceState : !windActive;
-    if (windBtn) {
-      windBtn.classList.toggle("active", windActive);
-      windBtn.classList.toggle("enabled", windActive);
+    if (powerActive) {
+      triggerMaterialize();
     }
-    if (windLabel) {
-      windLabel.textContent = "WIND";
-    }
-    if (windStatusEl) {
-      windStatusEl.textContent = windActive ? `WIND ON // ${currentGust.toFixed(2)}` : "WIND OFF";
-    }
-    JarvisSoundscape.play("click");
+    showJarvisFeedback(powerActive ? "nAvI Labs projection online." : "nAvI Labs projection standby.", "navi_labs");
   }
 
   // -------------------------------------------------------------
-  // 60 FPS VECTORIZED PARTICLE SIMULATION & RENDER LOOP
+  // 60 FPS HOLOGRAPHIC MATERIALIZATION & PARTICLE RENDER LOOP
   // -------------------------------------------------------------
   function renderLoop(now) {
     animId = requestAnimationFrame(renderLoop);
 
-    if (!canvasEl || !ctx || totalParticles === 0) return;
+    if (!canvasEl || !ctx) return;
     const w = canvasEl.width;
     const h = canvasEl.height;
     if (w === 0 || h === 0) return;
@@ -865,154 +806,209 @@ const StarkBiometricHologram = (() => {
     }
 
     // ---------------------------------------------------------
-    // 1. WIND & GUST PHYSICS COMPUTATION
+    // POWERED DOWN STANDBY STATE
     // ---------------------------------------------------------
-    let windBaseX = 0;
-    let windBaseY = 0;
-    currentGust = 0.0;
+    if (!powerActive) {
+      ctx.fillStyle = "#020612";
+      ctx.fillRect(0, 0, w, h);
 
-    if (windActive) {
-      const gustWave = Math.sin(time * 0.9);
-      if (gustWave > 0.4) {
-        currentGust = (gustWave - 0.4) * 0.12;
-      }
-      windBaseX = Math.sin(time * 1.8) * 0.65 + Math.sin(time * 4.2) * 0.35 + currentGust * 4.2;
-      windBaseY = -0.38 + Math.cos(time * 1.4) * 0.25; // Sinuous upward thermal draft
+      // Subtle cyber standby pulse line
+      const midY = Math.round(h * 0.5);
+      const lineAlpha = 0.25 + Math.sin(time * 2.0) * 0.15;
+      ctx.strokeStyle = `rgba(56, 189, 248, ${lineAlpha})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.25, midY);
+      ctx.lineTo(w * 0.75, midY);
+      ctx.stroke();
 
-      if (windStatusEl && Math.floor(time * 10) % 4 === 0) {
-        windStatusEl.textContent = `WIND ON // ${currentGust.toFixed(2)}`;
-      }
-    }
-
-    // Interactive Mouse Blast Coords
-    const mActive = mouseCanvasPos.active;
-    const mx = mouseCanvasPos.x;
-    const my = mouseCanvasPos.y;
-    const mPressed = mouseCanvasPos.pressed;
-    const mouseRadius = 75;
-    const mouseRadiusSq = mouseRadius * mouseRadius;
-
-    // ---------------------------------------------------------
-    // 2. VECTORIZED PHYSICS INTEGRATION (Hooke's Law + Wind + Mouse)
-    // ---------------------------------------------------------
-    const springK = 0.052;
-    const damping = 0.88;
-
-    for (let i = 0; i < totalParticles; i++) {
-      // Spring force pulling back to anatomical target
-      const dx = homeX[i] - posX[i];
-      const dy = homeY[i] - posY[i];
-      velX[i] += dx * springK;
-      velY[i] += dy * springK;
-
-      // Wind turbulence
-      if (windActive) {
-        const flutter = Math.sin(time * 3.5 + phases[i]) * 0.42;
-        velX[i] += windBaseX + flutter;
-        velY[i] += windBaseY;
-      }
-
-      // Mouse blast repulsion
-      if (mActive) {
-        const mdx = posX[i] - mx;
-        const mdy = posY[i] - my;
-        const distSq = mdx * mdx + mdy * mdy;
-        if (distSq < mouseRadiusSq && distSq > 0.1) {
-          const dist = Math.sqrt(distSq);
-          const force = ((mouseRadius - dist) / mouseRadius) * (mPressed ? 7.5 : 4.0);
-          velX[i] += (mdx / dist) * force;
-          velY[i] += (mdy / dist) * force;
-        }
-      }
-
-      // Damping & Euler integration
-      velX[i] *= damping;
-      velY[i] *= damping;
-      posX[i] += velX[i];
-      posY[i] += velY[i];
+      ctx.font = "8px 'JetBrains Mono', monospace";
+      ctx.fillStyle = "rgba(148, 163, 184, 0.4)";
+      ctx.textAlign = "center";
+      ctx.fillText("nAvI // STANDBY", w * 0.5, midY - 6);
+      ctx.textAlign = "left";
+      return;
     }
 
     // ---------------------------------------------------------
-    // 3. UPDATE AURA ENERGY RIBBONS
+    // MATERIALIZATION EFFECT (Bottom-Up Particle Ascent)
     // ---------------------------------------------------------
-    for (let j = 0; j < N_AURA; j++) {
-      auraTheta[j] += auraSpeeds[j] * dt * 1.3;
-      auraY[j] -= (42 + Math.sin(time * 2.0) * 18) * dt;
-      if (auraY[j] < 10) {
-        auraY[j] = h - 20;
+    if (isMaterializing) {
+      materializeProgress += dt / MATERIALIZE_DURATION;
+      if (materializeProgress >= 1.0) {
+        materializeProgress = 1.0;
+        isMaterializing = false;
       }
     }
 
-    // ---------------------------------------------------------
-    // 4. DIRECT BUFFER PIXEL RENDERING (Locked 60 FPS)
-    // ---------------------------------------------------------
     const imgData = ctx.createImageData(w, h);
     const buf = new Uint32Array(imgData.data.buffer);
 
-    // Deep void space background: rgba(2, 6, 18, 255) -> 0xff120602
+    // Deep solid void background: rgba(2, 6, 18, 255) -> 0xff120602
     buf.fill(0xff120602);
 
-    // Draw Aura Ribbon Particles
     const cx = w * 0.5;
-    for (let j = 0; j < N_AURA; j++) {
-      const radius = auraRadii[j] * (0.65 + 0.35 * (auraY[j] / h));
-      const ax = Math.round(cx + Math.cos(auraTheta[j]) * radius);
-      const ay = Math.round(auraY[j]);
+    const emitterX = cx;
+    const emitterY = Math.round(h * 0.94);
 
-      if (ax >= 0 && ax < w && ay >= 0 && ay < h) {
-        const idx = ay * w + ax;
-        // Packed 32-bit color (ABGR in little-endian)
-        buf[idx] = (0xff000000 | (auraColorsB[j] << 16) | (auraColorsG[j] << 8) | auraColorsR[j]);
-      }
-    }
+    // Holographic energy wave scan line moving downwards periodically (idle)
+    const scanY = ((time * 0.45) % 1.25) - 0.12;
 
-    // Draw Main Human Particles (High-Density)
+    // Render 30,000 Holographic Phosphor Particles
     for (let i = 0; i < totalParticles; i++) {
-      const px = Math.round(posX[i]);
-      const py = Math.round(posY[i]);
+      const hx = homeX[i];
+      const hy = homeY[i];
+      const phase = phases[i];
+
+      // Subtle quantum micro-vibration
+      const vibX = Math.sin(time * 3.6 + phase) * 0.55;
+      const vibY = Math.cos(time * 2.9 + phase * 1.3) * 0.55;
+
+      let px, py;
+      let r = colorsR[i];
+      let g = colorsG[i];
+      let b = colorsB[i];
+
+      if (isMaterializing && materializeProgress < 1.0) {
+        // Individual activation delayed based on vertical anatomical height (bottom to top)
+        const normY = Math.max(0.0, Math.min(1.0, (hy - h * 0.06) / (h * 0.88))); // 0 at head, 1 at feet
+        const startT = (1.0 - normY) * 0.65; // feet start at 0.0, head starts at 0.65
+        const travelT = 0.28;
+
+        if (materializeProgress < startT) {
+          // In the energetic bottom projector stream
+          const streamFrac = materializeProgress / Math.max(0.01, startT);
+          const streamY = emitterY - streamFrac * 14.0;
+          px = Math.round(emitterX + Math.sin(time * 12.0 + phase) * (w * 0.035 * (1.0 - streamFrac)));
+          py = Math.round(streamY);
+          r = 180; g = 255; b = 255;
+        } else if (materializeProgress < startT + travelT) {
+          // Actively ascending from bottom emitter to anatomical anchor
+          const frac = (materializeProgress - startT) / travelT;
+          const ease = 1.0 - Math.pow(1.0 - frac, 3);
+          const curX = emitterX + (hx - emitterX) * ease + Math.sin(frac * Math.PI) * (phase - Math.PI) * 12.0;
+          const curY = emitterY + (hy - emitterY) * ease;
+          px = Math.round(curX);
+          py = Math.round(curY);
+
+          // Energy laser glow transitioning to target particle color
+          r = Math.min(255, (((1.0 - ease) * 180 + ease * r) * (1.0 + (1.0 - ease) * 0.5)) | 0);
+          g = Math.min(255, (((1.0 - ease) * 255 + ease * g) * (1.0 + (1.0 - ease) * 0.5)) | 0);
+          b = Math.min(255, (((1.0 - ease) * 255 + ease * b) * (1.0 + (1.0 - ease) * 0.5)) | 0);
+        } else {
+          // Locked in place with landing spark
+          const settleFrac = Math.min(1.0, (materializeProgress - (startT + travelT)) / 0.15);
+          const settleDamp = 1.0 - settleFrac;
+          px = Math.round(hx + vibX * (1.0 + settleDamp * 2.0));
+          py = Math.round(hy + vibY * (1.0 + settleDamp * 2.0));
+
+          // Brief lock-in flash
+          if (settleFrac < 0.6) {
+            r = Math.min(255, (r * 1.4) | 0);
+            g = Math.min(255, (g * 1.4) | 0);
+            b = Math.min(255, (b * 1.4) | 0);
+          }
+        }
+      } else {
+        // Standard Idle: Locked into anatomical position with subtle micro-shimmer
+        px = Math.round(hx + vibX);
+        py = Math.round(hy + vibY);
+
+        // Particle luminance shimmer & holographic vertical scan boost
+        const shimmer = 0.82 + 0.18 * Math.sin(time * 4.5 + phase);
+        const normY = py / h;
+        const distToScan = Math.abs(normY - scanY);
+        const scanBoost = distToScan < 0.08 ? (1.0 - distToScan / 0.08) * 0.55 : 0;
+        const factor = shimmer + scanBoost;
+
+        r = Math.min(255, (r * factor) | 0);
+        g = Math.min(255, (g * factor) | 0);
+        b = Math.min(255, (b * factor) | 0);
+      }
 
       if (px >= 0 && px < w && py >= 0 && py < h) {
         const idx = py * w + px;
-        const r = colorsR[i];
-        const g = colorsG[i];
-        const b = colorsB[i];
-        const packed = (0xff000000 | (b << 16) | (g << 8) | r);
+        buf[idx] = (0xff000000 | (b << 16) | (g << 8) | r);
 
-        buf[idx] = packed;
+        // Optical bloom halo for prominent particles
+        if ((r + g + b > 240) || ((i & 7) === 0)) {
+          const hr = (r * 0.32) | 0;
+          const hg = (g * 0.32) | 0;
+          const hb = (b * 0.32) | 0;
+
+          if (py > 0) {
+            const upIdx = idx - w;
+            const cur = buf[upIdx];
+            buf[upIdx] = 0xff000000 | (Math.min(255, ((cur >> 16) & 0xff) + hb) << 16) | (Math.min(255, ((cur >> 8) & 0xff) + hg) << 8) | Math.min(255, (cur & 0xff) + hr);
+          }
+          if (py < h - 1) {
+            const dnIdx = idx + w;
+            const cur = buf[dnIdx];
+            buf[dnIdx] = 0xff000000 | (Math.min(255, ((cur >> 16) & 0xff) + hb) << 16) | (Math.min(255, ((cur >> 8) & 0xff) + hg) << 8) | Math.min(255, (cur & 0xff) + hr);
+          }
+          if (px > 0) {
+            const ltIdx = idx - 1;
+            const cur = buf[ltIdx];
+            buf[ltIdx] = 0xff000000 | (Math.min(255, ((cur >> 16) & 0xff) + hb) << 16) | (Math.min(255, ((cur >> 8) & 0xff) + hg) << 8) | Math.min(255, (cur & 0xff) + hr);
+          }
+          if (px < w - 1) {
+            const rtIdx = idx + 1;
+            const cur = buf[rtIdx];
+            buf[rtIdx] = 0xff000000 | (Math.min(255, ((cur >> 16) & 0xff) + hb) << 16) | (Math.min(255, ((cur >> 8) & 0xff) + hg) << 8) | Math.min(255, (cur & 0xff) + hr);
+          }
+        }
       }
     }
 
     ctx.putImageData(imgData, 0, 0);
 
     // ---------------------------------------------------------
-    // 5. GLOWING ARC REACTOR CORE DISPERSION OVERLAY
+    // HOLOGRAPHIC PROJECTOR FLOOR EMITTER & IONIZATION BEAM
     // ---------------------------------------------------------
-    const coreX = Math.round(cx);
-    const coreY = Math.round(h * 0.38);
-    const pulsePhase = (time * 1.3) % 1.0;
-    const isPulse = pulsePhase < 0.22;
-    const coreRadius = isPulse ? 16 : 9;
+    if (isMaterializing && materializeProgress < 0.98) {
+      const alpha = 0.8 * (1.0 - materializeProgress);
+      // Floor projector beacon
+      ctx.strokeStyle = `rgba(0, 240, 255, ${alpha})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(emitterX, emitterY, w * 0.24 * (0.6 + 0.4 * materializeProgress), 4.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
 
-    const arcGrad = ctx.createRadialGradient(coreX, coreY, 1, coreX, coreY, coreRadius);
-    arcGrad.addColorStop(0, "rgba(255, 255, 255, 0.85)");
-    arcGrad.addColorStop(0.4, "rgba(0, 240, 255, 0.45)");
-    arcGrad.addColorStop(1, "rgba(0, 210, 255, 0)");
-    ctx.fillStyle = arcGrad;
-    ctx.beginPath();
-    ctx.arc(coreX, coreY, coreRadius, 0, Math.PI * 2);
-    ctx.fill();
+      // Rising materialization ionization plane
+      const planeY = Math.round(emitterY - (materializeProgress / 0.85) * (emitterY - h * 0.08));
+      if (planeY > 0 && planeY < h) {
+        const sweepGrad = ctx.createLinearGradient(w * 0.15, planeY, w * 0.85, planeY);
+        sweepGrad.addColorStop(0, "rgba(0, 240, 255, 0)");
+        sweepGrad.addColorStop(0.5, `rgba(220, 255, 255, ${alpha * 0.8})`);
+        sweepGrad.addColorStop(1, "rgba(0, 240, 255, 0)");
+        ctx.strokeStyle = sweepGrad;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(w * 0.15, planeY);
+        ctx.lineTo(w * 0.85, planeY);
+        ctx.stroke();
+      }
+    }
   }
 
   return {
     init,
-    burst,
-    reset,
-    toggleWind,
-    start: () => toggleWind(true),
-    stop: () => toggleWind(false),
-    toggleGestures: (state) => toggleWind(state),
+    togglePower,
+    selectAvatar,
+    cycleAvatar: () => {
+      const keys = ["navi", "optimus", "bumblebee", "spiderman", "mecha"];
+      const nextIdx = (keys.indexOf(activeAvatarKey) + 1) % keys.length;
+      selectAvatar(keys[nextIdx]);
+    },
+    // Backward-compatible aliases
+    start: () => togglePower(true),
+    stop: () => togglePower(false),
+    toggleGestures: (state) => togglePower(state),
+    toggleWind: (state) => togglePower(state),
+    burst: () => triggerMaterialize(),
+    reset: () => triggerMaterialize(),
     togglePresenceLock: () => {},
-    isGesturesRunning: () => windActive
+    isGesturesRunning: () => powerActive
   };
 })();
 
@@ -3480,45 +3476,73 @@ async function processDirective(prompt, shouldOpenInput = false) {
     }
   }
 
-  // 2. Holographic Biometric Human Particle Matrix Directives
-  if (/^(?:burst\s+particles?|disperse\s+particles?|scatter\s+particles?|reassemble\s+particles?)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.burst();
-    speakResponse("Dispersing holographic biometric particles, sir.");
+  // 2. nAvI Labs Holographic Projection & Character Directives
+  if (/^(?:optimus|optimus\s*prime|switch\s+to\s+optimus(?:\s*prime)?|prime)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.selectAvatar("optimus");
+    speakResponse("Optimus Prime matrix online, sir.");
     setSystemState("idle");
     return;
   }
 
-  if (/^(?:reset\s+particles?|particles?\s+reset)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.reset();
-    speakResponse("Resetting particles to anatomical matrix, sir.");
+  if (/^(?:bumblebee|bee|switch\s+to\s+bumblebee|switch\s+to\s+bee)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.selectAvatar("bumblebee");
+    speakResponse("Bumblebee scout matrix online, sir.");
     setSystemState("idle");
     return;
   }
 
-  if (/^(?:wind\s+on|enable\s+wind|start\s+wind)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.toggleWind(true);
-    speakResponse("Particle wind effect active, sir.");
+  if (/^(?:spider\s*man|switch\s+to\s+spider\s*man|spider\s*man\s+(?:suit|model|avatar))$/i.test(lowerDirective)) {
+    StarkBiometricHologram.selectAvatar("spiderman");
+    speakResponse("Spider-Man web matrix projection initialized, sir.");
     setSystemState("idle");
     return;
   }
 
-  if (/^(?:wind\s+off|disable\s+wind|stop\s+wind)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.toggleWind(false);
-    speakResponse("Particle wind halted, sir.");
+  if (/^(?:mecha|robot|switch\s+to\s+mecha|switch\s+to\s+robot|mecha\s+robo|tactical\s+robot)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.selectAvatar("mecha");
+    speakResponse("Tactical Mecha Robo chassis online, sir.");
     setSystemState("idle");
     return;
   }
 
-  if (/^(?:toggle\s+wind)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.toggleWind();
-    speakResponse("Toggling particle wind, sir.");
+  if (/^(?:navi|switch\s+to\s+navi|navi\s+labs|humanoid\s+avatar)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.selectAvatar("navi");
+    speakResponse("nAvI Labs biometric humanoid active, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:next\s+(?:character|avatar|hologram|model)|cycle\s+(?:character|avatar|hologram|model)|change\s+(?:character|avatar))$/i.test(lowerDirective)) {
+    StarkBiometricHologram.cycleAvatar();
+    speakResponse("Cycling holographic character, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:navi\s+labs?\s+on|enable\s+navi(?:\s+labs?)?|turn\s+on\s+navi(?:\s+labs?)?|turn\s+on\s+humanoid|enable\s+humanoid|projection\s+on)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.togglePower(true);
+    speakResponse("nAvI Labs projection activated, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:navi\s+labs?\s+off|disable\s+navi(?:\s+labs?)?|turn\s+off\s+navi(?:\s+labs?)?|turn\s+off\s+humanoid|disable\s+humanoid|projection\s+off)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.togglePower(false);
+    speakResponse("nAvI Labs projection standby, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:toggle\s+navi(?:\s+labs?)?|toggle\s+humanoid|toggle\s+projection|navi\s+labs?)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.togglePower();
+    speakResponse("Toggling nAvI Labs projection, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:scan\s+human|biometric\s+scan|toggle\s+scan|toggle\s+biometrics?|human\s+scan)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.toggleWind();
-    speakResponse("Toggling particle wind dynamics, sir.");
+    StarkBiometricHologram.togglePower(true);
+    speakResponse("Biometric matrix online, sir.");
     setSystemState("idle");
     return;
   }

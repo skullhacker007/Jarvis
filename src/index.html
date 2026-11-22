@@ -87,18 +87,23 @@
         <div class="hud-corner-bracket bottom-left"></div>
         <div class="hud-corner-bracket bottom-right"></div>
 
-        <!-- Sleek High-Tech Header -->
+        <!-- Sleek Minimalist Header: nAvI Labs + Single ON/OFF Toggle -->
         <div class="gadget-top human-panel-top">
           <div class="human-title-group">
             <span class="human-pulse-beacon" id="human-pulse-beacon"></span>
-            <span class="gadget-title human-neon-title">HUMANOID PROJECTION</span>
+            <span class="gadget-title human-neon-title">nAvI Labs</span>
           </div>
           <div class="human-controls-group">
-            <button type="button" class="human-mode-btn" id="human-reset-btn" title="Reset Particles Home">RESET</button>
-            <button type="button" class="human-mode-btn" id="human-burst-btn" title="Disperse Particles with Blast Wave">BURST</button>
-            <button type="button" class="human-mode-btn active" id="human-wind-toggle-btn" title="Toggle Wind Turbulence">
+            <div class="human-avatar-selector" id="human-avatar-selector" title="Select Hologram Character">
+              <button type="button" class="avatar-pill active" data-avatar="navi">NAVI</button>
+              <button type="button" class="avatar-pill" data-avatar="optimus">PRIME</button>
+              <button type="button" class="avatar-pill" data-avatar="bumblebee">BEE</button>
+              <button type="button" class="avatar-pill" data-avatar="spiderman">SPIDER</button>
+              <button type="button" class="avatar-pill" data-avatar="mecha">MECHA</button>
+            </div>
+            <button type="button" class="human-mode-btn active" id="human-power-toggle-btn" title="Toggle nAvI Labs Humanoid Projection">
               <span class="toggle-dot" id="human-toggle-dot"></span>
-              <span id="human-wind-btn-label">WIND</span>
+              <span id="human-power-btn-label">ON</span>
             </button>
           </div>
         </div>
@@ -110,12 +115,12 @@
           <!-- Holographic HUD Telemetry Chips -->
           <div class="human-hud-overlay">
             <div class="human-hud-badge top-left-badge">
-              <span class="hud-chip-tag">WIND GUST</span>
-              <span class="hud-chip-val cyan" id="human-wind-status">WIND ON // 0.04</span>
+              <span class="hud-chip-tag">SYSTEM</span>
+              <span class="hud-chip-val cyan" id="human-system-status">ACTIVE</span>
             </div>
             <div class="human-hud-badge top-right-badge">
-              <span class="hud-chip-tag">ENERGY AURA</span>
-              <span class="hud-chip-val emerald" id="human-aura-status">ONLINE</span>
+              <span class="hud-chip-tag" id="human-avatar-tag">AVATAR</span>
+              <span class="hud-chip-val emerald" id="human-avatar-name">NAVI LABS</span>
             </div>
             <div class="human-hud-badge bottom-left-badge">
               <span class="hud-chip-tag">RENDER</span>
@@ -123,7 +128,7 @@
             </div>
             <div class="human-hud-badge bottom-right-badge">
               <span class="hud-chip-tag">PARTICLES</span>
-              <span class="hud-chip-val purple" id="human-particle-count">32,000 PTS</span>
+              <span class="hud-chip-val purple" id="human-particle-count">30,000 PTS</span>
             </div>
           </div>
         </div>

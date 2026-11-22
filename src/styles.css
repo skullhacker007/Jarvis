@@ -3383,8 +3383,69 @@ body:not(.island-mode-active) .dynamic-island-pill {
 .human-controls-group {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   flex-shrink: 0;
+}
+
+/* Multi-Avatar Hologram Selector */
+.human-avatar-selector {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(3, 7, 18, 0.75);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 4px;
+  padding: 1.5px;
+  gap: 2px;
+}
+
+.avatar-pill {
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  color: #64748b;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.avatar-pill:hover {
+  color: #94a3b8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.avatar-pill.active {
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.25);
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.3);
+}
+
+.avatar-pill[data-avatar="optimus"].active {
+  color: #60a5fa;
+  background: rgba(239, 68, 68, 0.28);
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.45);
+}
+
+.avatar-pill[data-avatar="bumblebee"].active {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.28);
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.45);
+}
+
+.avatar-pill[data-avatar="spiderman"].active {
+  color: #38bdf8;
+  background: rgba(225, 29, 72, 0.25);
+  box-shadow: 0 0 6px rgba(14, 165, 233, 0.4);
+}
+
+.avatar-pill[data-avatar="mecha"].active {
+  color: #22d3ee;
+  background: rgba(20, 184, 166, 0.25);
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.4);
 }
 
 .human-mode-btn,
