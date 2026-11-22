@@ -78,6 +78,58 @@
       </div>
 
       <!-- ========================================================= -->
+      <!-- LEFT CENTER: PYTHON PARTICLES ENGINE // HUMAN AURA & WIND -->
+      <!-- ========================================================= -->
+      <div class="gadget-panel holographic-human-panel" id="holographic-human-panel">
+        <!-- Cyber Corner Reticles -->
+        <div class="hud-corner-bracket top-left"></div>
+        <div class="hud-corner-bracket top-right"></div>
+        <div class="hud-corner-bracket bottom-left"></div>
+        <div class="hud-corner-bracket bottom-right"></div>
+
+        <!-- Sleek High-Tech Header -->
+        <div class="gadget-top human-panel-top">
+          <div class="human-title-group">
+            <span class="human-pulse-beacon" id="human-pulse-beacon"></span>
+            <span class="gadget-title human-neon-title">HUMANOID PROJECTION</span>
+          </div>
+          <div class="human-controls-group">
+            <button type="button" class="human-mode-btn" id="human-reset-btn" title="Reset Particles Home">RESET</button>
+            <button type="button" class="human-mode-btn" id="human-burst-btn" title="Disperse Particles with Blast Wave">BURST</button>
+            <button type="button" class="human-mode-btn active" id="human-wind-toggle-btn" title="Toggle Wind Turbulence">
+              <span class="toggle-dot" id="human-toggle-dot"></span>
+              <span id="human-wind-btn-label">WIND</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3D Holographic Particle Human Canvas Container -->
+        <div class="human-canvas-container" id="human-canvas-container">
+          <canvas id="human-particle-canvas" class="human-particle-canvas"></canvas>
+
+          <!-- Holographic HUD Telemetry Chips -->
+          <div class="human-hud-overlay">
+            <div class="human-hud-badge top-left-badge">
+              <span class="hud-chip-tag">WIND GUST</span>
+              <span class="hud-chip-val cyan" id="human-wind-status">WIND ON // 0.04</span>
+            </div>
+            <div class="human-hud-badge top-right-badge">
+              <span class="hud-chip-tag">ENERGY AURA</span>
+              <span class="hud-chip-val emerald" id="human-aura-status">ONLINE</span>
+            </div>
+            <div class="human-hud-badge bottom-left-badge">
+              <span class="hud-chip-tag">RENDER</span>
+              <span class="hud-chip-val cyan" id="human-fps-val">60 FPS</span>
+            </div>
+            <div class="human-hud-badge bottom-right-badge">
+              <span class="hud-chip-tag">PARTICLES</span>
+              <span class="hud-chip-val purple" id="human-particle-count">32,000 PTS</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================= -->
       <!-- LEFT: PROCESSOR, MEMORY AND NETWORK HARDWARE CLUSTER       -->
       <!-- ========================================================= -->
       <div class="left-system-deck">
@@ -145,7 +197,7 @@
             <div class="neural-header-title">
               <span class="neural-beacon"></span>
               <span class="gadget-title">NEURAL NETWORK</span>
-              <span class="neural-status-badge" id="neural-engine-state">STANDBY</span>
+              <span class="neural-status-badge" id="neural-engine-state">ONLINE</span>
             </div>
             <span class="gadget-val purple" id="model-name-label">AI ENGINE</span>
           </div>
@@ -181,12 +233,11 @@
           <div class="ref-token-header">
             <div class="ref-token-title-group">
               <span class="ref-token-title">Token activity</span>
-              <span class="ref-token-pill" id="ref-token-badge">0 TOKENS</span>
             </div>
             <div class="ref-token-tabs">
-              <span class="ref-tab">Daily</span>
-              <span class="ref-tab">Weekly</span>
-              <span class="ref-tab active">Cumulative</span>
+              <span class="ref-tab" data-range="daily">Daily</span>
+              <span class="ref-tab" data-range="weekly">Weekly</span>
+              <span class="ref-tab active" data-range="cumulative">Cumulative</span>
             </div>
           </div>
 
@@ -208,11 +259,11 @@
           <!-- 4-Column KV & Decoding Telemetry Quad -->
           <div class="ref-telemetry-quad">
             <div class="ref-quad-cell">
-              <span class="ref-cell-tag">ACTIVE KV CACHE SLOTS</span>
-              <span class="ref-cell-val cyan" id="kv-cache-slots">0 slots</span>
+              <span class="ref-cell-tag">ACTIVE CACHE</span>
+              <span class="ref-cell-val cyan" id="kv-cache-slots">0 tokens</span>
             </div>
             <div class="ref-quad-cell">
-              <span class="ref-cell-tag">KV RAM FOOTPRINT</span>
+              <span class="ref-cell-tag">RAM FOOTPRINT</span>
               <span class="ref-cell-val cyan" id="kv-vram-footprint">-- GB</span>
             </div>
             <div class="ref-quad-cell">
@@ -246,31 +297,9 @@
           <div class="models-list" id="models-list">
             <!-- Populated dynamically with live metrics & priority -->
           </div>
-          <div class="model-pull-row" id="model-pull-row">
-            <input type="text" id="model-pull-input" placeholder="Pull model (e.g. qwen2.5:1.5b)..." class="model-pull-input" spellcheck="false" />
-            <button type="button" id="model-pull-btn" class="model-pull-btn">PULL</button>
-          </div>
         </div>
       </div>
 
-      <!-- ========================================================= -->
-      <!-- PHASE 3: WEBCAM AIR-GESTURE & PRESENCE SENSOR RADAR       -->
-      <!-- ========================================================= -->
-      <div class="gesture-radar-widget" id="gesture-radar-widget" style="display: none;">
-        <div class="gesture-radar-header">
-          <div class="gesture-header-title">
-            <span class="gesture-beacon"></span>
-            <span class="gesture-title">VISION SENSOR // GESTURES &amp; GLANCE</span>
-          </div>
-          <button class="gesture-close-btn" id="gesture-close-btn" title="Close Sensor">&times;</button>
-        </div>
-        <div class="gesture-radar-body">
-          <video id="gesture-video" playsinline muted autoplay style="display: none;"></video>
-          <canvas id="gesture-canvas" width="160" height="120" class="gesture-canvas"></canvas>
-          <div class="gesture-reticle-cross"></div>
-          <div class="gesture-feedback-label" id="gesture-feedback-label">RADAR SCANNING</div>
-        </div>
-      </div>
 
       <!-- ========================================================= -->
       <!-- COMPACT FLOATING INPUT PILL (MIC - TEXTFIELD - EXEC)      -->
@@ -746,6 +775,8 @@
     <!-- ========================================================= -->
     <div class="hud-toast-container" id="hud-toast-container"></div>
 
+    <!-- Pre-sampled High-Density Human Particle Dataset -->
+    <script src="assets/human_particles_preset.js"></script>
     <script type="module" src="main.js"></script>
   </body>
 </html>

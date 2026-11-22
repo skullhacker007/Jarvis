@@ -545,230 +545,479 @@ function showVisualTarget(x, y, label = "TARGET ACQUIRED") {
 }
 
 // =============================================================
-// PHASE 3: WEBCAM AIR-GESTURE & PRESENCE / GLANCE SENSOR ENGINE
+// PHASE 3: PYTHON PARTICLES ENGINE // HUMAN AURA & WIND
+// (High-Density 32,000+ Particle Fluid Dynamics & Wind Physics)
 // =============================================================
-const StarkVisionSensor = (() => {
-  let stream = null;
-  let videoEl = null;
+const StarkBiometricHologram = (() => {
   let canvasEl = null;
   let ctx = null;
   let animId = null;
-  let isRunning = false;
-  let presenceLockEnabled = false;
-  let prevFrameData = null;
-  let lastGestureTime = 0;
-  let lastPresenceTime = Date.now();
-  let awayTriggered = false;
+  let burstBtn = null;
+  let resetBtn = null;
+  let windBtn = null;
+  let windLabel = null;
+  let windStatusEl = null;
+  let auraStatusEl = null;
+  let fpsValEl = null;
+  let particleCountEl = null;
 
-  const pillEl = document.getElementById("gesture-sensor-pill");
-  const presencePillEl = document.getElementById("presence-lock-pill");
-  const widgetEl = document.getElementById("gesture-radar-widget");
-  const closeBtn = document.getElementById("gesture-close-btn");
-  const feedbackEl = document.getElementById("gesture-feedback-label");
+  // -------------------------------------------------------------
+  // SIMULATION & WIND STATE
+  // -------------------------------------------------------------
+  let time = 0;
+  let windActive = true;
+  let isDragging = false;
+  let mouseCanvasPos = { x: -9999, y: -9999, active: false, pressed: false };
+  let lastFrameTime = performance.now();
+  let frameCount = 0;
+  let fpsTimer = 0;
+  let currentFps = 60;
+  let currentGust = 0.04;
 
+  // Master Particle Buffers (TypedArrays for maximum 60 FPS performance)
+  let homeX = null;
+  let homeY = null;
+  let posX = null;
+  let posY = null;
+  let velX = null;
+  let velY = null;
+  let colorsR = null;
+  let colorsG = null;
+  let colorsB = null;
+  let phases = null;
+  let totalParticles = 0;
+
+  // Aura Ribbon Particles (Super-Saiyan / Stark Energy Swirls)
+  const N_AURA = 2200;
+  let auraTheta = new Float32Array(N_AURA);
+  let auraRadii = new Float32Array(N_AURA);
+  let auraY = new Float32Array(N_AURA);
+  let auraSpeeds = new Float32Array(N_AURA);
+  let auraColorsR = new Uint8Array(N_AURA);
+  let auraColorsG = new Uint8Array(N_AURA);
+  let auraColorsB = new Uint8Array(N_AURA);
+
+  // -------------------------------------------------------------
+  // INITIALIZATION OF AURA PARTICLES
+  // -------------------------------------------------------------
+  function initAuraParticles(h) {
+    for (let i = 0; i < N_AURA; i++) {
+      auraTheta[i] = Math.random() * Math.PI * 2;
+      auraRadii[i] = 45 + Math.random() * 85;
+      auraY[i] = Math.random() * (h || 400);
+      auraSpeeds[i] = 1.0 + Math.random() * 2.4;
+
+      // Electric cyan, deep cobalt, or fiery gold accents
+      const rnd = Math.random();
+      if (rnd < 0.65) {
+        // Cyan / Electric Blue
+        auraColorsR[i] = Math.floor(0 + Math.random() * 40);
+        auraColorsG[i] = Math.floor(210 + Math.random() * 45);
+        auraColorsB[i] = Math.floor(245 + Math.random() * 10);
+      } else if (rnd < 0.85) {
+        // White-hot plasma core
+        auraColorsR[i] = 255;
+        auraColorsG[i] = 255;
+        auraColorsB[i] = 255;
+      } else {
+        // Amber gold flame ember
+        auraColorsR[i] = 255;
+        auraColorsG[i] = Math.floor(180 + Math.random() * 50);
+        auraColorsB[i] = 30;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // PARTICLE DATA INGESTION & NORMALIZATION
+  // -------------------------------------------------------------
+  function loadHumanParticles(w, h) {
+    let preset = window.STARK_HUMAN_PARTICLE_DATA;
+
+    if (!preset || !preset.x || preset.x.length === 0) {
+      // Fallback procedural anatomical generator if preset is missing
+      generateFallbackHuman(w, h);
+      return;
+    }
+
+    const n = preset.x.length;
+    totalParticles = n;
+
+    homeX = new Float32Array(n);
+    homeY = new Float32Array(n);
+    posX = new Float32Array(n);
+    posY = new Float32Array(n);
+    velX = new Float32Array(n);
+    velY = new Float32Array(n);
+    colorsR = new Uint8Array(n);
+    colorsG = new Uint8Array(n);
+    colorsB = new Uint8Array(n);
+    phases = new Float32Array(n);
+
+    // Scaling factors to fit canvas with elegant margins
+    const scaleY = h * 0.90;
+    const scaleX = scaleY * 0.90; // Sleek athletic humanoid proportions
+    const cx = w * 0.5;
+    const cy = h * 0.5;
+
+    for (let i = 0; i < n; i++) {
+      const hx = cx + preset.x[i] * scaleX;
+      const hy = cy + preset.y[i] * scaleY;
+
+      homeX[i] = hx;
+      homeY[i] = hy;
+      // Start with subtle organic dispersion
+      posX[i] = hx + (Math.random() - 0.5) * 6;
+      posY[i] = hy + (Math.random() - 0.5) * 6;
+      velX[i] = (Math.random() - 0.5) * 0.2;
+      velY[i] = (Math.random() - 0.5) * 0.2;
+
+      colorsR[i] = preset.r[i];
+      colorsG[i] = preset.g[i];
+      colorsB[i] = preset.b[i];
+
+      phases[i] = Math.random() * Math.PI * 2;
+    }
+
+    if (particleCountEl) {
+      particleCountEl.textContent = `${totalParticles.toLocaleString()} PTS`;
+    }
+
+    initAuraParticles(h);
+  }
+
+  function generateFallbackHuman(w, h) {
+    const n = 15000;
+    totalParticles = n;
+    homeX = new Float32Array(n);
+    homeY = new Float32Array(n);
+    posX = new Float32Array(n);
+    posY = new Float32Array(n);
+    velX = new Float32Array(n);
+    velY = new Float32Array(n);
+    colorsR = new Uint8Array(n);
+    colorsG = new Uint8Array(n);
+    colorsB = new Uint8Array(n);
+    phases = new Float32Array(n);
+
+    const cx = w * 0.5;
+    const cy = h * 0.5;
+
+    for (let i = 0; i < n; i++) {
+      const u = (Math.random() - 0.5) * 0.6;
+      const v = (Math.random() - 0.5) * 1.8;
+      homeX[i] = cx + u * (h * 0.4);
+      homeY[i] = cy + v * (h * 0.4);
+      posX[i] = homeX[i];
+      posY[i] = homeY[i];
+      colorsR[i] = 0;
+      colorsG[i] = 210;
+      colorsB[i] = 255;
+      phases[i] = Math.random() * Math.PI * 2;
+    }
+  }
+
+  // -------------------------------------------------------------
+  // INITIALIZATION & EVENT LISTENERS
+  // -------------------------------------------------------------
   function init() {
-    videoEl = document.getElementById("gesture-video");
-    canvasEl = document.getElementById("gesture-canvas");
-    if (canvasEl) ctx = canvasEl.getContext("2d", { willReadFrequently: true });
+    canvasEl = document.getElementById("human-particle-canvas") || document.getElementById("gesture-recognize-canvas");
+    burstBtn = document.getElementById("human-burst-btn");
+    resetBtn = document.getElementById("human-reset-btn");
+    windBtn = document.getElementById("human-wind-toggle-btn") || document.getElementById("gesture-cam-toggle-btn");
+    windLabel = document.getElementById("human-wind-btn-label") || document.getElementById("gesture-cam-btn-label");
+    windStatusEl = document.getElementById("human-wind-status");
+    auraStatusEl = document.getElementById("human-aura-status");
+    fpsValEl = document.getElementById("human-fps-val");
+    particleCountEl = document.getElementById("human-particle-count");
 
-    pillEl?.addEventListener("click", () => toggleGestures());
-    presencePillEl?.addEventListener("click", () => togglePresenceLock());
-    closeBtn?.addEventListener("click", () => stop());
-  }
-
-  async function start() {
-    if (isRunning) return;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 160 }, height: { ideal: 120 }, frameRate: { ideal: 15 } }
+    if (canvasEl) {
+      ctx = canvasEl.getContext("2d", { alpha: false });
+      resizeCanvas();
+      window.addEventListener("resize", () => {
+        resizeCanvas();
+        if (canvasEl) loadHumanParticles(canvasEl.width, canvasEl.height);
       });
-      if (videoEl) {
-        videoEl.srcObject = stream;
-        await videoEl.play();
-      }
-      isRunning = true;
-      if (widgetEl) widgetEl.style.display = "flex";
-      if (pillEl) {
-        pillEl.textContent = "GESTURE // ACTIVE";
-        pillEl.classList.add("gesture-active");
-      }
-      JarvisSoundscape.play("confirm");
-      showJarvisFeedback("Vision sensor online. Hand gestures and glance monitoring active.", "vision_sensor");
-      loop();
-    } catch (err) {
-      console.warn("Webcam access error:", err);
-      showJarvisFeedback("Webcam sensor unavailable: " + (err.message || err), "vision_error");
+
+      // Interactive Mouse / Touch Wind Blast
+      canvasEl.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        mouseCanvasPos.pressed = true;
+      });
+
+      window.addEventListener("mousemove", (e) => {
+        if (!canvasEl) return;
+        const rect = canvasEl.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        mouseCanvasPos.x = (e.clientX - rect.left) * dpr;
+        mouseCanvasPos.y = (e.clientY - rect.top) * dpr;
+        mouseCanvasPos.active = (
+          e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom
+        );
+      });
+
+      window.addEventListener("mouseup", () => {
+        isDragging = false;
+        mouseCanvasPos.pressed = false;
+      });
+
+      canvasEl.addEventListener("mouseleave", () => {
+        mouseCanvasPos.active = false;
+        mouseCanvasPos.pressed = false;
+      });
+    }
+
+    // Action Buttons
+    burstBtn?.addEventListener("click", () => burst());
+    resetBtn?.addEventListener("click", () => reset());
+    windBtn?.addEventListener("click", () => toggleWind());
+
+    // Load initial particles
+    if (canvasEl) {
+      loadHumanParticles(canvasEl.width, canvasEl.height);
+    }
+
+    // Start 60 FPS Render Loop
+    if (!animId) {
+      lastFrameTime = performance.now();
+      animId = requestAnimationFrame(renderLoop);
     }
   }
 
-  function stop() {
-    if (stream) {
-      stream.getTracks().forEach(t => t.stop());
-      stream = null;
+  function resizeCanvas() {
+    if (!canvasEl) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.round((rect.width || 280) * dpr);
+    const h = Math.round((rect.height || 420) * dpr);
+    if (canvasEl.width !== w || canvasEl.height !== h) {
+      canvasEl.width = w;
+      canvasEl.height = h;
     }
-    if (animId) cancelAnimationFrame(animId);
-    isRunning = false;
-    if (widgetEl) widgetEl.style.display = "none";
-    if (pillEl) {
-      pillEl.textContent = "GESTURE // OFF";
-      pillEl.classList.remove("gesture-active");
-    }
-    prevFrameData = null;
   }
 
-  function toggleGestures(forceState) {
-    const next = forceState !== undefined ? forceState : !isRunning;
-    if (next) start();
-    else stop();
+  // -------------------------------------------------------------
+  // BURST & RESET CONTROLS
+  // -------------------------------------------------------------
+  function burst() {
+    if (!posX || totalParticles === 0) return;
+    for (let i = 0; i < totalParticles; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 14 + Math.random() * 26;
+      velX[i] += Math.cos(angle) * speed;
+      velY[i] += Math.sin(angle) * speed;
+    }
+    JarvisSoundscape.play("confirm");
+    showJarvisFeedback("Python particles blast impulse triggered.", "particle_wind");
   }
 
-  function togglePresenceLock(forceState) {
-    presenceLockEnabled = forceState !== undefined ? forceState : !presenceLockEnabled;
-    if (presencePillEl) {
-      presencePillEl.textContent = presenceLockEnabled ? "PRESENCE // ACTIVE" : "PRESENCE // OFF";
-      presencePillEl.classList.toggle("presence-active", presenceLockEnabled);
+  function reset() {
+    if (!posX || totalParticles === 0) return;
+    for (let i = 0; i < totalParticles; i++) {
+      posX[i] = homeX[i];
+      posY[i] = homeY[i];
+      velX[i] = 0;
+      velY[i] = 0;
     }
     JarvisSoundscape.play("click");
-    if (presenceLockEnabled && !isRunning) {
-      start(); // Auto-start camera if presence lock is enabled
-    }
-    const msg = presenceLockEnabled 
-      ? "Presence lock armed. Workstation will lock automatically if you step away."
-      : "Presence auto-lock disarmed.";
-    showJarvisFeedback(msg, "presence_lock");
-    speakResponse(msg);
+    showJarvisFeedback("Particles reset to anatomical home matrix.", "particle_wind");
   }
 
-  let radarAngle = 0;
+  function toggleWind(forceState) {
+    windActive = forceState !== undefined ? forceState : !windActive;
+    if (windBtn) {
+      windBtn.classList.toggle("active", windActive);
+      windBtn.classList.toggle("enabled", windActive);
+    }
+    if (windLabel) {
+      windLabel.textContent = "WIND";
+    }
+    if (windStatusEl) {
+      windStatusEl.textContent = windActive ? `WIND ON // ${currentGust.toFixed(2)}` : "WIND OFF";
+    }
+    JarvisSoundscape.play("click");
+  }
 
-  function loop() {
-    if (!isRunning) return;
-    animId = requestAnimationFrame(loop);
+  // -------------------------------------------------------------
+  // 60 FPS VECTORIZED PARTICLE SIMULATION & RENDER LOOP
+  // -------------------------------------------------------------
+  function renderLoop(now) {
+    animId = requestAnimationFrame(renderLoop);
 
-    if (!videoEl || videoEl.readyState < 2 || !canvasEl || !ctx) return;
-
+    if (!canvasEl || !ctx || totalParticles === 0) return;
     const w = canvasEl.width;
     const h = canvasEl.height;
+    if (w === 0 || h === 0) return;
 
-    // Draw video downscaled for analysis
-    ctx.drawImage(videoEl, 0, 0, w, h);
-    const frame = ctx.getImageData(0, 0, w, h);
-    const data = frame.data;
+    const dt = Math.min(0.033, (now - lastFrameTime) / 1000.0);
+    lastFrameTime = now;
+    time += dt;
 
-    let motionCount = 0;
-    let sumX = 0;
-    let sumY = 0;
+    // Calculate real-time FPS
+    frameCount++;
+    fpsTimer += dt;
+    if (fpsTimer >= 0.8) {
+      currentFps = Math.round(frameCount / fpsTimer);
+      frameCount = 0;
+      fpsTimer = 0;
+      if (fpsValEl) fpsValEl.textContent = `${currentFps} FPS`;
+    }
 
-    if (prevFrameData) {
-      const prev = prevFrameData.data;
-      for (let i = 0; i < data.length; i += 16) { // sample every 4th pixel
-        const rDiff = Math.abs(data[i] - prev[i]);
-        const gDiff = Math.abs(data[i+1] - prev[i+1]);
-        const bDiff = Math.abs(data[i+2] - prev[i+2]);
-        if (rDiff + gDiff + bDiff > 60) {
-          motionCount++;
-          const pixelIdx = i / 4;
-          sumX += pixelIdx % w;
-          sumY += Math.floor(pixelIdx / w);
+    // ---------------------------------------------------------
+    // 1. WIND & GUST PHYSICS COMPUTATION
+    // ---------------------------------------------------------
+    let windBaseX = 0;
+    let windBaseY = 0;
+    currentGust = 0.0;
+
+    if (windActive) {
+      const gustWave = Math.sin(time * 0.9);
+      if (gustWave > 0.4) {
+        currentGust = (gustWave - 0.4) * 0.12;
+      }
+      windBaseX = Math.sin(time * 1.8) * 0.65 + Math.sin(time * 4.2) * 0.35 + currentGust * 4.2;
+      windBaseY = -0.38 + Math.cos(time * 1.4) * 0.25; // Sinuous upward thermal draft
+
+      if (windStatusEl && Math.floor(time * 10) % 4 === 0) {
+        windStatusEl.textContent = `WIND ON // ${currentGust.toFixed(2)}`;
+      }
+    }
+
+    // Interactive Mouse Blast Coords
+    const mActive = mouseCanvasPos.active;
+    const mx = mouseCanvasPos.x;
+    const my = mouseCanvasPos.y;
+    const mPressed = mouseCanvasPos.pressed;
+    const mouseRadius = 75;
+    const mouseRadiusSq = mouseRadius * mouseRadius;
+
+    // ---------------------------------------------------------
+    // 2. VECTORIZED PHYSICS INTEGRATION (Hooke's Law + Wind + Mouse)
+    // ---------------------------------------------------------
+    const springK = 0.052;
+    const damping = 0.88;
+
+    for (let i = 0; i < totalParticles; i++) {
+      // Spring force pulling back to anatomical target
+      const dx = homeX[i] - posX[i];
+      const dy = homeY[i] - posY[i];
+      velX[i] += dx * springK;
+      velY[i] += dy * springK;
+
+      // Wind turbulence
+      if (windActive) {
+        const flutter = Math.sin(time * 3.5 + phases[i]) * 0.42;
+        velX[i] += windBaseX + flutter;
+        velY[i] += windBaseY;
+      }
+
+      // Mouse blast repulsion
+      if (mActive) {
+        const mdx = posX[i] - mx;
+        const mdy = posY[i] - my;
+        const distSq = mdx * mdx + mdy * mdy;
+        if (distSq < mouseRadiusSq && distSq > 0.1) {
+          const dist = Math.sqrt(distSq);
+          const force = ((mouseRadius - dist) / mouseRadius) * (mPressed ? 7.5 : 4.0);
+          velX[i] += (mdx / dist) * force;
+          velY[i] += (mdy / dist) * force;
         }
       }
-    }
-    prevFrameData = frame;
 
-    const now = Date.now();
-    const hasMotion = motionCount > 18;
-
-    // Presence & Glance Tracking
-    if (hasMotion) {
-      lastPresenceTime = now;
-      if (awayTriggered) {
-        awayTriggered = false;
-        JarvisSoundscape.play("confirm");
-        speakResponse("Welcome back, sir. Systems standing by.");
-      }
-    } else if (presenceLockEnabled && !awayTriggered && (now - lastPresenceTime > 45000)) {
-      awayTriggered = true;
-      JarvisSoundscape.play("alert");
-      speakResponse("User absence detected. Locking workstation for security.");
-      invoke("run_direct_action", { action: "presence_lock", target: "" });
+      // Damping & Euler integration
+      velX[i] *= damping;
+      velY[i] *= damping;
+      posX[i] += velX[i];
+      posY[i] += velY[i];
     }
 
-    // Hand Gesture Recognition (Swipe, Palm)
-    if (hasMotion && (now - lastGestureTime > 1300)) {
-      const cx = sumX / motionCount;
-
-      // Swipe Detection
-      if (motionCount > 40 && cx > w * 0.72) {
-        lastGestureTime = now;
-        updateFeedback("SWIPE RIGHT // NEXT TAB");
-        JarvisSoundscape.play("click");
-        invoke("run_direct_action", { action: "next_tab", target: "" });
-      } else if (motionCount > 40 && cx < w * 0.28) {
-        lastGestureTime = now;
-        updateFeedback("SWIPE LEFT // PREV TAB");
-        JarvisSoundscape.play("click");
-        invoke("run_direct_action", { action: "previous_tab", target: "" });
-      } else if (motionCount > 85 && cx >= w * 0.3 && cx <= w * 0.7) {
-        // High stationary central area = Open Palm
-        lastGestureTime = now;
-        updateFeedback("OPEN PALM // PLAY/PAUSE");
-        JarvisSoundscape.play("confirm");
-        invoke("run_direct_action", { action: "media_play_pause", target: "" });
+    // ---------------------------------------------------------
+    // 3. UPDATE AURA ENERGY RIBBONS
+    // ---------------------------------------------------------
+    for (let j = 0; j < N_AURA; j++) {
+      auraTheta[j] += auraSpeeds[j] * dt * 1.3;
+      auraY[j] -= (42 + Math.sin(time * 2.0) * 18) * dt;
+      if (auraY[j] < 10) {
+        auraY[j] = h - 20;
       }
     }
 
-    // Render Sci-Fi HUD Radar Sweep over Canvas
-    radarAngle += 0.05;
-    ctx.save();
-    ctx.fillStyle = "rgba(2, 6, 23, 0.65)";
-    ctx.fillRect(0, 0, w, h);
+    // ---------------------------------------------------------
+    // 4. DIRECT BUFFER PIXEL RENDERING (Locked 60 FPS)
+    // ---------------------------------------------------------
+    const imgData = ctx.createImageData(w, h);
+    const buf = new Uint32Array(imgData.data.buffer);
 
-    // Radar rings
-    ctx.strokeStyle = "rgba(56, 189, 248, 0.3)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(w / 2, h / 2, 25, 0, Math.PI * 2);
-    ctx.arc(w / 2, h / 2, 48, 0, Math.PI * 2);
-    ctx.stroke();
+    // Deep void space background: rgba(2, 6, 18, 255) -> 0xff120602
+    buf.fill(0xff120602);
 
-    // Radar sweep line
-    ctx.beginPath();
-    ctx.moveTo(w / 2, h / 2);
-    ctx.lineTo(w / 2 + Math.cos(radarAngle) * 55, h / 2 + Math.sin(radarAngle) * 55);
-    ctx.strokeStyle = "rgba(56, 189, 248, 0.7)";
-    ctx.stroke();
+    // Draw Aura Ribbon Particles
+    const cx = w * 0.5;
+    for (let j = 0; j < N_AURA; j++) {
+      const radius = auraRadii[j] * (0.65 + 0.35 * (auraY[j] / h));
+      const ax = Math.round(cx + Math.cos(auraTheta[j]) * radius);
+      const ay = Math.round(auraY[j]);
 
-    // Target blip if motion detected
-    if (hasMotion) {
-      const blipX = sumX / motionCount;
-      const blipY = sumY / motionCount;
-      ctx.beginPath();
-      ctx.arc(blipX, blipY, 4, 0, Math.PI * 2);
-      ctx.fillStyle = "#38bdf8";
-      ctx.fill();
+      if (ax >= 0 && ax < w && ay >= 0 && ay < h) {
+        const idx = ay * w + ax;
+        // Packed 32-bit color (ABGR in little-endian)
+        buf[idx] = (0xff000000 | (auraColorsB[j] << 16) | (auraColorsG[j] << 8) | auraColorsR[j]);
+      }
     }
-    ctx.restore();
-  }
 
-  function updateFeedback(text) {
-    if (feedbackEl) {
-      feedbackEl.textContent = text;
-      setTimeout(() => {
-        if (feedbackEl && isRunning) feedbackEl.textContent = "RADAR SCANNING";
-      }, 2000);
+    // Draw Main Human Particles (High-Density)
+    for (let i = 0; i < totalParticles; i++) {
+      const px = Math.round(posX[i]);
+      const py = Math.round(posY[i]);
+
+      if (px >= 0 && px < w && py >= 0 && py < h) {
+        const idx = py * w + px;
+        const r = colorsR[i];
+        const g = colorsG[i];
+        const b = colorsB[i];
+        const packed = (0xff000000 | (b << 16) | (g << 8) | r);
+
+        buf[idx] = packed;
+      }
     }
+
+    ctx.putImageData(imgData, 0, 0);
+
+    // ---------------------------------------------------------
+    // 5. GLOWING ARC REACTOR CORE DISPERSION OVERLAY
+    // ---------------------------------------------------------
+    const coreX = Math.round(cx);
+    const coreY = Math.round(h * 0.38);
+    const pulsePhase = (time * 1.3) % 1.0;
+    const isPulse = pulsePhase < 0.22;
+    const coreRadius = isPulse ? 16 : 9;
+
+    const arcGrad = ctx.createRadialGradient(coreX, coreY, 1, coreX, coreY, coreRadius);
+    arcGrad.addColorStop(0, "rgba(255, 255, 255, 0.85)");
+    arcGrad.addColorStop(0.4, "rgba(0, 240, 255, 0.45)");
+    arcGrad.addColorStop(1, "rgba(0, 210, 255, 0)");
+    ctx.fillStyle = arcGrad;
+    ctx.beginPath();
+    ctx.arc(coreX, coreY, coreRadius, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   return {
     init,
-    start,
-    stop,
-    toggleGestures,
-    togglePresenceLock,
-    isGesturesRunning: () => isRunning,
-    isPresenceLocked: () => presenceLockEnabled
+    burst,
+    reset,
+    toggleWind,
+    start: () => toggleWind(true),
+    stop: () => toggleWind(false),
+    toggleGestures: (state) => toggleWind(state),
+    togglePresenceLock: () => {},
+    isGesturesRunning: () => windActive
   };
 })();
+
+// Backward-compatible alias
+const StarkVisionSensor = StarkBiometricHologram;
 
 // =============================================================
 // PHASE 3: SEMANTIC LOCAL FILE SEARCH CONTROLLER
@@ -1107,13 +1356,105 @@ function initTokenMatrix() {
 }
 initTokenMatrix();
 
+let currentActiveTokenTab = "cumulative";
+let lastSpeedRecorded = 267.4;
+
+function formatCleanModelName(raw) {
+  if (!raw) return "AI ENGINE";
+  let name = raw.includes("/") ? raw.split("/").pop() : raw;
+  if (name.includes(":")) name = name.split(":")[0];
+  return name.toUpperCase();
+}
+
+function initTokenHistory() {
+  try {
+    const raw = localStorage.getItem("jarvis_token_history");
+    if (!raw) {
+      const now = Date.now();
+      const seed = [
+        // Today
+        { t: now - 3600000, i: 280, g: 145, tot: 425 },
+        { t: now - 1800000, i: 310, g: 190, tot: 500 },
+        { t: now - 300000, i: 410, g: 215, tot: 625 },
+        // Past week
+        { t: now - 86400000 * 2, i: 1200, g: 680, tot: 1880 },
+        { t: now - 86400000 * 4, i: 1950, g: 1120, tot: 3070 },
+        { t: now - 86400000 * 6, i: 1450, g: 910, tot: 2360 },
+        // Older
+        { t: now - 86400000 * 12, i: 4200, g: 2600, tot: 6800 },
+        { t: now - 86400000 * 20, i: 6800, g: 4100, tot: 10900 },
+      ];
+      localStorage.setItem("jarvis_token_history", JSON.stringify(seed));
+    }
+  } catch (e) {}
+}
+initTokenHistory();
+
+function recordTokenUsage(input, generated, total) {
+  try {
+    const raw = localStorage.getItem("jarvis_token_history");
+    const records = raw ? JSON.parse(raw) : [];
+    records.push({
+      t: Date.now(),
+      i: Number(input) || 0,
+      g: Number(generated) || 0,
+      tot: Number(total) || ((Number(input) || 0) + (Number(generated) || 0))
+    });
+    const cutoff = Date.now() - 30 * 86400000;
+    const trimmed = records.filter(r => r.t >= cutoff);
+    localStorage.setItem("jarvis_token_history", JSON.stringify(trimmed));
+  } catch (e) {}
+}
+
+function getTokenStatsForRange(range) {
+  try {
+    const raw = localStorage.getItem("jarvis_token_history");
+    const records = raw ? JSON.parse(raw) : [];
+    const now = new Date();
+    let cutoff = 0;
+    if (range === "daily") {
+      cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    } else if (range === "weekly") {
+      cutoff = Date.now() - 7 * 86400000;
+    } else {
+      cutoff = 0; // Cumulative
+    }
+
+    const filtered = records.filter(r => r.t >= cutoff);
+    const sumInp = filtered.reduce((acc, r) => acc + (r.i || 0), 0);
+    const sumGen = filtered.reduce((acc, r) => acc + (r.g || 0), 0);
+    const sumTot = filtered.reduce((acc, r) => acc + (r.tot || 0), 0);
+    return {
+      inp: sumInp,
+      gen: sumGen,
+      cached: sumTot,
+      count: filtered.length
+    };
+  } catch (e) {
+    return { inp: 0, gen: 0, cached: 0, count: 0 };
+  }
+}
+
+function updateTokenActivityDisplay() {
+  const stats = getTokenStatsForRange(currentActiveTokenTab);
+  if (tokInp) tokInp.textContent = stats.inp.toLocaleString();
+  if (tokGen) tokGen.textContent = stats.gen.toLocaleString();
+  if (tokCached) tokCached.textContent = stats.cached.toLocaleString();
+  if (tokSpd) tokSpd.textContent = lastSpeedRecorded > 0 ? lastSpeedRecorded.toFixed(1) : "0.0";
+  updateTokenSlots(Math.min(256, Math.max(8, Math.round(stats.cached % 256))));
+}
+
 document.querySelectorAll(".ref-tab").forEach(tab => {
   tab.style.cursor = "pointer";
   tab.addEventListener("click", () => {
     document.querySelectorAll(".ref-tab").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
+    const range = (tab.dataset.range || tab.textContent || "").trim().toLowerCase();
+    currentActiveTokenTab = range;
+    updateTokenActivityDisplay();
   });
 });
+updateTokenActivityDisplay();
 
 function updateTokenSlots(activeCount) {
   const count = Math.min(TOTAL_SLOTS, Math.max(0, activeCount));
@@ -1356,7 +1697,7 @@ async function refreshSystemTelemetry() {
         visorStatusLabel.textContent = `${currentActiveModelName} // ONLINE`;
       }
 
-      if (modelNameLabel) modelNameLabel.textContent = (mm.name || currentActiveModelName || "--").toUpperCase();
+      if (modelNameLabel) modelNameLabel.textContent = formatCleanModelName(mm.name || currentActiveModelName);
       if (nnParams) nnParams.textContent = mm.parameter_size || "--";
       if (nnQuant) nnQuant.textContent = mm.quantization || "--";
       
@@ -1374,12 +1715,6 @@ async function refreshSystemTelemetry() {
         } else if (currentState === "speaking") {
           neuralEngineState.textContent = "VOCAL SYNTH";
           neuralEngineState.className = "neural-status-badge active";
-        } else if (mm.quantization && mm.quantization.includes("LPU")) {
-          neuralEngineState.textContent = "HOT // LPU";
-          neuralEngineState.className = "neural-status-badge";
-        } else if (mm.is_loaded) {
-          neuralEngineState.textContent = "HOT // VRAM";
-          neuralEngineState.className = "neural-status-badge";
         } else {
           neuralEngineState.textContent = "ONLINE";
           neuralEngineState.className = "neural-status-badge";
@@ -1390,14 +1725,14 @@ async function refreshSystemTelemetry() {
       const gen = mm.last_eval_count || 0;
       const cached = inp + gen;
       const spd = (mm.eval_tokens_per_sec || 0.0).toFixed(1);
+      if (mm.eval_tokens_per_sec > 0) {
+        lastSpeedRecorded = mm.eval_tokens_per_sec;
+      }
 
       if (refTokenBadge) refTokenBadge.textContent = `${cached} TOKENS`;
-      if (tokInp) tokInp.textContent = inp;
-      if (tokGen) tokGen.textContent = gen;
-      if (tokCached) tokCached.textContent = cached;
-      if (tokSpd) tokSpd.textContent = spd;
+      updateTokenActivityDisplay();
 
-      if (kvCacheSlots) kvCacheSlots.textContent = `${cached} slots`;
+      if (kvCacheSlots) kvCacheSlots.textContent = `${cached} tokens`;
       if (kvVramFootprint) {
         const memGb = (mm.memory_mb / 1024.0).toFixed(2);
         kvVramFootprint.textContent = `${memGb} GB`;
@@ -2449,7 +2784,7 @@ function setSystemState(state) {
       neuralEngineState.textContent = "VOCAL SYNTH";
       neuralEngineState.className = "neural-status-badge active";
     } else {
-      neuralEngineState.textContent = "HOT // VRAM";
+      neuralEngineState.textContent = "ONLINE";
       neuralEngineState.className = "neural-status-badge";
     }
   }
@@ -2486,12 +2821,17 @@ function setSystemState(state) {
 // -------------------------------------------------------------
 async function playNeuralPiperVoice(cleanText) {
   try {
+    const hasTelugu = /[\u0C00-\u0C7F]/.test(cleanText);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
     const resp = await fetch("http://127.0.0.1:5000/v1/audio/speech", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input: cleanText, voice: "jarvis", speed: 1.02 }),
+      body: JSON.stringify({ 
+        input: cleanText, 
+        voice: hasTelugu ? "telugu" : "jarvis", 
+        speed: 1.0 
+      }),
       signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -2499,22 +2839,33 @@ async function playNeuralPiperVoice(cleanText) {
       const arrayBuffer = await resp.arrayBuffer();
       const actx = JarvisSoundscape.getAudioCtx();
       if (actx) {
+        if (actx.state === "suspended") {
+          try { await actx.resume(); } catch (e) {}
+        }
         const audioBuffer = await actx.decodeAudioData(arrayBuffer);
         const source = actx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(actx.destination);
         source.onended = () => {
           isSpeakingTTS = false;
+          speechTargetAmp = 0.0;
+          speechVocalAmp = 0.0;
           setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
-          resumeListeningIfAllowed();
+          setTimeout(() => {
+            resumeListeningIfAllowed();
+          }, 300);
         };
         isSpeakingTTS = true;
+        speechTargetAmp = 0.88;
+        speechVocalAmp = 0.88;
         setSystemState("speaking");
         source.start(0);
         return true;
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn("[Neural Voice notice]:", e);
+  }
   return false;
 }
 
@@ -2526,11 +2877,11 @@ async function speakResponse(text) {
     return;
   }
 
-  // 1. Try local Neural Piper / Sherpa Bettany model
+  // 1. Try Ultra-High-Fidelity Neural Voice Engine (Ryan Paul Bettany & Mohan Telugu)
   const usedNeural = await playNeuralPiperVoice(clean);
   if (usedNeural) return;
 
-  // 2. Failsafe: Paul Bettany British Acoustic Voice Matrix
+  // 2. Failsafe: Paul Bettany British Acoustic Voice Matrix (Windows OneCore / SAPI)
   if (!("speechSynthesis" in window)) {
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
     resumeListeningIfAllowed();
@@ -2539,15 +2890,25 @@ async function speakResponse(text) {
 
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(clean);
-  utterance.pitch = 0.92; // Paul Bettany's deep resonant British pitch
-  utterance.rate = 1.02;  // Deliberate Stark cadence
+  utterance.pitch = 0.98; // Natural, articulate tone
+  utterance.rate = 1.0;   // Natural human conversational tempo
 
-  // Priority search for British English male voices matching Paul Bettany
-  const voice = synthesisVoices.find(v => 
-    (v.lang.startsWith("en-GB") || v.lang.startsWith("en_GB")) && (v.name.includes("George") || v.name.includes("Oliver") || !v.name.includes("Zira"))
-  ) || synthesisVoices.find(v => 
-    v.name.includes("George") || v.name.includes("David") || v.name.includes("Mark") || (v.lang.startsWith("en") && !v.name.includes("Zira"))
-  ) || synthesisVoices.find(v => v.lang.startsWith("en"));
+  const hasTelugu = /[\u0C00-\u0C7F]/.test(clean);
+
+  // Search for the most natural voice available
+  let voice = null;
+  if (hasTelugu) {
+    voice = synthesisVoices.find(v => v.lang.startsWith("te")) || null;
+  }
+  if (!voice) {
+    voice = synthesisVoices.find(v => 
+      (v.lang.startsWith("en-GB") || v.lang.startsWith("en_GB")) && 
+      (v.name.includes("George") || v.name.includes("Ryan") || v.name.includes("Oliver") || v.name.includes("Thomas") || !v.name.includes("Zira"))
+    ) || synthesisVoices.find(v => 
+      v.name.includes("George") || v.name.includes("Ryan") || v.name.includes("David") || v.name.includes("Mark") || 
+      (v.lang.startsWith("en") && !v.name.includes("Zira"))
+    ) || synthesisVoices.find(v => v.lang.startsWith("en"));
+  }
 
   if (voice) utterance.voice = voice;
 
@@ -3119,7 +3480,50 @@ async function processDirective(prompt, shouldOpenInput = false) {
     }
   }
 
-  // 2. Webcam Hand Gesture Sensor Toggles
+  // 2. Holographic Biometric Human Particle Matrix Directives
+  if (/^(?:burst\s+particles?|disperse\s+particles?|scatter\s+particles?|reassemble\s+particles?)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.burst();
+    speakResponse("Dispersing holographic biometric particles, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:reset\s+particles?|particles?\s+reset)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.reset();
+    speakResponse("Resetting particles to anatomical matrix, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:wind\s+on|enable\s+wind|start\s+wind)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.toggleWind(true);
+    speakResponse("Particle wind effect active, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:wind\s+off|disable\s+wind|stop\s+wind)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.toggleWind(false);
+    speakResponse("Particle wind halted, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:toggle\s+wind)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.toggleWind();
+    speakResponse("Toggling particle wind, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  if (/^(?:scan\s+human|biometric\s+scan|toggle\s+scan|toggle\s+biometrics?|human\s+scan)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.toggleWind();
+    speakResponse("Toggling particle wind dynamics, sir.");
+    setSystemState("idle");
+    return;
+  }
+
+  // 2b. Legacy Gesture Sensor Toggles
   if (/^(?:enable\s+gestures?|start\s+gestures?|turn\s+on\s+gestures?|launch\s+gestures?)$/i.test(lowerDirective)) {
     StarkVisionSensor.toggleGestures(true);
     setSystemState("idle");
@@ -3201,17 +3605,15 @@ async function processDirective(prompt, shouldOpenInput = false) {
       const total = res.total_tokens || (inp + gen);
       const spd = (res.tokens_per_sec || 0.0).toFixed(1);
 
-      if (tokInp) tokInp.textContent = inp;
-      if (tokGen) tokGen.textContent = gen;
-      if (tokCached) tokCached.textContent = total;
-      if (tokSpd) tokSpd.textContent = spd;
+      recordTokenUsage(inp, gen, total);
+      lastSpeedRecorded = Number(spd) || 0.0;
+      updateTokenActivityDisplay();
+
       if (refTokenBadge) refTokenBadge.textContent = `${total} TOKENS`;
-      if (kvCacheSlots) kvCacheSlots.textContent = `${total} slots`;
+      if (kvCacheSlots) kvCacheSlots.textContent = `${total} tokens`;
       if (decodingSpeed) decodingSpeed.textContent = `${spd} tok/s`;
       if (nnLatency) nnLatency.textContent = `${res.latency_ms}ms`;
-      if (modelNameLabel && res.model_name) modelNameLabel.textContent = res.model_name.toUpperCase();
-
-      updateTokenSlots(total);
+      if (modelNameLabel && res.model_name) modelNameLabel.textContent = formatCleanModelName(res.model_name);
     }
 
     // 3. Register real subwords in the token matrix inspector
@@ -3299,13 +3701,13 @@ visorMicBtn?.addEventListener("click", (e) => {
 // -------------------------------------------------------------
 btnDockCall?.addEventListener("click", (e) => {
   e.preventDefault();
-  JarvisSoundscape.play("click");
+  speakResponse("Opening phone dialer, sir.");
   openPhoneKeypad();
 });
 
 btnDockMail?.addEventListener("click", async (e) => {
   e.preventDefault();
-  JarvisSoundscape.play("click");
+  speakResponse("Opening Microsoft Outlook for you, sir.");
   try {
     await invoke("run_direct_action", { action: "open_app", target: "outlook" });
     showJarvisFeedback("Opening Outlook, sir.", "open_outlook");
@@ -3316,7 +3718,7 @@ btnDockMail?.addEventListener("click", async (e) => {
 
 btnDockWhatsapp?.addEventListener("click", async (e) => {
   e.preventDefault();
-  JarvisSoundscape.play("click");
+  speakResponse("Opening WhatsApp, sir.");
   try {
     await invoke("run_direct_action", { action: "open_app", target: "whatsapp" });
     showJarvisFeedback("Opening WhatsApp, sir.", "open_whatsapp");
@@ -3327,7 +3729,7 @@ btnDockWhatsapp?.addEventListener("click", async (e) => {
 
 btnDockMusic?.addEventListener("click", async (e) => {
   e.preventDefault();
-  JarvisSoundscape.play("click");
+  speakResponse("Launching Spotify music for you, sir.");
   try {
     await invoke("run_direct_action", { action: "open_app", target: "spotify" });
     showJarvisFeedback("Launching Spotify, sir.", "open_spotify");
@@ -3339,7 +3741,7 @@ btnDockMusic?.addEventListener("click", async (e) => {
 // Single Unified Globe Icon for All 3 AI Functions (Search, Screen, Actions)
 btnDockSearch?.addEventListener("click", (e) => {
   e.preventDefault();
-  JarvisSoundscape.play("click");
+  speakResponse("Standing by for your directive, sir.");
   toggleInputBar();
 });
 

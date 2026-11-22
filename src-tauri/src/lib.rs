@@ -15,6 +15,7 @@ static LATEST_VOICE_TRANSCRIPTION: Mutex<Option<String>> = Mutex::new(None);
 static VOICE_NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
 static SPEECH_LISTENER_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 static ACTIVE_SPEECH_WORKER_PID: AtomicU32 = AtomicU32::new(0);
+static ACTIVE_TTS_WORKER_PID: AtomicU32 = AtomicU32::new(0);
 
 const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL_NAME: &str = "qwen3.5:2b";
@@ -23,6 +24,7 @@ const MODEL_NAME: &str = "qwen3.5:2b";
 const EMBEDDED_ENV: &str = include_str!("../../.env.local");
 const EMBEDDED_PHONE_CONFIG: &str = include_str!("../../phone_config.json");
 const EMBEDDED_SPEECH_WORKER: &str = include_str!("../../scripts/speech_worker.ps1");
+const EMBEDDED_TTS_WORKER: &str = include_str!("../../scripts/neural_tts_service.py");
 
 // =============================================================
 // PHASE 2: PERSISTENT VECTOR MEMORY MODULE (HYBRID RAG & COSINE STORE)
@@ -4779,7 +4781,7 @@ async fn handle_web_search(
     let groq_key = get_groq_api_key();
     let client = reqwest::Client::new();
 
-    let search_system_prompt = "You are J.A.R.V.I.S. Web Research Agent. Based on the provided live web intelligence, concisely answer the user's query in under 20 spoken words. Be precise, authoritative, and direct like Tony Stark's AI. Do not use markdown.";
+    let search_system_prompt = "You are J.A.R.V.I.S., Tony Stark's articulate and sophisticated AI assistant. Based on the live web intelligence provided, deliver a refined, natural, and insightful spoken answer for sir in 2-3 engaging sentences. Speak with Paul Bettany's polished British cadence and intelligence. Do not use markdown, bullet points, or robotic summaries.";
 
     let user_msg = if intelligence.is_empty() {
         format!("Answer this query based on your knowledge: {}", clean_query)
@@ -4793,8 +4795,8 @@ async fn handle_web_search(
             { "role": "system", "content": search_system_prompt },
             { "role": "user", "content": user_msg }
         ],
-        "temperature": 0.2,
-        "max_tokens": 65
+        "temperature": 0.35,
+        "max_tokens": 160
     });
 
     let mut reply = format!("Retrieved web results for {}.", clean_query);
@@ -4878,7 +4880,7 @@ async fn handle_screen_vision(
     let groq_key = get_groq_api_key();
     let client = reqwest::Client::new();
 
-    let vision_system_prompt = "You are J.A.R.V.I.S. Holographic Screen Vision Agent. You analyze the user's active display, UI elements, and screen pixels. Provide a concise, highly intelligent, spoken tactical analysis under 20 words as Tony Stark's assistant. Do not use markdown.";
+    let vision_system_prompt = "You are J.A.R.V.I.S. Vision Agent. Analyze the user's active display with tactical clarity and natural poise. Provide a sharp, articulate spoken summary in 1-2 polished sentences as Tony Stark's assistant. Do not use markdown.";
 
     let mut reply = format!("Active on screen: {}{}.", fg_window, if ui_elements.is_empty() { "" } else { " with input controls detected" });
     let mut eval_tokens = 15u32;
@@ -4899,7 +4901,7 @@ async fn handle_screen_vision(
                         "content": [
                             {
                                 "type": "text",
-                                "text": format!("Active Window: '{}'{}. User request: '{}'. Provide a concise tactical analysis of what is visible on screen under 20 words as Tony Stark's assistant. Do not use markdown.", fg_window, ui_summary, prompt)
+                                "text": format!("Active Window: '{}'{}. User request: '{}'. Provide a polished, natural tactical analysis of what is visible on screen in 1-2 spoken sentences as Tony Stark's assistant. Do not use markdown.", fg_window, ui_summary, prompt)
                             },
                             {
                                 "type": "image_url",
@@ -4910,8 +4912,8 @@ async fn handle_screen_vision(
                         ]
                     }
                 ],
-                "max_tokens": 70,
-                "temperature": 0.2
+                "max_tokens": 120,
+                "temperature": 0.3
             });
 
             if let Ok(res) = client
@@ -4954,8 +4956,8 @@ async fn handle_screen_vision(
                     { "role": "system", "content": vision_system_prompt },
                     { "role": "user", "content": vision_context }
                 ],
-                "temperature": 0.2,
-                "max_tokens": 60
+                "temperature": 0.3,
+                "max_tokens": 120
             });
 
             if let Ok(res) = client
@@ -5366,13 +5368,18 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: taur
 
     // Query Auto-Failover Multi-Model Fleet (Groq LPUs + Local Ollama Failsafe)
     let client = reqwest::Client::new();
-    let system_prompt = r#"You are J.A.R.V.I.S., Stark Industries AI controller on Windows.
-Reply ONLY with a single JSON object:
-{"action":"open_app"|"close_app"|"run_cmd"|"system_ctrl"|"none","target":"<app or cmd>","reply":"<spoken reply under 12 words>"}
+    let system_prompt = r#"You are J.A.R.V.I.S., Tony Stark's exceptionally intelligent, articulate, and suave AI assistant running on Windows.
+Your speech and communication must be exceptionally natural, professional, and composed—speaking with the refined poise and subtle wit of Paul Bettany's JARVIS.
+Never sound like a rigid robot, a text log, or a mechanical script.
+
+Always respond ONLY with a single valid JSON object:
+{"action":"open_app"|"close_app"|"run_cmd"|"system_ctrl"|"none","target":"<app or cmd>","reply":"<your spoken natural reply>"}
+
 Rules:
-- Execute ONLY the single specific job requested.
+- If the user asks a question, converses, or greets you, provide a charming, intelligent, and natural conversational response (1-3 sentences) with action="none" and target="".
+- If the user commands an action (e.g. open/close an app, system control), execute that specific job and confirm with natural elegance (e.g. "Right away, sir. Opening Visual Studio Code for you now." or "At once, sir. Locking your workstation.").
 - Target mapping: "vs code"/"vscode"->"code", "notepad"->"notepad", "calculator"/"calc"->"calc", "chrome"->"chrome", "terminal"->"wt".
-- Do not output markdown, reasoning, or text outside JSON."#;
+- Do not output markdown code blocks, reasoning traces, or text outside the single JSON object."#;
 
     let groq_key = get_groq_api_key();
 
@@ -5424,8 +5431,8 @@ Rules:
                     { "role": "system", "content": system_prompt },
                     { "role": "user", "content": prompt_clean }
                 ],
-                "temperature": 0.0,
-                "max_tokens": 60,
+                "temperature": 0.35,
+                "max_tokens": 200,
                 "response_format": { "type": "json_object" }
             });
 
@@ -5548,8 +5555,8 @@ Rules:
                 ],
                 "think": false,
                 "options": {
-                    "temperature": 0.0,
-                    "num_predict": 45,
+                    "temperature": 0.35,
+                    "num_predict": 120,
                     "num_thread": 10
                 },
                 "keep_alive": "-1",
@@ -5721,6 +5728,65 @@ fn get_speech_worker_path() -> String {
     let temp_file = std::env::temp_dir().join("jarvis_speech_worker.ps1");
     let _ = std::fs::write(&temp_file, EMBEDDED_SPEECH_WORKER);
     temp_file.to_string_lossy().to_string()
+}
+
+fn get_tts_worker_path() -> String {
+    for p in [
+        "scripts/neural_tts_service.py",
+        "./scripts/neural_tts_service.py",
+        "../scripts/neural_tts_service.py",
+        "C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/neural_tts_service.py",
+    ] {
+        if std::path::Path::new(p).exists() {
+            return p.to_string();
+        }
+    }
+    let temp_file = std::env::temp_dir().join("jarvis_neural_tts_service.py");
+    let _ = std::fs::write(&temp_file, EMBEDDED_TTS_WORKER);
+    temp_file.to_string_lossy().to_string()
+}
+
+fn start_neural_tts_worker() {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(600))
+        .build();
+    if let Ok(c) = client {
+        if let Ok(resp) = c.get("http://127.0.0.1:5000/health").send() {
+            if resp.status().is_success() {
+                println!("[Neural TTS] Service already running on port 5000");
+                return;
+            }
+        }
+    }
+
+    let script_path = get_tts_worker_path();
+    // 1. Try Python 3.14 via Windows py launcher (configured with kokoro-onnx)
+    let mut cmd_py = silent_command("py");
+    cmd_py.args(["-3.14", &script_path, "5000"]);
+    if let Ok(child) = cmd_py.spawn() {
+        ACTIVE_TTS_WORKER_PID.store(child.id(), Ordering::SeqCst);
+        println!("[Neural TTS] Studio voice engine launched with py -3.14 PID {}", child.id());
+        return;
+    }
+
+    // 2. Direct Python 3.14 path fallback
+    if std::path::Path::new("C:\\Python314\\python.exe").exists() {
+        let mut cmd_py314 = silent_command("C:\\Python314\\python.exe");
+        cmd_py314.args([&script_path, "5000"]);
+        if let Ok(child) = cmd_py314.spawn() {
+            ACTIVE_TTS_WORKER_PID.store(child.id(), Ordering::SeqCst);
+            println!("[Neural TTS] Studio voice engine launched with C:\\Python314\\python.exe PID {}", child.id());
+            return;
+        }
+    }
+
+    // 3. System python fallback
+    let mut cmd = silent_command("python");
+    cmd.args([&script_path, "5000"]);
+    if let Ok(child) = cmd.spawn() {
+        ACTIVE_TTS_WORKER_PID.store(child.id(), Ordering::SeqCst);
+        println!("[Neural TTS] Studio voice engine launched with PID {}", child.id());
+    }
 }
 
 fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
@@ -6295,6 +6361,11 @@ pub fn run() {
                     let mut k = silent_command("taskkill");
                     let _ = k.args(["/F", "/T", "/PID", &pid.to_string()]).output();
                 }
+                let tts_pid = ACTIVE_TTS_WORKER_PID.load(Ordering::SeqCst);
+                if tts_pid > 0 {
+                    let mut k = silent_command("taskkill");
+                    let _ = k.args(["/F", "/T", "/PID", &tts_pid.to_string()]).output();
+                }
             }
         })
         .setup(|app| {
@@ -6350,6 +6421,11 @@ pub fn run() {
             let speech_app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 start_speech_listener_worker(speech_app_handle);
+            });
+
+            // Spawn studio neural voice synthesis service
+            std::thread::spawn(|| {
+                start_neural_tts_worker();
             });
 
             Ok(())

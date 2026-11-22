@@ -102,12 +102,16 @@ flowchart TD
    - *Role*: 128-dimensional L2-normalized vector embeddings with cosine similarity ranking and persistent JSON store for long-term fact retention.
    - *Trigger*: *"remember [fact]"*, *"recall [topic]"*, or IPC endpoints `save_memory_item` / `get_memory_items`.
 
-9. **Offline Wake-Word Detection & Neural TTS** - **ACTIVE**:
-   - *Role*: Background keyword spotting for "Hey Jarvis" / "Jarvis" emitting `jarvis://wake_word`, with dual speech delivery: local offline neural Piper TTS model (`localhost:5000`) and Paul Bettany British acoustic voice matrix (`en-GB`, pitch 0.92, rate 1.02).
+9. **Ultra-Realistic Studio Neural TTS (Kokoro-82M & Multilingual Matrix)** - **ACTIVE**:
+   - *Role*: Ultra-high-fidelity local neural speech generation powered by **Kokoro-82M** (`kokoro-v0_19.onnx` + `voices.bin`) running via ONNX Runtime at `http://127.0.0.1:5000/v1/audio/speech`. Default voice is **`am_adam`** (expressive American Male), with British options (`bm_george` / `bm_lewis`) available offline. Seamlessly auto-detects Telugu Unicode (`\u0c00-\u0c7f`) to route to `te-IN-MohanNeural` and preserves Edge-TTS as cloud fallback.
 
 10. **Windows Auto-Startup Manager** - **ACTIVE**:
     - *Role*: Native Windows Registry Run key automation (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`), enabling or disabling auto-launch on Windows login.
     - *Trigger*: *"start with windows"*, *"enable auto startup"*, *"disable auto startup"*, or IPC endpoint `set_auto_startup`.
+
+11. **Stark High-Density Human Particles Engine (Python Particle Wind Technique)** - **ACTIVE**:
+    - *Role*: Ultra-high-density 32,000+ particle human point cloud with real-time dynamic wind gusts, thermal aura streamers, and interactive mouse blast physics. Based on the viral Python particles wind technique (`scripts/particle_wind.py` with Pygame & NumPy), features 32,000 fine phosphor particles mapped with authentic anatomical shading, 2,200 swirling energy aura particles (cyan, electric blue, and gold), Hooke's Law spring-damping restoration, and interactive cursor wind dispersal.
+    - *Trigger*: *"burst particles"*, *"reset particles"*, *"wind on"*, *"wind off"*, *"toggle wind"*, UI buttons `RESET`, `BURST`, `WIND`, or running `python scripts/particle_wind.py`.
 
 ---
 
