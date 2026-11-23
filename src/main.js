@@ -1253,11 +1253,11 @@ const NaviHolisticGestureTracker = (() => {
     if (state === "active") {
       camToggleBtn.classList.add("enabled");
       camToggleBtn.classList.remove("error", "starting");
-      if (camBtnLabel) camBtnLabel.textContent = "CAM: ON";
+      if (camBtnLabel) camBtnLabel.textContent = "ON";
     } else if (state === "starting") {
       camToggleBtn.classList.remove("enabled", "error");
       camToggleBtn.classList.add("starting");
-      if (camBtnLabel) camBtnLabel.textContent = "CAM: ...";
+      if (camBtnLabel) camBtnLabel.textContent = "...";
     } else {
       camToggleBtn.classList.remove("enabled", "starting");
       if (state === "error") {
@@ -1265,7 +1265,7 @@ const NaviHolisticGestureTracker = (() => {
       } else {
         camToggleBtn.classList.remove("error");
       }
-      if (camBtnLabel) camBtnLabel.textContent = "CAM: OFF";
+      if (camBtnLabel) camBtnLabel.textContent = "OFF";
     }
   }
 
@@ -1776,7 +1776,7 @@ const NaviHolisticGestureTracker = (() => {
       ctx.fillStyle = "#38bdf8";
       ctx.shadowColor = "#38bdf8";
       ctx.shadowBlur = 8;
-      ctx.fillText("CAM: OFF", cx, cy + 38);
+      ctx.fillText("OFF", cx, cy + 38);
     }
     ctx.shadowBlur = 0;
     ctx.textAlign = "left";

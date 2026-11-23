@@ -157,32 +157,16 @@
         <div class="hud-corner-bracket bottom-left"></div>
         <div class="hud-corner-bracket bottom-right"></div>
 
-        <!-- Sleek Header: Holistic Landmarker + Gesture Recognizer -->
+        <!-- Sleek Header: Just Title and ON/OFF -->
         <div class="gadget-top gesture-panel-top">
           <div class="gesture-title-group">
             <span class="gesture-blue-beacon" id="holistic-pulse-beacon"></span>
-            <div class="gesture-title-wrap">
-              <span class="gadget-title gesture-blue-title">HOLISTIC LANDMARKER</span>
-              <span class="gesture-sub-badge">GESTURE RECOGNIZER</span>
-            </div>
+            <span class="gadget-title gesture-blue-title">HOLISTIC LANDMARKER</span>
           </div>
           <div class="holistic-controls-group">
-            <div class="holistic-mode-selector" id="holistic-mode-selector" title="Switch Sensor View Mode">
-              <button type="button" class="holistic-mode-pill active" data-mode="holistic" title="View 543 Holistic Landmarks (Face 468, Pose 33, Hands 42)">HOLISTIC</button>
-              <button type="button" class="holistic-mode-pill" data-mode="gestures" title="View Hand Gestures & Tracking Box">GESTURES</button>
-              <button type="button" class="holistic-mode-pill" data-mode="combined" title="Dual Real-Time Mode">ALL</button>
-            </div>
-            <button type="button" class="holistic-cam-btn" id="holistic-cam-toggle-btn" title="Toggle Real Physical Webcam Stream (Lenovo FHD Webcam)">
-              <span class="cam-icon">📷</span>
-              <span id="holistic-cam-btn-label">CAM: OFF</span>
-            </button>
-            <button type="button" class="holistic-flip-btn" id="holistic-flip-btn" title="Toggle Mirror (Selfie / Normal View)">
-              <span class="flip-icon">🪞</span>
-              <span id="holistic-flip-btn-label">FLIP: OFF</span>
-            </button>
-            <button type="button" class="gesture-cam-toggle-btn enabled" id="holistic-track-toggle-btn" title="Toggle Tracking Sensor">
-              <span class="toggle-dot" id="holistic-toggle-dot"></span>
-              <span id="holistic-track-btn-label">TRACK: ON</span>
+            <button type="button" class="holistic-cam-btn" id="holistic-cam-toggle-btn" title="Toggle Camera Sensor">
+              <span class="toggle-dot" id="holistic-cam-toggle-dot"></span>
+              <span id="holistic-cam-btn-label">OFF</span>
             </button>
           </div>
         </div>
@@ -194,54 +178,6 @@
             <video id="holistic-webcam-video" class="holistic-webcam-video" autoplay playsinline muted></video>
             <!-- Real-Time MediaPipe Holistic Landmarker & Gesture Canvas -->
             <canvas id="holistic-gesture-canvas" class="gesture-recognize-canvas holistic-recognize-canvas"></canvas>
-          </div>
-
-          <!-- Holographic Floating HUD Overlay Badges -->
-          <div class="human-hud-overlay holistic-hud-overlay">
-            <div class="human-hud-badge top-left-badge">
-              <span class="hud-chip-tag">PIPELINE</span>
-              <span class="hud-chip-val cyan" id="holistic-pipeline-status">HOLISTIC v0.10</span>
-            </div>
-            <div class="human-hud-badge top-right-badge">
-              <span class="hud-chip-tag">LANDMARKS</span>
-              <span class="hud-chip-val emerald" id="holistic-landmark-count">543 PTS (ACTIVE)</span>
-            </div>
-            <div class="human-hud-badge bottom-left-badge">
-              <span class="hud-chip-tag">ACTIVE GESTURE</span>
-              <span class="hud-chip-val cyan" id="holistic-active-gesture">✌️ VICTORY (99.2%)</span>
-            </div>
-            <div class="human-hud-badge bottom-right-badge">
-              <span class="hud-chip-tag">LATENCY / FPS</span>
-              <span class="hud-chip-val purple" id="holistic-fps-val">12ms // 60 FPS</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Gesture Recognition Triggers Strip -->
-        <div class="gesture-triggers-strip" id="gesture-triggers-strip">
-          <div class="gesture-trigger-item active" data-gesture="victory" title="Victory / Peace Gesture">
-            <span class="g-icon">✌️</span>
-            <span class="g-name">VICTORY</span>
-          </div>
-          <div class="gesture-trigger-item" data-gesture="open_palm" title="Open Palm">
-            <span class="g-icon">👋</span>
-            <span class="g-name">PALM</span>
-          </div>
-          <div class="gesture-trigger-item" data-gesture="fist" title="Closed Fist">
-            <span class="g-icon">✊</span>
-            <span class="g-name">FIST</span>
-          </div>
-          <div class="gesture-trigger-item" data-gesture="pointing" title="Pointing Index">
-            <span class="g-icon">☝️</span>
-            <span class="g-name">POINT</span>
-          </div>
-          <div class="gesture-trigger-item" data-gesture="pinch" title="Pinch / Precision Select">
-            <span class="g-icon">👌</span>
-            <span class="g-name">PINCH</span>
-          </div>
-          <div class="gesture-trigger-item" data-gesture="arc_strike" title="Love-You / Energy Blast">
-            <span class="g-icon">🤟</span>
-            <span class="g-name">BLAST</span>
           </div>
         </div>
       </div>
