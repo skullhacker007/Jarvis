@@ -3,6 +3,9 @@ from core.context import ContextCompressor, TemporalContext
 from core.llm_client import LLMRouter
 from core.persona import build_system_prompt, SYSTEM_PERSONA
 from core.telemetry import PipelineTelemetry
+from core.speculative import SpeculativeTurnAgent
+from core.task_planner import TaskPlanner
+from core.skills_registry import SkillsRegistry, CustomSkill
 
 
 class TestCoreModules(unittest.TestCase):
@@ -60,6 +63,50 @@ class TestCoreModules(unittest.TestCase):
         tel.mark_first_token()
         tel.mark_first_audio()
         self.assertGreater(tel.t_first_audio, 0.0)
+
+    def test_speculative_turn_agent(self):
+        agent = SpeculativeTurnAgent()
+        agent.current_prompt_prefix = "open vs code"
+        agent.draft_text = '{"action":"open_app","target":"code"}'
+        agent.is_drafting = True
+
+        # Test match & promotion
+        promoted = agent.promote_draft_if_matches("open vs code please")
+        self.assertEqual(promoted, '{"action":"open_app","target":"code"}')
+        self.assertFalse(agent.is_drafting)
+
+        # Test mismatch & discard
+        agent.current_prompt_prefix = "open vs code"
+        agent.draft_text = '{"action":"open_app"}'
+        agent.is_drafting = True
+        discarded = agent.promote_draft_if_matches("what is the weather")
+        self.assertIsNone(discarded)
+        self.assertFalse(agent.is_drafting)
+
+    def test_task_planner_decomposition(self):
+        steps = TaskPlanner.decompose_directive("open notepad and then search for quantum computing")
+        self.assertEqual(len(steps), 2)
+        self.assertEqual(steps[0].action, "open_app")
+        self.assertEqual(steps[0].target, "notepad")
+        self.assertEqual(steps[1].action, "web_search")
+        self.assertIn("quantum computing", steps[1].target)
+
+    def test_skills_registry(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            reg = SkillsRegistry(skills_dir=td)
+            skill = CustomSkill(
+                skill_id="standup_macro",
+                name="Morning Standup",
+                description="Opens slack and calendar",
+                triggers=["morning standup", "start standup"],
+                action="open_app",
+                target_template="slack"
+            )
+            reg.register_skill(skill)
+            matched = reg.find_matching_skill("Jarvis please start standup")
+            self.assertIsNotNone(matched)
+            self.assertEqual(matched.skill_id, "standup_macro")
 
 
 if __name__ == "__main__":

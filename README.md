@@ -52,27 +52,40 @@
 ### 3. Windows DPAPI Key Vault & Enterprise Security
 * **Windows Credential Manager / DPAPI**: Directly interfaces with Windows `crypt32.dll` (`CryptProtectData` & `CryptUnprotectData`) to encrypt API keys at rest in `data/vault.enc`. Keys are mathematically bound to the current Windows user login, eliminating plaintext `.env` risks.
 * **Cross-Language Decryption**: Seamlessly loaded and decrypted by both Rust native backend and Python intelligence runtime via standard Win32 crypt APIs.
+* **Kernel Job Object Binding**: Binds all child worker processes (`speech_worker.ps1`, `neural_tts_service.py`) to Windows kernel Job Objects with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, ensuring zero orphan or zombie processes on app exit.
 
-### 3. Long-Term Memory & Hybrid RAG (Oracle Cloud OCI)
+### 4. Long-Term Memory & Hybrid RAG (Oracle Cloud OCI)
 * **OCI PostgreSQL + `pgvector` Cluster (Hyderabad)**: Unified relational storage for user profiles, ongoing tasks, conversation logs, and 1536-dim vector embeddings.
 * **Mem0 Personal Memory Store**: Automatically tracks facts, user preferences, and habits across reboots.
 * **LlamaIndex Hybrid RAG**: Vector similarity + full-text SQL search with strict citations (file, page, and excerpt quote).
-* **Resilient Write-Ahead Buffer & Dead-Letter Queue**: Writes are locally buffered to `data/cache/offline_sync_queue.jsonl` during network outages, featuring exponential backoff and dead-letter queuing for unrecoverable errors.
+* **Resilient Write-Ahead Buffer & Dead-Letter Queue**: Writes are locally buffered to `data/cache/offline_sync_queue.jsonl` during network outages, featuring exponential backoff, dead-letter queuing, and a native Tauri `sync_memory_cloud` sync command.
 
-### 4. Hardware Telemetry & Token Activity Matrix
+### 5. Hardware Telemetry & Token Activity Matrix
 * **Hardware Telemetry (Sysinfo & Win32)**: Live CPU kernel utilization, RAM allocation, GPU performance counter sampling, and network adapter RX/TX transfer bandwidth.
 * **Pipeline Telemetry Tracker**: Actively logs millisecond latencies from speech end to STT completion, LLM TTFT, and TTS TTFA.
 * **Token Activity Matrix**: 256-slot dynamic grid visualizing prompt tokens, generated tokens, and decoding speed.
+* **Page Visibility Frame Throttling**: Automatically throttles canvas rendering to ~5 FPS when the desktop window is hidden or minimized, dropping idle power draw to near zero.
 
-### 5. Holographic HUD Visor & Phone Sync Radar
+### 6. Holographic HUD Visor & Phone Sync Radar
 * **Semi-Transparent HUD Overlay**: Holographic notification toasts with slide-in animations.
 * **High-Contrast Dynamic QR Pairing**: Generates standard 37x37 QR codes with quiet zone padding rendered directly to an HTML5 canvas for rapid smartphone scanning.
 * **Multi-Channel ADB Device Radar**: Discovers mobile devices via mDNS services (`_adb._tcp`, `_adb-tls-connect._tcp`), active USB, or static Wi-Fi TCP port 5555. Automatically detects active device model strings (`Pixel 9 Pro`, `Samsung Galaxy`, etc.).
 
-### 6. Windows UI Automation (UIA) & nAvI Labs Particle Matrix
-* **Zero-Coordinate Element Clicking**: Inspects foreground windows via Win32 `EnumChildWindows`, computing bounding rectangles to target controls by name without pixel coordinates.
-* **32,000 True-Color Point Cloud**: Direct canvas pixel-buffer rendering at sustained 60 FPS with micro-quantum particle shimmer.
-* **5 Holographic Avatars**: nAvI Labs (`navi`), Optimus Prime (`optimus`), Bumblebee (`bumblebee`), Spider-Man (`spiderman`), and Tactical Mecha Robo (`mecha`).
+### 7. Multimodal Screen Vision & Tactical Visual Intelligence
+* **Google Gemini Flash Vision Primary**: Real-time in-memory screen frame capture encoded to base64 and streamed directly to `gemini-2.5-flash` for instant visual understanding and code debugging.
+* **Groq Vision & UI Accessibility Fallbacks**: Seamless failover to Groq LPU Vision and Win32 UI accessibility tree inspection if network conditions fluctuate.
+
+### 8. Speculative Preemptive Generation & Draft Promotion
+* **Speculative Turn Agent**: Initiates speculative response generation during natural user pauses (>350ms) before the turn commits.
+* **Draft Promotion & Auto-Discard**: If the user speech continues with an alternate intent, the draft is silently aborted. If the turn matches prefix, the draft is promoted to the audio pipeline, slashing TTFA by 200-450ms.
+
+### 9. Autonomous Task Planner & Chained Execution Engine
+* **Compound Directive Decomposition**: Parses complex multi-step instructions (e.g. "open notepad and then search for quantum computing") into ordered atomic steps.
+* **Compensatory Rollback Stack**: Executes chained tasks sequentially via `execute_task_pipeline` with status tracking and automatic rollback if a critical step fails.
+
+### 10. Dynamic Skills & Plugins Registry
+* **Runtime Macro Extensibility**: Discovers and hot-loads custom skill manifests from `skills/*.json` without requiring application rebuilds.
+* **Custom Action Handlers**: Maps custom voice triggers directly to workstation actions, layouts, and system controls.
 
 ---
 
@@ -93,7 +106,14 @@ Jarvis/
 │   ├── context.py                  # Dynamic real-time date/time/hardware context
 │   ├── persona.py                  # Socratic debate & conversational persona
 │   ├── llm_client.py               # 3-Tier Router (NVIDIA 70B -> Gemini -> Ollama)
+│   ├── speculative.py              # Speculative draft & discard turn agent
+│   ├── task_planner.py             # Autonomous multi-step compound action planner
+│   ├── skills_registry.py          # Dynamic skill loader & macro registry
 │   └── telemetry.py                # Millisecond TTFA & latency tracker
+│
+├── skills/                         # Dynamic user-extensible skill manifests & macros
+│   ├── developer_workspace.json    # Dev layout macro (VS Code + Chrome split)
+│   └── system_diagnostics.json     # Full hardware telemetry report macro
 │
 ├── voice/                          # LiveKit Real-Time Audio Pipeline
 │   ├── audio_device_binding.py     # Windows microphone & speaker hardware capture
@@ -136,7 +156,7 @@ Jarvis/
 │   ├── main.js                     # Master coordinator and lifecycle orchestration
 │   ├── styles.css                  # Sci-fi holographic neon styling
 │   ├── assets/                     # Sound assets & human_particles_preset.js
-│   └── modules/                    # Focused ES Modules (ai, dialer, notifications, soundscape, telemetry)
+│   └── modules/                    # Focused ES Modules (ai, dialer, notifications, planner, soundscape, telemetry)
 │
 └── src-tauri/                      # Native Rust Core Backend
     ├── Cargo.toml                  # Rust dependencies (Tauri, Sysinfo, Reqwest, Tokio, Windows)

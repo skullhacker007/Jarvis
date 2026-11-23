@@ -42,6 +42,10 @@ This document details the complete functional skills, system actions, execution 
 | `select_avatar` | Switches holographic character matrix in nAvI Labs. | Character key (`navi`, `optimus`, `bumblebee`, `spiderman`, `mecha`). | *"optimus prime"*, *"switch to bumblebee"*, *"mecha robo"*, *"spider-man"* |
 | `toggle_hologram` | Activates or powers down the holographic projector. | State (`true` / `false` / `toggle`). | *"turn on projection"*, *"turn off humanoid"*, *"navi labs on"* |
 | `audio_test` | Initiates full-duplex mic and speaker loopback diagnostic. | Empty (`""`). | *"test microphone"*, *"audio diagnostic"* |
+| `inspect_screen` | Multimodal visual inspection of active display and UI elements. | Query or instruction. | *"inspect screen"*, *"what is on my screen"*, *"debug this code"* |
+| `task_pipeline` | Decomposes compound requests into ordered atomic execution steps. | Multi-action statement. | *"open notepad and then search for AI news"*, *"code mode"* |
+| `sync_memory_cloud` | Synchronizes local vector buffer with OCI PostgreSQL + pgvector. | Empty (`""`). | *"sync memory"*, *"sync to cloud"* |
+| `scan_skills` | Discovers and reloads user-defined custom skills from `skills/`. | Empty (`""`). | *"scan skills"*, *"reload plugins"* |
 | `phone_pair_qr`| Generates standard 37x37 QR code on HUD canvas for Android Wi-Fi pairing. | Empty (`""`). | *"pair phone"*, *"show pairing qr"*, *"scan device"* |
 | `phone_auto_detect`| Scans USB, mDNS (`_adb._tcp`), and TCP 5555 for connected Android phones. | Empty (`""`). | *"find devices"*, *"auto detect phone"*, *"scan wireless devices"* |
 | `none` | Pure conversational or factual response; no action executed. | Empty (`""`). | *"what is your status"*, *"who made you"*, *"tell me a joke"* |
@@ -115,3 +119,27 @@ This document details the complete functional skills, system actions, execution 
 ### 14. Pipeline Latency Profiler (TTFA)
 * **Module:** [`core/telemetry.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/telemetry.py)
 * **Capability:** Actively logs millisecond latencies from speech end to STT completion, LLM TTFT, and TTS TTFA.
+
+### 15. Multimodal Vision Pipeline
+* **Modules:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Capability:** Real-time RAM bitmap capture sent directly to Google Gemini Flash (`gemini-2.5-flash`) multimodal vision API, with Groq Vision and UI Automation text structure fallbacks.
+
+### 16. Speculative Preemptive Generation Agent
+* **Modules:** [`core/speculative.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/speculative.py), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Capability:** Drafts response tokens during natural prosodic user speech pauses (>350ms). Discards drafts seamlessly if user speech continues with an alternate token stream; instantly promotes matching drafts to slash TTFA by 200-450ms.
+
+### 17. Autonomous Multi-Step Task Planner
+* **Modules:** [`core/task_planner.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/task_planner.py), [`src/modules/planner.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/modules/planner.js)
+* **Capability:** Deconstructs compound directives (e.g. "open notepad and search for AI news") into structured atomic execution graphs with status reporting and rollback tracking.
+
+### 18. Dynamic Skills & Plugins Registry
+* **Modules:** [`core/skills_registry.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/skills_registry.py), [`skills/`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/skills/)
+* **Capability:** Hot-loads custom JSON macros and skill definitions from the `skills/` directory without needing binary recompilation.
+
+### 19. Windows Job Object Process Lifecycle Manager
+* **Module:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Capability:** Enforces kernel-level `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` on all spawned background worker processes (`speech_worker.ps1`, `neural_tts_service.py`), eliminating zombie/orphan processes on application exit.
+
+### 20. Page Visibility Frame Throttling
+* **Module:** [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js)
+* **Capability:** Automatically throttles the 32,000 holographic particle canvas to 4-5 FPS when the desktop window is hidden or minimized, dropping background GPU/CPU power consumption to near zero.

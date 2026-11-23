@@ -1,0 +1,13 @@
+{
+  "id": "developer_workspace",
+  "name": "Developer Workspace Layout",
+  "description": "Launches VS Code and opens Chrome snapped side-by-side for software engineering.",
+  "triggers": [
+    "developer workspace",
+    "dev layout",
+    "code mode",
+    "start coding"
+  ],
+  "action": "open_app",
+  "target_template": "code"
+}

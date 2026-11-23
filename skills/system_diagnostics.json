@@ -1,0 +1,13 @@
+{
+  "id": "system_diagnostics",
+  "name": "Full Hardware Diagnostics",
+  "description": "Performs CPU, RAM, network, and battery telemetry check with spoken report.",
+  "triggers": [
+    "system diagnostics",
+    "hardware diagnostic",
+    "full diagnostic",
+    "check hardware"
+  ],
+  "action": "system_ctrl",
+  "target_template": "diagnostics"
+}

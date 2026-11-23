@@ -7,6 +7,7 @@ import { showToast, startPhoneNotificationSync } from "./modules/notifications.j
 import { JarvisDialer } from "./modules/dialer.js";
 import { fetchSystemTelemetry, fetchPhoneTelemetry, formatBytesToGb, formatNetworkRate } from "./modules/telemetry.js";
 import { JarvisNeuralClient } from "./modules/ai.js";
+import { JarvisTaskPlanner } from "./modules/planner.js";
 
 function getTauriInvoke() {
   if (typeof window !== "undefined") {
@@ -850,6 +851,10 @@ const StarkBiometricHologram = (() => {
   // 60 FPS HOLOGRAPHIC MATERIALIZATION & PARTICLE RENDER LOOP
   // -------------------------------------------------------------
   function renderLoop(now) {
+    if (document.hidden) {
+      setTimeout(() => { animId = requestAnimationFrame(renderLoop); }, 250);
+      return;
+    }
     animId = requestAnimationFrame(renderLoop);
 
     if (!canvasEl || !ctx) return;
@@ -1339,6 +1344,10 @@ const StarkCenterHologramEngine = (() => {
   }
 
   function renderLoop(now) {
+    if (document.hidden) {
+      setTimeout(() => { animId = requestAnimationFrame(renderLoop); }, 250);
+      return;
+    }
     animId = requestAnimationFrame(renderLoop);
 
     if (!isDeployed) {
@@ -2710,6 +2719,10 @@ function getNodeY(nodeIdx, count, height) {
 }
 
 function drawNeuralNetwork() {
+  if (document.hidden) {
+    setTimeout(() => { requestAnimationFrame(drawNeuralNetwork); }, 350);
+    return;
+  }
   if (!neuralCanvas || !neuralCtx || neuralCanvas.width <= 0) {
     requestAnimationFrame(drawNeuralNetwork);
     return;
@@ -5409,6 +5422,7 @@ window.invokeTauri = invoke;
 window.JarvisSoundscape = JarvisSoundscape;
 window.showToast = showToast;
 window.JarvisDialer = JarvisDialer;
+window.JarvisTaskPlanner = JarvisTaskPlanner;
 
 // Neural Streaming & Wake-Word Event Integration
 const jarvisNeural = new JarvisNeuralClient(invoke);

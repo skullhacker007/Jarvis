@@ -71,6 +71,9 @@ flowchart LR
     Dispatcher --> Agent5[UIA Agent\nZero-Coord Win32 Accessibility]
     Dispatcher --> Agent6[Phone Sync Radar Agent\nADB QR & mDNS Auto-Detect]
     Dispatcher --> Agent7[Sentinel Agent\nHardware & Latency Profiler]
+    Dispatcher --> Agent8[Vision Agent\nGemini Multimodal Screen Analysis]
+    Dispatcher --> Agent9[Task Planner Agent\nChained Execution & Rollback Engine]
+    Dispatcher --> Agent10[Skills Agent\nDynamic Registry & Macro Loader]
 ```
 
 ### Agent 1: LiveKit Voice Agent & Anti-Collision Arbiter
@@ -87,19 +90,21 @@ flowchart LR
   * **Snappy Repetition Support:** Responsive 800ms debounce prevents parallel engine collisions while immediately catching repeated user commands.
 
 ### Agent 2: Speculative Preemptive Generation Agent
-* **Responsibility:** Begins speculative draft generation during conversational pauses before the user's turn is 100% closed.
-* **Conflict Resolution:** If the user resumes speaking, the speculative draft is discarded with zero disruption to the dialogue.
+* **Locations:** [`core/speculative.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/speculative.py), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Responsibility:** Observes interim speech tokens and begins speculative draft generation during conversational pauses (>350ms) before the user's turn is closed.
+* **Conflict Resolution & Promotion:** If the user resumes speaking with an altered directive, the draft is immediately aborted. If the finalized turn matches the prefix, the draft is promoted to the TTS pipeline, shaving 200-450ms from response latency.
 
 ### Agent 3: Memory Persistence & RAG Agent
-* **Locations:** [`memory/mem0_store.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/mem0_store.py), [`memory/rag_engine.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/rag_engine.py), [`memory/sync_queue.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/sync_queue.py)
-* **Responsibility:** Manages Mem0 user profile extraction, LlamaIndex hybrid RAG citations, and OCI PostgreSQL synchronization with local write-ahead buffering and dead-letter queue resilience.
+* **Locations:** [`memory/mem0_store.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/mem0_store.py), [`memory/rag_engine.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/rag_engine.py), [`memory/sync_queue.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/sync_queue.py), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Responsibility:** Manages Mem0 user profile extraction, LlamaIndex hybrid RAG citations, and OCI PostgreSQL synchronization with local write-ahead buffering and dead-letter queue resilience via `sync_memory_cloud`.
 
 ### Agent 4: Web Research Agent
-* **Location:** [`tools/web_search.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/tools/web_search.py)
-* **Responsibility:** Executes real-time web searches via Tavily, returning verified facts and source URLs.
+* **Locations:** [`tools/web_search.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/tools/web_search.py), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Responsibility:** Executes real-time web searches via Tavily API with source URLs attached to every claim, failing over to DuckDuckGo HTML/API when offline.
 
 ### Agent 5: UIA & Desktop Automation Agent
-* **Responsibility:** Inspects foreground windows via Win32 `EnumChildWindows`, computing bounding rectangles to target controls by name without pixel coordinates.
+* **Locations:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Responsibility:** Inspects foreground windows via Win32 `EnumChildWindows`, computing bounding rectangles to target controls by name without pixel coordinates, with kernel Job Object lifecycle management.
 
 ### Agent 6: Phone Sync & Device Radar Agent
 * **Locations:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs), [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js)
@@ -110,4 +115,16 @@ flowchart LR
 
 ### Agent 7: Sentinel Hardware & Telemetry Agent
 * **Locations:** [`core/telemetry.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/telemetry.py), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
-* **Responsibility:** Continuously samples CPU kernel utilization, RAM allocation, GPU counters, and network bandwidth, while measuring millisecond TTFA (STT -> LLM TTFT -> TTS TTFA).
+* **Responsibility:** Continuously samples CPU kernel utilization, RAM allocation, GPU counters, and network bandwidth, while measuring millisecond TTFA (STT -> LLM TTFT -> TTS TTFA) with Page Visibility frame throttling.
+
+### Agent 8: Multimodal Vision Agent
+* **Locations:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Responsibility:** Real-time in-memory screen capture with base64 encoding sent directly to Google Gemini Flash Vision (`gemini-2.5-flash`), with Groq Vision and Win32 UI accessibility tree analysis fallback.
+
+### Agent 9: Autonomous Task Planner & Chained Execution Agent
+* **Locations:** [`core/task_planner.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/task_planner.py), [`src/modules/planner.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/modules/planner.js), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Responsibility:** Breaks down compound multi-action user requests into dependency-sequenced atomic steps (`execute_task_pipeline`), tracking status and providing compensatory rollback operations on failure.
+
+### Agent 10: Dynamic Skills & Macro Registry Agent
+* **Locations:** [`core/skills_registry.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/skills_registry.py), [`skills/`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/skills/)
+* **Responsibility:** Hot-loads custom JSON macros and skill definitions from the `skills/` directory without requiring application restarts or binary rebuilds.

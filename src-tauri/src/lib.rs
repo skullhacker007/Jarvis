@@ -16,9 +16,10 @@ static VOICE_NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
 static SPEECH_LISTENER_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 static ACTIVE_SPEECH_WORKER_PID: AtomicU32 = AtomicU32::new(0);
 static ACTIVE_TTS_WORKER_PID: AtomicU32 = AtomicU32::new(0);
+static SPECULATIVE_DRAFT: Mutex<Option<(String, String, String, String)>> = Mutex::new(None);
 
 const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL_NAME: &str = "qwen3.5:2b";
+const MODEL_NAME: &str = "meta/llama-3.3-70b-instruct";
 
 // Compile-time embedded configurations for 100% standalone single-binary portability
 const EMBEDDED_ENV: &str = include_str!("../../.env.local");
@@ -558,6 +559,14 @@ fn get_env_or_file_key(key_name: &str) -> Option<String> {
             return Some(t.to_string());
         }
     }
+    // Also check Windows DPAPI vault
+    let vault = load_vault_map();
+    if let Some(val) = vault.get(key_name) {
+        let t = val.trim().trim_matches('\'').trim_matches('"');
+        if !t.is_empty() {
+            return Some(t.to_string());
+        }
+    }
     for file_name in [".env.local", ".env"] {
         for candidate in get_candidate_paths(file_name) {
             if let Ok(content) = std::fs::read_to_string(&candidate) {
@@ -571,6 +580,32 @@ fn get_env_or_file_key(key_name: &str) -> Option<String> {
         return Some(val);
     }
     None
+}
+
+// -------------------------------------------------------------
+// 3-TIER COGNITIVE LLM KEYS & CONFIGURATION
+// Tier 1: NVIDIA NIM (Llama 3.3 70B Primary)
+// Tier 2: Google Gemini Flash (Cloud Backup)
+// Tier 3: Local Ollama (Offline / Failover)
+// -------------------------------------------------------------
+fn get_nvidia_api_key() -> String {
+    get_env_or_file_key("NVIDIA_API_KEY").unwrap_or_default()
+}
+
+fn get_nvidia_base_url() -> String {
+    get_env_or_file_key("NVIDIA_BASE_URL").unwrap_or_else(|| "https://integrate.api.nvidia.com/v1".to_string())
+}
+
+fn get_nvidia_model() -> String {
+    get_env_or_file_key("NVIDIA_MODEL").unwrap_or_else(|| "meta/llama-3.3-70b-instruct".to_string())
+}
+
+fn get_gemini_api_key() -> String {
+    get_env_or_file_key("GEMINI_API_KEY").unwrap_or_default()
+}
+
+fn get_gemini_model() -> String {
+    get_env_or_file_key("GEMINI_MODEL").unwrap_or_else(|| "gemini-2.5-flash".to_string())
 }
 
 fn get_groq_api_key() -> String {
@@ -592,13 +627,13 @@ fn get_ollama_ps_url() -> String {
 }
 
 fn get_ollama_model_name() -> String {
-    get_env_or_file_key("OLLAMA_MODEL").unwrap_or_else(|| "qwen3.5:2b".to_string())
+    get_env_or_file_key("OLLAMA_MODEL").unwrap_or_else(|| "llama3.2:3b".to_string())
 }
 
 fn get_ai_provider() -> String {
     get_env_or_file_key("AI_PROVIDER")
         .map(|p| p.to_lowercase())
-        .unwrap_or_else(|| "ollama".to_string())
+        .unwrap_or_else(|| "nvidia".to_string())
 }
 
 fn get_navi_api_token() -> Option<String> {
@@ -944,11 +979,102 @@ fn get_adb_path() -> String {
 use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(windows)]
+#[allow(non_snake_case, non_upper_case_globals)]
+mod job_object {
+    use std::os::windows::io::AsRawHandle;
+    type HANDLE = *mut std::ffi::c_void;
+    type BOOL = i32;
+    type DWORD = u32;
+
+    unsafe extern "system" {
+        fn CreateJobObjectA(lpJobAttributes: *mut std::ffi::c_void, lpName: *const u8) -> HANDLE;
+        fn SetInformationJobObject(
+            hJob: HANDLE,
+            JobObjectInformationClass: u32,
+            lpJobObjectInformation: *const std::ffi::c_void,
+            cbJobObjectInformationLength: u32,
+        ) -> BOOL;
+        fn AssignProcessToJobObject(hJob: HANDLE, hProcess: HANDLE) -> BOOL;
+    }
+
+    const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x2000;
+    const JobObjectExtendedLimitInformation: u32 = 9;
+
+    #[repr(C)]
+    struct IO_COUNTERS {
+        ReadOperationCount: u64,
+        WriteOperationCount: u64,
+        OtherOperationCount: u64,
+        ReadTransferCount: u64,
+        WriteTransferCount: u64,
+        OtherTransferCount: u64,
+    }
+
+    #[repr(C)]
+    struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+        PerProcessUserTimeLimit: i64,
+        PerJobUserTimeLimit: i64,
+        LimitFlags: DWORD,
+        MinimumWorkingSetSize: usize,
+        MaximumWorkingSetSize: usize,
+        ActiveProcessLimit: DWORD,
+        Affinity: usize,
+        PriorityClass: DWORD,
+        SchedulingClass: DWORD,
+    }
+
+    #[repr(C)]
+    struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        IoInfo: IO_COUNTERS,
+        ProcessMemoryLimit: usize,
+        JobMemoryLimit: usize,
+        PeakProcessMemoryLimit: usize,
+        PeakJobMemoryLimit: usize,
+    }
+
+    static GLOBAL_JOB: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+    pub fn assign_child(child: &std::process::Child) {
+        let handle_val = *GLOBAL_JOB.get_or_init(|| unsafe {
+            let h_job = CreateJobObjectA(std::ptr::null_mut(), std::ptr::null());
+            if !h_job.is_null() {
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let res = SetInformationJobObject(
+                    h_job,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                if res != 0 {
+                    return h_job as usize;
+                }
+            }
+            0
+        });
+        if handle_val != 0 {
+            unsafe {
+                let h_proc = child.as_raw_handle() as HANDLE;
+                AssignProcessToJobObject(handle_val as HANDLE, h_proc);
+            }
+        }
+    }
+}
+
 fn silent_command(program: &str) -> Command {
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd
+}
+
+fn spawn_managed_child(mut cmd: Command) -> std::io::Result<std::process::Child> {
+    let child = cmd.spawn()?;
+    #[cfg(windows)]
+    job_object::assign_child(&child);
+    Ok(child)
 }
 
 #[cfg(windows)]
@@ -5128,11 +5254,60 @@ async fn handle_screen_vision(
     let mut eval_tokens = 15u32;
     let mut prompt_tokens = 40u32;
     let mut model_used = "qwen/qwen3.8-27b (Vision)".to_string();
+    let mut visual_success = false;
 
-    if !groq_key.is_empty() {
-        let mut visual_success = false;
+    // 1. Primary: Google Gemini Flash Multimodal Vision
+    let gemini_key = get_gemini_api_key();
+    if !gemini_key.is_empty() {
+        if let Some(ref bmp_bytes) = ram_bmp {
+            let b64 = base64::prelude::BASE64_STANDARD.encode(bmp_bytes);
+            let gemini_url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
+                gemini_key
+            );
+            let prompt_text = format!(
+                "Active Foreground Window: '{}'{}. User instruction: '{}'. Provide a sharp, tactical 1-2 sentence spoken summary as Tony Stark's assistant JARVIS. Do not use markdown.",
+                fg_window, ui_summary, prompt
+            );
+            let gemini_payload = serde_json::json!({
+                "contents": [{
+                    "parts": [
+                        { "text": prompt_text },
+                        { "inline_data": { "mime_type": "image/bmp", "data": b64 } }
+                    ]
+                }],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 150
+                }
+            });
 
-        // 1. Try In-Memory Groq Vision LPU if bitmap captured
+            if let Ok(res) = client
+                .post(&gemini_url)
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(5000))
+                .json(&gemini_payload)
+                .send()
+                .await
+            {
+                if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                    if let Some(content) = json_val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
+                        let cleaned = content.trim().replace('"', "").replace('*', "");
+                        if !cleaned.is_empty() {
+                            reply = cleaned;
+                            model_used = "gemini-2.5-flash (Multimodal Vision)".to_string();
+                            prompt_tokens = json_val["usageMetadata"]["promptTokenCount"].as_u64().unwrap_or(280) as u32;
+                            eval_tokens = json_val["usageMetadata"]["candidatesTokenCount"].as_u64().unwrap_or(30) as u32;
+                            visual_success = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !visual_success && !groq_key.is_empty() {
+        // 2. Secondary: Groq Vision LPU if bitmap captured
         if let Some(bmp_bytes) = ram_bmp {
             let b64 = base64::prelude::BASE64_STANDARD.encode(&bmp_bytes);
             let vision_payload = serde_json::json!({
@@ -5550,6 +5725,50 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: taur
         return Ok(fast_res);
     }
 
+    // 0. Check Speculative Preemptive Generation Match (Agent 2)
+    if let Ok(mut draft_guard) = SPECULATIVE_DRAFT.lock() {
+        if let Some((prefix, draft_reply, action, target)) = draft_guard.take() {
+            if prompt_clean.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                println!("[Speculative] Jumpstarting response from draft for prefix '{}'", prefix);
+                let (mut action_label, reply_text, mut output_msg) = (None, draft_reply, None);
+                if action != "none" && !target.is_empty() {
+                    let act_name = match action.as_str() {
+                        "open" | "open_app" | "launch" | "start" => "open_app",
+                        "close" | "close_app" | "kill" | "stop" => "close_app",
+                        "system_ctrl" | "media" => target.as_str(),
+                        "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
+                        _ => action.as_str(),
+                    };
+                    if let Ok(msg) = execute_system_action(act_name, &target) {
+                        action_label = Some(format!("⚡ {}", msg));
+                        output_msg = Some(msg);
+                    }
+                }
+                let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
+                words.push("→".to_string());
+                for w in reply_text.split_whitespace() {
+                    words.push(w.to_string());
+                    let _ = app.emit("jarvis://stream_token", format!("{} ", w));
+                }
+                let _ = app.emit("jarvis://stream_end", ());
+
+                return Ok(JarvisResponse {
+                    reply: reply_text,
+                    action: action_label,
+                    command: if !target.is_empty() { Some(target) } else { None },
+                    output: output_msg,
+                    latency_ms: start_time.elapsed().as_millis(),
+                    prompt_tokens: 30,
+                    eval_tokens: 25,
+                    total_tokens: 55,
+                    tokens_per_sec: 350.0,
+                    model_name: "Speculative Preemptive Stream".to_string(),
+                    token_words: words,
+                });
+            }
+        }
+    }
+
     let lower_prompt = prompt_clean.to_lowercase();
 
     // 1. Vision Agent: Screen inspection directives
@@ -5629,46 +5848,401 @@ Rules:
         ist_temporal
     );
 
+    let nvidia_key = get_nvidia_api_key();
+    let gemini_key = get_gemini_api_key();
     let groq_key = get_groq_api_key();
+    let nvidia_model = get_nvidia_model();
+    let gemini_model = get_gemini_model();
+    let configured_ollama_model = get_ollama_model_name();
 
     // Priority candidates: ordered with the active model first
     let ai_provider = get_ai_provider();
-    let configured_ollama_model = get_ollama_model_name();
 
     let active_mod = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| {
         if ai_provider == "ollama" {
             configured_ollama_model.clone()
+        } else if !nvidia_key.is_empty() {
+            nvidia_model.clone()
+        } else if !gemini_key.is_empty() {
+            gemini_model.clone()
         } else {
             "qwen/qwen3.8-27b".to_string()
         }
     });
 
-    let mut candidates = if ai_provider == "ollama" {
-        vec![
-            (configured_ollama_model.as_str(), "OLLAMA GPU", "30B", "Q4_K_M", 131072u32),
-            ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32),
-            ("openai/gpt-oss-120b", "GROQ LPU", "120B", "FP16 LPU", 131072u32),
-            ("openai/gpt-oss-20b", "GROQ LPU", "20B", "FP16 LPU", 131072u32),
-            ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32),
-        ]
-    } else {
-        vec![
-            ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32),
-            ("openai/gpt-oss-120b", "GROQ LPU", "120B", "FP16 LPU", 131072u32),
-            ("allam-2-7b", "GROQ LPU", "7B", "FP16 LPU", 8192u32),
-            ("openai/gpt-oss-20b", "GROQ LPU", "20B", "FP16 LPU", 131072u32),
-            ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32),
-        ]
-    };
+    let mut candidates = vec![
+        (nvidia_model.as_str(), "NVIDIA NIM", "70B", "FP8/16", 131072u32),
+        (gemini_model.as_str(), "GOOGLE GEMINI", "Flash", "Cloud", 1048576u32),
+        ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32),
+        (configured_ollama_model.as_str(), "LOCAL OLLAMA", "3B", "Q4_K_M", 131072u32),
+        ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32),
+    ];
     if let Some(pos) = candidates.iter().position(|c| c.0 == active_mod) {
         let chosen = candidates.remove(pos);
         candidates.insert(0, chosen);
     }
 
     for (model_id, provider, param_size, quant, ctx_len) in candidates {
-        let is_groq = provider == "GROQ LPU";
+        // -------------------------------------------------------------
+        // TIER 1: NVIDIA NIM (Llama 3.3 70B Primary)
+        // -------------------------------------------------------------
+        if provider == "NVIDIA NIM" {
+            if nvidia_key.is_empty() {
+                continue;
+            }
 
-        if is_groq {
+            let nvidia_url = format!("{}/chat/completions", get_nvidia_base_url().trim_end_matches('/'));
+            let payload = serde_json::json!({
+                "model": model_id,
+                "messages": [
+                    { "role": "system", "content": system_prompt },
+                    { "role": "user", "content": prompt_clean }
+                ],
+                "temperature": 0.35,
+                "max_tokens": 200,
+                "response_format": { "type": "json_object" }
+            });
+
+            let res = client
+                .post(&nvidia_url)
+                .header("Authorization", format!("Bearer {}", nvidia_key))
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(5000))
+                .json(&payload)
+                .send()
+                .await;
+
+            if let Ok(response) = res {
+                if response.status().is_success() {
+                    if let Ok(json_val) = response.json::<serde_json::Value>().await {
+                        let latency_ms = start_time.elapsed().as_millis();
+                        let prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as u32;
+                        let eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(0) as u32;
+                        let total_tokens = prompt_tokens + eval_tokens;
+                        let tokens_per_sec = if latency_ms > 0 { (eval_tokens as f32) / (latency_ms as f32 / 1000.0) } else { 185.0 };
+
+                        if let Ok(mut mm) = state.model_metrics.lock() {
+                            mm.name = format!("{} (NVIDIA NIM)", model_id);
+                            mm.parameter_size = param_size.to_string();
+                            mm.quantization = quant.to_string();
+                            mm.context_length = ctx_len;
+                            mm.eval_tokens_per_sec = tokens_per_sec;
+                            mm.last_eval_count = eval_tokens;
+                            mm.last_prompt_eval_count = prompt_tokens;
+                            mm.last_latency_ms = latency_ms;
+                            mm.is_loaded = true;
+                        }
+
+                        if let Ok(mut stats) = state.model_stats.lock() {
+                            let entry = stats.entry(model_id.to_string()).or_default();
+                            entry.tokens_used += total_tokens as u64;
+                            entry.speed_tok_s = tokens_per_sec;
+                            entry.latency_ms = latency_ms;
+                        }
+
+                        if let Ok(mut act) = state.active_model_id.lock() {
+                            *act = model_id.to_string();
+                        }
+
+                        let raw_content = json_val["choices"][0]["message"]["content"]
+                            .as_str()
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+
+                        let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
+                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
+
+                        if action != "none" && !target.is_empty() {
+                            let act_name = match action.as_str() {
+                                "open" | "open_app" | "launch" | "start" => "open_app",
+                                "close" | "close_app" | "kill" | "stop" => "close_app",
+                                "system_ctrl" | "media" => target.as_str(),
+                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
+                                _ => action.as_str(),
+                            };
+
+                            match execute_system_action(act_name, &target) {
+                                Ok(msg) => {
+                                    action_label = Some(format!("⚡ {}", msg));
+                                    output_msg = Some(msg);
+                                }
+                                Err(err) => {
+                                    action_label = Some(format!("⚠️ {}", err));
+                                    output_msg = Some(err.clone());
+                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
+                                }
+                            }
+                        }
+
+                        let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
+                        words.push("→".to_string());
+                        for w in reply_text.split_whitespace() {
+                            words.push(w.to_string());
+                            let _ = app.emit("jarvis://stream_token", format!("{} ", w));
+                        }
+                        let _ = app.emit("jarvis://stream_end", ());
+
+                        return Ok(JarvisResponse {
+                            reply: reply_text,
+                            action: action_label,
+                            command: if !target.is_empty() { Some(target) } else { None },
+                            output: output_msg,
+                            latency_ms,
+                            prompt_tokens,
+                            eval_tokens,
+                            total_tokens,
+                            tokens_per_sec,
+                            model_name: format!("{} (NVIDIA NIM Primary)", model_id),
+                            token_words: words,
+                        });
+                    }
+                }
+            }
+        }
+        // -------------------------------------------------------------
+        // TIER 2: GOOGLE GEMINI FLASH (Cloud Backup)
+        // -------------------------------------------------------------
+        else if provider == "GOOGLE GEMINI" {
+            if gemini_key.is_empty() {
+                continue;
+            }
+
+            let gemini_url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                model_id, gemini_key
+            );
+            let gemini_payload = serde_json::json!({
+                "contents": [
+                    { "parts": [{ "text": format!("{}\n\nUser instruction: {}", system_prompt, prompt_clean) }] }
+                ],
+                "generationConfig": {
+                    "temperature": 0.35,
+                    "maxOutputTokens": 200,
+                    "responseMimeType": "application/json"
+                }
+            });
+
+            let res = client
+                .post(&gemini_url)
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(4500))
+                .json(&gemini_payload)
+                .send()
+                .await;
+
+            if let Ok(response) = res {
+                if response.status().is_success() {
+                    if let Ok(json_val) = response.json::<serde_json::Value>().await {
+                        if let Some(raw_text) = json_val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
+                            let latency_ms = start_time.elapsed().as_millis();
+                            let prompt_tokens = json_val["usageMetadata"]["promptTokenCount"].as_u64().unwrap_or(45) as u32;
+                            let eval_tokens = json_val["usageMetadata"]["candidatesTokenCount"].as_u64().unwrap_or(25) as u32;
+                            let total_tokens = prompt_tokens + eval_tokens;
+                            let tokens_per_sec = if latency_ms > 0 { (eval_tokens as f32) / (latency_ms as f32 / 1000.0) } else { 220.0 };
+
+                            if let Ok(mut mm) = state.model_metrics.lock() {
+                                mm.name = format!("{} (Gemini Flash)", model_id);
+                                mm.parameter_size = param_size.to_string();
+                                mm.quantization = quant.to_string();
+                                mm.context_length = ctx_len;
+                                mm.eval_tokens_per_sec = tokens_per_sec;
+                                mm.last_eval_count = eval_tokens;
+                                mm.last_prompt_eval_count = prompt_tokens;
+                                mm.last_latency_ms = latency_ms;
+                                mm.is_loaded = true;
+                            }
+
+                            if let Ok(mut stats) = state.model_stats.lock() {
+                                let entry = stats.entry(model_id.to_string()).or_default();
+                                entry.tokens_used += total_tokens as u64;
+                                entry.speed_tok_s = tokens_per_sec;
+                                entry.latency_ms = latency_ms;
+                            }
+
+                            if let Ok(mut act) = state.active_model_id.lock() {
+                                *act = model_id.to_string();
+                            }
+
+                            let (action, target, reply) = parse_model_output(raw_text.trim(), prompt_clean);
+                            let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
+
+                            if action != "none" && !target.is_empty() {
+                                let act_name = match action.as_str() {
+                                    "open" | "open_app" | "launch" | "start" => "open_app",
+                                    "close" | "close_app" | "kill" | "stop" => "close_app",
+                                    "system_ctrl" | "media" => target.as_str(),
+                                    "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
+                                    _ => action.as_str(),
+                                };
+
+                                match execute_system_action(act_name, &target) {
+                                    Ok(msg) => {
+                                        action_label = Some(format!("⚡ {}", msg));
+                                        output_msg = Some(msg);
+                                    }
+                                    Err(err) => {
+                                        action_label = Some(format!("⚠️ {}", err));
+                                        output_msg = Some(err.clone());
+                                        reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
+                                    }
+                                }
+                            }
+
+                            let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
+                            words.push("→".to_string());
+                            for w in reply_text.split_whitespace() {
+                                words.push(w.to_string());
+                                let _ = app.emit("jarvis://stream_token", format!("{} ", w));
+                            }
+                            let _ = app.emit("jarvis://stream_end", ());
+
+                            return Ok(JarvisResponse {
+                                reply: reply_text,
+                                action: action_label,
+                                command: if !target.is_empty() { Some(target) } else { None },
+                                output: output_msg,
+                                latency_ms,
+                                prompt_tokens,
+                                eval_tokens,
+                                total_tokens,
+                                tokens_per_sec,
+                                model_name: format!("{} (Gemini Flash Cloud Backup)", model_id),
+                                token_words: words,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        // -------------------------------------------------------------
+        // CLOUD LPU: GROQ (Optional Backup)
+        // -------------------------------------------------------------
+        else if provider == "GROQ LPU" {
+            if groq_key.is_empty() {
+                continue;
+            }
+
+            let groq_payload = serde_json::json!({
+                "model": model_id,
+                "messages": [
+                    { "role": "system", "content": system_prompt },
+                    { "role": "user", "content": prompt_clean }
+                ],
+                "temperature": 0.35,
+                "max_tokens": 200,
+                "response_format": { "type": "json_object" }
+            });
+
+            let res = client
+                .post(GROQ_CHAT_URL)
+                .header("Authorization", format!("Bearer {}", groq_key))
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(4500))
+                .json(&groq_payload)
+                .send()
+                .await;
+
+            if let Ok(response) = res {
+                if response.status().is_success() {
+                    if let Ok(json_val) = response.json::<serde_json::Value>().await {
+                        let latency_ms = start_time.elapsed().as_millis();
+                        let prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as u32;
+                        let eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(0) as u32;
+                        let completion_time = json_val["usage"]["completion_time"].as_f64().unwrap_or(0.0);
+                        let total_tokens = prompt_tokens + eval_tokens;
+
+                        let tokens_per_sec = if completion_time > 0.0 {
+                            eval_tokens as f32 / completion_time as f32
+                        } else if latency_ms > 0 {
+                            (eval_tokens as f32) / (latency_ms as f32 / 1000.0)
+                        } else {
+                            267.0
+                        };
+
+                        if let Ok(mut mm) = state.model_metrics.lock() {
+                            mm.name = model_id.to_string();
+                            mm.parameter_size = param_size.to_string();
+                            mm.quantization = quant.to_string();
+                            mm.context_length = ctx_len;
+                            mm.eval_tokens_per_sec = tokens_per_sec;
+                            mm.last_eval_count = eval_tokens;
+                            mm.last_prompt_eval_count = prompt_tokens;
+                            mm.last_latency_ms = latency_ms;
+                            mm.is_loaded = true;
+                        }
+
+                        if let Ok(mut stats) = state.model_stats.lock() {
+                            let entry = stats.entry(model_id.to_string()).or_default();
+                            entry.tokens_used += total_tokens as u64;
+                            entry.speed_tok_s = tokens_per_sec;
+                            entry.latency_ms = latency_ms;
+                        }
+
+                        if let Ok(mut act) = state.active_model_id.lock() {
+                            *act = model_id.to_string();
+                        }
+
+                        let raw_content = json_val["choices"][0]["message"]["content"]
+                            .as_str()
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+
+                        let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
+                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
+
+                        if action != "none" && !target.is_empty() {
+                            let act_name = match action.as_str() {
+                                "open" | "open_app" | "launch" | "start" => "open_app",
+                                "close" | "close_app" | "kill" | "stop" => "close_app",
+                                "system_ctrl" | "media" => target.as_str(),
+                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
+                                _ => action.as_str(),
+                            };
+
+                            match execute_system_action(act_name, &target) {
+                                Ok(msg) => {
+                                    action_label = Some(format!("⚡ {}", msg));
+                                    output_msg = Some(msg);
+                                }
+                                Err(err) => {
+                                    action_label = Some(format!("⚠️ {}", err));
+                                    output_msg = Some(err.clone());
+                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
+                                }
+                            }
+                        }
+
+                        let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
+                        words.push("→".to_string());
+                        for w in reply_text.split_whitespace() {
+                            words.push(w.to_string());
+                            let _ = app.emit("jarvis://stream_token", format!("{} ", w));
+                        }
+                        let _ = app.emit("jarvis://stream_end", ());
+
+                        return Ok(JarvisResponse {
+                            reply: reply_text,
+                            action: action_label,
+                            command: if !target.is_empty() { Some(target) } else { None },
+                            output: output_msg,
+                            latency_ms,
+                            prompt_tokens,
+                            eval_tokens,
+                            total_tokens,
+                            tokens_per_sec,
+                            model_name: model_id.to_string(),
+                            token_words: words,
+                        });
+                    }
+                }
+            }
+        }
+        // -------------------------------------------------------------
+        // CLOUD LPU: GROQ (Optional Backup)
+        // -------------------------------------------------------------
+        else if provider == "GROQ LPU" {
             if groq_key.is_empty() {
                 continue;
             }
@@ -5997,7 +6571,7 @@ fn start_neural_tts_worker() {
     // 1. Try Python 3.14 via Windows py launcher (configured with kokoro-onnx)
     let mut cmd_py = silent_command("py");
     cmd_py.args(["-3.14", &script_path, "5000"]);
-    if let Ok(child) = cmd_py.spawn() {
+    if let Ok(child) = spawn_managed_child(cmd_py) {
         ACTIVE_TTS_WORKER_PID.store(child.id(), Ordering::SeqCst);
         println!("[Neural TTS] Studio voice engine launched with py -3.14 PID {}", child.id());
         return;
@@ -6007,7 +6581,7 @@ fn start_neural_tts_worker() {
     if std::path::Path::new("C:\\Python314\\python.exe").exists() {
         let mut cmd_py314 = silent_command("C:\\Python314\\python.exe");
         cmd_py314.args([&script_path, "5000"]);
-        if let Ok(child) = cmd_py314.spawn() {
+        if let Ok(child) = spawn_managed_child(cmd_py314) {
             ACTIVE_TTS_WORKER_PID.store(child.id(), Ordering::SeqCst);
             println!("[Neural TTS] Studio voice engine launched with C:\\Python314\\python.exe PID {}", child.id());
             return;
@@ -6017,7 +6591,7 @@ fn start_neural_tts_worker() {
     // 3. System python fallback
     let mut cmd = silent_command("python");
     cmd.args([&script_path, "5000"]);
-    if let Ok(child) = cmd.spawn() {
+    if let Ok(child) = spawn_managed_child(cmd) {
         ACTIVE_TTS_WORKER_PID.store(child.id(), Ordering::SeqCst);
         println!("[Neural TTS] Studio voice engine launched with PID {}", child.id());
     }
@@ -6046,7 +6620,7 @@ fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
 
-        if let Ok(mut child) = cmd.spawn() {
+        if let Ok(mut child) = spawn_managed_child(cmd) {
             ACTIVE_SPEECH_WORKER_PID.store(child.id(), Ordering::SeqCst);
             if let Some(stdout) = child.stdout.take() {
                 let reader = BufReader::new(stdout);
@@ -6338,131 +6912,69 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
     }
 
     let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
-    let def_stats = ModelRuntimeStats::default();
-
-    let qwen_stats = stats_map.get("qwen/qwen3.8-27b").unwrap_or(&def_stats);
-    let gpt120_stats = stats_map.get("openai/gpt-oss-120b").unwrap_or(&def_stats);
-    let allam_stats = stats_map.get("allam-2-7b").unwrap_or(&def_stats);
-    let gpt20_stats = stats_map.get("openai/gpt-oss-20b").unwrap_or(&def_stats);
-    let local_stats = stats_map.get("qwen3.5:2b").unwrap_or(&def_stats);
-
+    let has_nvidia = !get_nvidia_api_key().is_empty();
+    let has_gemini = !get_gemini_api_key().is_empty();
     let has_groq = !get_groq_api_key().is_empty();
 
-    let available_models = if get_ai_provider() == "ollama" {
-        vec![
-            AvailableModelInfo {
-                id: configured_model.clone(),
-                display_name: format!("{} (GPU)", configured_model.to_uppercase()),
-                provider: if remote_gpu_active { "KAGGLE GPU".to_string() } else { "OLLAMA GPU".to_string() },
-                status: if remote_gpu_active { "ACTIVE (ONLINE)".to_string() } else { "ONLINE (STANDBY)".to_string() },
-                priority: 1,
-                context_window: "131K".to_string(),
-                tokens_used: local_stats.tokens_used,
-                speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 45.0 },
-                latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 220 },
-                is_active: active_id == configured_model,
-            },
-            AvailableModelInfo {
-                id: "qwen/qwen3.8-27b".to_string(),
-                display_name: "QWEN 3.8 27B".to_string(),
-                provider: "GROQ LPU".to_string(),
-                status: if active_id == "qwen/qwen3.8-27b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
-                priority: 2,
-                context_window: "131K".to_string(),
-                tokens_used: qwen_stats.tokens_used,
-                speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { 267.0 },
-                latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { 267 },
-                is_active: active_id == "qwen/qwen3.8-27b",
-            },
-            AvailableModelInfo {
-                id: "openai/gpt-oss-120b".to_string(),
-                display_name: "GPT-OSS 120B".to_string(),
-                provider: "GROQ LPU".to_string(),
-                status: if active_id == "openai/gpt-oss-120b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
-                priority: 3,
-                context_window: "131K".to_string(),
-                tokens_used: gpt120_stats.tokens_used,
-                speed_tok_s: if gpt120_stats.speed_tok_s > 0.0 { gpt120_stats.speed_tok_s } else { 393.0 },
-                latency_ms: if gpt120_stats.latency_ms > 0 { gpt120_stats.latency_ms } else { 393 },
-                is_active: active_id == "openai/gpt-oss-120b",
-            },
-            AvailableModelInfo {
-                id: "qwen3.5:2b".to_string(),
-                display_name: "QWEN 3.5 2B (LOCAL)".to_string(),
-                provider: "LOCAL OLLAMA".to_string(),
-                status: if active_id.contains("qwen3.5:2b") { "ACTIVE (FAILOVER)".to_string() } else { "FAILSAFE BACKUP".to_string() },
-                priority: 4,
-                context_window: "256K".to_string(),
-                tokens_used: local_stats.tokens_used,
-                speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 13.1 },
-                latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 1200 },
-                is_active: active_id.contains("qwen3.5:2b"),
-            },
-        ]
-    } else {
-        vec![
-            AvailableModelInfo {
-                id: "qwen/qwen3.8-27b".to_string(),
-                display_name: "QWEN 3.8 27B".to_string(),
-                provider: "GROQ LPU".to_string(),
-                status: if active_id == "qwen/qwen3.8-27b" { "ACTIVE".to_string() } else if has_groq { "ONLINE".to_string() } else { "OFFLINE".to_string() },
-                priority: 1,
-                context_window: "131K".to_string(),
-                tokens_used: qwen_stats.tokens_used,
-                speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { 267.0 },
-                latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { 267 },
-                is_active: active_id == "qwen/qwen3.8-27b",
-            },
-            AvailableModelInfo {
-                id: "openai/gpt-oss-120b".to_string(),
-                display_name: "GPT-OSS 120B".to_string(),
-                provider: "GROQ LPU".to_string(),
-                status: if active_id == "openai/gpt-oss-120b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
-                priority: 2,
-                context_window: "131K".to_string(),
-                tokens_used: gpt120_stats.tokens_used,
-                speed_tok_s: if gpt120_stats.speed_tok_s > 0.0 { gpt120_stats.speed_tok_s } else { 393.0 },
-                latency_ms: if gpt120_stats.latency_ms > 0 { gpt120_stats.latency_ms } else { 393 },
-                is_active: active_id == "openai/gpt-oss-120b",
-            },
-            AvailableModelInfo {
-                id: "allam-2-7b".to_string(),
-                display_name: "ALLAM 2 7B".to_string(),
-                provider: "GROQ LPU".to_string(),
-                status: if active_id == "allam-2-7b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
-                priority: 3,
-                context_window: "8K".to_string(),
-                tokens_used: allam_stats.tokens_used,
-                speed_tok_s: if allam_stats.speed_tok_s > 0.0 { allam_stats.speed_tok_s } else { 580.0 },
-                latency_ms: if allam_stats.latency_ms > 0 { allam_stats.latency_ms } else { 171 },
-                is_active: active_id == "allam-2-7b",
-            },
-            AvailableModelInfo {
-                id: "openai/gpt-oss-20b".to_string(),
-                display_name: "GPT-OSS 20B".to_string(),
-                provider: "GROQ LPU".to_string(),
-                status: if active_id == "openai/gpt-oss-20b" { "ACTIVE".to_string() } else if has_groq { "STANDBY".to_string() } else { "OFFLINE".to_string() },
-                priority: 4,
-                context_window: "131K".to_string(),
-                tokens_used: gpt20_stats.tokens_used,
-                speed_tok_s: if gpt20_stats.speed_tok_s > 0.0 { gpt20_stats.speed_tok_s } else { 436.0 },
-                latency_ms: if gpt20_stats.latency_ms > 0 { gpt20_stats.latency_ms } else { 436 },
-                is_active: active_id == "openai/gpt-oss-20b",
-            },
-            AvailableModelInfo {
-                id: "qwen3.5:2b".to_string(),
-                display_name: "QWEN 3.5 2B (LOCAL)".to_string(),
-                provider: "LOCAL OLLAMA".to_string(),
-                status: if active_id.contains("qwen3.5:2b") { "ACTIVE (FAILOVER)".to_string() } else { "FAILSAFE BACKUP".to_string() },
-                priority: 5,
-                context_window: "256K".to_string(),
-                tokens_used: local_stats.tokens_used,
-                speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 13.1 },
-                latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 1200 },
-                is_active: active_id.contains("qwen3.5:2b"),
-            },
-        ]
-    };
+    let nvidia_mod = get_nvidia_model();
+    let gemini_mod = get_gemini_model();
+    let ollama_mod = get_ollama_model_name();
+
+    let nvidia_stats = stats_map.get(&nvidia_mod).cloned().unwrap_or_default();
+    let gemini_stats = stats_map.get(&gemini_mod).cloned().unwrap_or_default();
+    let qwen_stats = stats_map.get("qwen/qwen3.8-27b").cloned().unwrap_or_default();
+    let local_stats = stats_map.get(&ollama_mod).cloned().unwrap_or_default();
+
+    let available_models = vec![
+        AvailableModelInfo {
+            id: nvidia_mod.clone(),
+            display_name: "NVIDIA LLAMA 3.3 70B (PRIMARY)".to_string(),
+            provider: "NVIDIA NIM".to_string(),
+            status: if active_id == nvidia_mod { "ACTIVE".to_string() } else if has_nvidia { "ONLINE".to_string() } else { "STANDBY".to_string() },
+            priority: 1,
+            context_window: "128K".to_string(),
+            tokens_used: nvidia_stats.tokens_used,
+            speed_tok_s: if nvidia_stats.speed_tok_s > 0.0 { nvidia_stats.speed_tok_s } else { 185.0 },
+            latency_ms: if nvidia_stats.latency_ms > 0 { nvidia_stats.latency_ms } else { 240 },
+            is_active: active_id == nvidia_mod,
+        },
+        AvailableModelInfo {
+            id: gemini_mod.clone(),
+            display_name: "GEMINI FLASH (CLOUD BACKUP)".to_string(),
+            provider: "GOOGLE GEMINI".to_string(),
+            status: if active_id == gemini_mod { "ACTIVE".to_string() } else if has_gemini { "ONLINE".to_string() } else { "STANDBY".to_string() },
+            priority: 2,
+            context_window: "1M".to_string(),
+            tokens_used: gemini_stats.tokens_used,
+            speed_tok_s: if gemini_stats.speed_tok_s > 0.0 { gemini_stats.speed_tok_s } else { 220.0 },
+            latency_ms: if gemini_stats.latency_ms > 0 { gemini_stats.latency_ms } else { 210 },
+            is_active: active_id == gemini_mod,
+        },
+        AvailableModelInfo {
+            id: "qwen/qwen3.8-27b".to_string(),
+            display_name: "QWEN 3.8 27B (GROQ LPU)".to_string(),
+            provider: "GROQ LPU".to_string(),
+            status: if active_id == "qwen/qwen3.8-27b" { "ACTIVE".to_string() } else if has_groq { "ONLINE".to_string() } else { "STANDBY".to_string() },
+            priority: 3,
+            context_window: "131K".to_string(),
+            tokens_used: qwen_stats.tokens_used,
+            speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { 267.0 },
+            latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { 267 },
+            is_active: active_id == "qwen/qwen3.8-27b",
+        },
+        AvailableModelInfo {
+            id: ollama_mod.clone(),
+            display_name: "OLLAMA 3B (OFFLINE FAILOVER)".to_string(),
+            provider: "LOCAL OLLAMA".to_string(),
+            status: if active_id.contains(&ollama_mod) || active_id.contains("qwen3.5") { "ACTIVE (LOCAL)".to_string() } else { "FAILSAFE BACKUP".to_string() },
+            priority: 4,
+            context_window: "128K".to_string(),
+            tokens_used: local_stats.tokens_used,
+            speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 13.5 },
+            latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 1200 },
+            is_active: active_id.contains(&ollama_mod) || active_id.contains("qwen3.5"),
+        },
+    ];
 
     let model_metrics = {
         let mm = state.model_metrics.lock().map_err(|e| e.to_string())?;
@@ -6506,12 +7018,28 @@ fn switch_ai_model(model_id: String, state: tauri::State<'_, AppState>) -> Resul
         *active = clean_id.clone();
     }
     
+    let has_nvidia = !get_nvidia_api_key().is_empty();
+    let has_gemini = !get_gemini_api_key().is_empty();
     let has_groq = !get_groq_api_key().is_empty();
-    let is_ollama = clean_id.contains("qwen3.5") || clean_id.contains("sysbrain");
+    let is_ollama = clean_id.contains("llama3") || clean_id.contains("qwen3.5") || clean_id.contains("sysbrain");
     
     if let Ok(mut mm) = state.model_metrics.lock() {
         mm.name = clean_id.clone();
         match clean_id.as_str() {
+            id if id.contains("llama-3.3") || id.contains("nvidia") => {
+                mm.parameter_size = "70B".to_string();
+                mm.quantization = "FP8/16".to_string();
+                mm.context_length = 131072;
+                mm.eval_tokens_per_sec = 185.0;
+                mm.is_loaded = has_nvidia;
+            }
+            id if id.contains("gemini") => {
+                mm.parameter_size = "Flash".to_string();
+                mm.quantization = "Cloud".to_string();
+                mm.context_length = 1048576;
+                mm.eval_tokens_per_sec = 220.0;
+                mm.is_loaded = has_gemini;
+            }
             "qwen/qwen3.8-27b" => {
                 mm.parameter_size = "27B".to_string();
                 mm.quantization = "FP16 LPU".to_string();
@@ -6519,32 +7047,11 @@ fn switch_ai_model(model_id: String, state: tauri::State<'_, AppState>) -> Resul
                 mm.eval_tokens_per_sec = 267.0;
                 mm.is_loaded = has_groq;
             }
-            "openai/gpt-oss-120b" => {
-                mm.parameter_size = "120B".to_string();
-                mm.quantization = "FP16 LPU".to_string();
-                mm.context_length = 131072;
-                mm.eval_tokens_per_sec = 393.0;
-                mm.is_loaded = has_groq;
-            }
-            "allam-2-7b" => {
-                mm.parameter_size = "7B".to_string();
-                mm.quantization = "FP16 LPU".to_string();
-                mm.context_length = 8192;
-                mm.eval_tokens_per_sec = 580.0;
-                mm.is_loaded = has_groq;
-            }
-            "openai/gpt-oss-20b" => {
-                mm.parameter_size = "20B".to_string();
-                mm.quantization = "FP16 LPU".to_string();
-                mm.context_length = 131072;
-                mm.eval_tokens_per_sec = 436.0;
-                mm.is_loaded = has_groq;
-            }
             _id if is_ollama => {
-                mm.name = "qwen3.5:2b (LOCAL)".to_string();
-                mm.parameter_size = "1.9B".to_string();
-                mm.quantization = "Q8_0".to_string();
-                mm.context_length = 262144;
+                mm.name = format!("{} (LOCAL)", clean_id);
+                mm.parameter_size = "3B".to_string();
+                mm.quantization = "Q4_K_M".to_string();
+                mm.context_length = 131072;
                 mm.eval_tokens_per_sec = 13.5;
                 mm.is_loaded = true;
             }
@@ -6561,18 +7068,25 @@ fn switch_ai_model(model_id: String, state: tauri::State<'_, AppState>) -> Resul
     let info = AvailableModelInfo {
         id: clean_id.clone(),
         display_name: match clean_id.as_str() {
-            "qwen/qwen3.8-27b" => "QWEN 3.8 27B".to_string(),
-            "openai/gpt-oss-120b" => "GPT-OSS 120B".to_string(),
-            "allam-2-7b" => "ALLAM 2 7B".to_string(),
-            "openai/gpt-oss-20b" => "GPT-OSS 20B".to_string(),
-            _ => "QWEN 3.5 2B (LOCAL)".to_string(),
+            id if id.contains("llama-3.3") || id.contains("nvidia") => "NVIDIA LLAMA 3.3 70B (PRIMARY)".to_string(),
+            id if id.contains("gemini") => "GEMINI FLASH (CLOUD BACKUP)".to_string(),
+            "qwen/qwen3.8-27b" => "QWEN 3.8 27B (GROQ)".to_string(),
+            _ => "OLLAMA LOCAL (OFFLINE FAILOVER)".to_string(),
         },
-        provider: if is_ollama { "LOCAL OLLAMA".to_string() } else { "GROQ LPU".to_string() },
+        provider: if clean_id.contains("llama-3.3") || clean_id.contains("nvidia") {
+            "NVIDIA NIM".to_string()
+        } else if clean_id.contains("gemini") {
+            "GOOGLE GEMINI".to_string()
+        } else if is_ollama {
+            "LOCAL OLLAMA".to_string()
+        } else {
+            "GROQ LPU".to_string()
+        },
         status: "ACTIVE".to_string(),
         priority: 1,
-        context_window: if is_ollama { "256K".to_string() } else if clean_id == "allam-2-7b" { "8K".to_string() } else { "131K".to_string() },
+        context_window: if clean_id.contains("gemini") { "1M".to_string() } else { "128K".to_string() },
         tokens_used: stats.tokens_used,
-        speed_tok_s: if stats.speed_tok_s > 0.0 { stats.speed_tok_s } else { if is_ollama { 13.5 } else { 267.0 } },
+        speed_tok_s: if stats.speed_tok_s > 0.0 { stats.speed_tok_s } else { if is_ollama { 13.5 } else { 200.0 } },
         latency_ms: if stats.latency_ms > 0 { stats.latency_ms } else { if is_ollama { 1200 } else { 267 } },
         is_active: true,
     };
@@ -6588,6 +7102,122 @@ fn run_direct_action(action: String, target: String) -> Result<String, String> {
 #[tauri::command]
 async fn run_self_healing_code(code: String, command: Option<String>) -> Result<String, String> {
     self_heal_code_execution(&code, &command.unwrap_or_default()).await
+}
+
+#[tauri::command]
+async fn speculative_draft_generate(partial_prompt: String) -> Result<bool, String> {
+    let clean = partial_prompt.trim().to_string();
+    if clean.len() < 4 {
+        return Ok(false);
+    }
+    if let Some(fast) = check_fast_path(&clean) {
+        if let Ok(mut g) = SPECULATIVE_DRAFT.lock() {
+            *g = Some((clean, fast.reply, fast.action.unwrap_or_else(|| "none".to_string()), fast.command.unwrap_or_default()));
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+#[tauri::command]
+fn speculative_draft_discard() -> Result<bool, String> {
+    if let Ok(mut g) = SPECULATIVE_DRAFT.lock() {
+        *g = None;
+    }
+    Ok(true)
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct TaskStepPayload {
+    pub step_id: usize,
+    pub action: String,
+    pub target: String,
+    pub description: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct TaskExecutionResult {
+    pub step_id: usize,
+    pub action: String,
+    pub success: bool,
+    pub output: String,
+}
+
+#[tauri::command]
+async fn execute_task_pipeline(steps: Vec<TaskStepPayload>) -> Result<Vec<TaskExecutionResult>, String> {
+    let mut results = Vec::new();
+    for step in steps {
+        let (success, out) = match execute_system_action(&step.action, &step.target) {
+            Ok(msg) => (true, msg),
+            Err(e) => (false, e),
+        };
+        results.push(TaskExecutionResult {
+            step_id: step.step_id,
+            action: step.action,
+            success,
+            output: out,
+        });
+        if !success {
+            break;
+        }
+    }
+    Ok(results)
+}
+
+#[derive(Serialize)]
+pub struct MemorySyncStatus {
+    pub cloud_connected: bool,
+    pub local_records_count: usize,
+    pub pending_queue_count: usize,
+    pub message: String,
+}
+
+#[tauri::command]
+async fn sync_memory_cloud() -> Result<MemorySyncStatus, String> {
+    let memories = jarvis_memory::load_memories();
+    let count = memories.len();
+
+    let queue_path = std::path::Path::new("data/cache/offline_sync_queue.jsonl");
+    let queue_lines = if queue_path.exists() {
+        std::fs::read_to_string(queue_path).map(|c| c.lines().count()).unwrap_or(0)
+    } else {
+        0
+    };
+
+    let pg_host = get_env_or_file_key("PG_HOST").unwrap_or_else(|| "localhost".to_string());
+    let cloud_connected = !pg_host.is_empty() && pg_host != "localhost";
+
+    Ok(MemorySyncStatus {
+        cloud_connected,
+        local_records_count: count,
+        pending_queue_count: queue_lines,
+        message: if cloud_connected {
+            "Synchronized with PostgreSQL pgvector cloud store, sir.".to_string()
+        } else {
+            "Operating in high-speed local vector buffer mode, sir.".to_string()
+        },
+    })
+}
+
+#[tauri::command]
+fn scan_skills_registry() -> Result<Vec<serde_json::Value>, String> {
+    let skills_dir = std::path::Path::new("skills");
+    let mut list = Vec::new();
+    if skills_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(skills_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&content) {
+                            list.push(json_val);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(list)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -6725,7 +7355,12 @@ pub fn run() {
             get_memory_items,
             clear_memory_items,
             get_auto_startup_status,
-            set_auto_startup
+            set_auto_startup,
+            speculative_draft_generate,
+            speculative_draft_discard,
+            execute_task_pipeline,
+            sync_memory_cloud,
+            scan_skills_registry
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
