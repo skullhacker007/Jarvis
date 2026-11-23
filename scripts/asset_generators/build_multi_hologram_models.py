@@ -69,8 +69,8 @@ def main():
         content = f.read()
     
     # Extract json string
-    prefix = "window.STARK_HOLOGRAM_MODELS = "
-    suffix = ";\nwindow.STARK_HUMAN_PARTICLE_DATA"
+    prefix = "window.NAVI_HOLOGRAM_MODELS = "
+    suffix = ";\nwindow.NAVI_HUMAN_PARTICLE_DATA"
     start_idx = content.find(prefix) + len(prefix)
     end_idx = content.find(suffix)
     existing_models = json.loads(content[start_idx:end_idx])
@@ -114,8 +114,8 @@ def main():
     }
 
     dest_js = "src/assets/human_particles_preset.js"
-    js_content = f"window.STARK_HOLOGRAM_MODELS = {json.dumps(models_bundle)};\n"
-    js_content += "window.STARK_HUMAN_PARTICLE_DATA = window.STARK_HOLOGRAM_MODELS.ultron || window.STARK_HOLOGRAM_MODELS.navi;\n"
+    js_content = f"window.NAVI_HOLOGRAM_MODELS = {json.dumps(models_bundle)};\n"
+    js_content += "window.NAVI_HUMAN_PARTICLE_DATA = window.NAVI_HOLOGRAM_MODELS.ultron || window.NAVI_HOLOGRAM_MODELS.navi;\n"
 
     with open(dest_js, "w", encoding="utf-8") as f:
         f.write(js_content)

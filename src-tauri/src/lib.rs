@@ -302,7 +302,7 @@ async fn self_heal_code_execution(code: &str, command_hint: &str) -> Result<Stri
                     let payload = serde_json::json!({
                         "model": "qwen/qwen3.8-27b",
                         "messages": [
-                            { "role": "system", "content": "You are J.A.R.V.I.S. Developer Agent. Return ONLY the raw fixed code." },
+                            { "role": "system", "content": "You are JARVIS Developer Agent. Return ONLY the raw fixed code." },
                             { "role": "user", "content": heal_prompt }
                         ],
                         "temperature": 0.1,
@@ -645,7 +645,7 @@ fn get_kaggle_api_token() -> Option<String> {
 }
 
 fn add_navi_headers(mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-    req = req.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 J.A.R.V.I.S./1.0");
+    req = req.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 JARVIS/1.0");
     if let Some(token) = get_navi_api_token() {
         req = req.header("Authorization", format!("Bearer {}", token))
                  .header("X-NAVI-TOKEN", &token)
@@ -1123,8 +1123,8 @@ mod win32_apps {
                             && title != "Program Manager" 
                             && title != "Settings" 
                             && title != "Windows Input Experience"
-                            && !title.contains("STARK HOLOGRAPHIC CONSOLE")
-                            && !title.contains("J.A.R.V.I.S.")
+                            && !title.contains("JARVIS")
+                            && !title.contains("NAVI HOLOGRAPHIC CONSOLE")
                         {
                             let mut pid: DWORD = 0;
                             GetWindowThreadProcessId(hwnd, &mut pid);
@@ -1313,7 +1313,7 @@ pub mod win32_system_agent {
                             let title = String::from_utf16_lossy(&buf[..len as usize]);
                             let lower = title.to_lowercase();
                             if !lower.contains("jarvis")
-                                && !lower.contains("stark holographic")
+                                && !lower.contains("navi holographic")
                                 && title != "Program Manager"
                                 && title != "Windows Input Experience"
                             {
@@ -2663,7 +2663,7 @@ fn get_wifi_network_info() -> Result<WifiNetworkInfo, String> {
     let pc_v6 = if !pc_ipv6.is_empty() { pc_ipv6 } else { "fe80::b475:254:2c0a:199e".to_string() };
     let pc_m = if !pc_mac.is_empty() { pc_mac } else { "14:7D:DA:6D:B0:4B".to_string() };
 
-    let hostname = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "STARK-DESKTOP".to_string());
+    let hostname = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "NAVI-DESKTOP".to_string());
     dev_list.push(WifiDeviceItem {
         name: format!("{} (This PC)", hostname),
         ip_v4: pc_v4.clone(),
@@ -3643,7 +3643,7 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
             }
         }
         "git_commit" => {
-            let msg = if clean_target.is_empty() { "Auto-commit by J.A.R.V.I.S." } else { clean_target };
+            let msg = if clean_target.is_empty() { "Auto-commit by JARVIS" } else { clean_target };
             let _ = silent_command("git").args(["add", "."]).output();
             let output = silent_command("git")
                 .args(["commit", "-m", msg])
@@ -4995,7 +4995,7 @@ fn get_foreground_window_title() -> String {
                 let title = String::from_utf16_lossy(&buf[..len as usize]);
                 let trimmed = title.trim();
                 let lower = trimmed.to_lowercase();
-                if !trimmed.is_empty() && !lower.contains("jarvis") && !lower.contains("stark holographic") {
+                if !trimmed.is_empty() && !lower.contains("jarvis") && !lower.contains("navi holographic") {
                     return trimmed.to_string();
                 }
             }
@@ -5143,7 +5143,7 @@ async fn handle_web_search(
 
     let ist_temporal = get_ist_temporal_context();
     let search_system_prompt = format!(
-        "You are J.A.R.V.I.S., Tony Stark's articulate and sophisticated AI assistant. Based on the live web intelligence provided, deliver a refined, natural, and insightful spoken answer for sir in 2-3 engaging sentences. Speak with Paul Bettany's polished British cadence and intelligence. Do not use markdown, bullet points, or robotic summaries.\n\n{}",
+        "You are JARVIS, NAVI's articulate and sophisticated AI assistant. Based on the live web intelligence provided, deliver a refined, natural, and insightful spoken answer for sir in 2-3 engaging sentences. Speak with Paul Bettany's polished British cadence and intelligence. Do not use markdown, bullet points, or robotic summaries.\n\n{}",
         ist_temporal
     );
 
@@ -5246,7 +5246,7 @@ async fn handle_screen_vision(
 
     let ist_temporal = get_ist_temporal_context();
     let vision_system_prompt = format!(
-        "You are J.A.R.V.I.S. Vision Agent. Analyze the user's active display with tactical clarity and natural poise. Provide a sharp, articulate spoken summary in 1-2 polished sentences as Tony Stark's assistant. Do not use markdown.\n\n{}",
+        "You are JARVIS Vision Agent. Analyze the user's active display with tactical clarity and natural poise. Provide a sharp, articulate spoken summary in 1-2 polished sentences as NAVI's assistant. Do not use markdown.\n\n{}",
         ist_temporal
     );
 
@@ -5266,7 +5266,7 @@ async fn handle_screen_vision(
                 gemini_key
             );
             let prompt_text = format!(
-                "Active Foreground Window: '{}'{}. User instruction: '{}'. Provide a sharp, tactical 1-2 sentence spoken summary as Tony Stark's assistant JARVIS. Do not use markdown.",
+                "Active Foreground Window: '{}'{}. User instruction: '{}'. Provide a sharp, tactical 1-2 sentence spoken summary as NAVI's assistant JARVIS. Do not use markdown.",
                 fg_window, ui_summary, prompt
             );
             let gemini_payload = serde_json::json!({
@@ -5318,7 +5318,7 @@ async fn handle_screen_vision(
                         "content": [
                             {
                                 "type": "text",
-                                "text": format!("Active Window: '{}'{}. User request: '{}'. Provide a polished, natural tactical analysis of what is visible on screen in 1-2 spoken sentences as Tony Stark's assistant. Do not use markdown.", fg_window, ui_summary, prompt)
+                                "text": format!("Active Window: '{}'{}. User request: '{}'. Provide a polished, natural tactical analysis of what is visible on screen in 1-2 spoken sentences as NAVI's assistant. Do not use markdown.", fg_window, ui_summary, prompt)
                             },
                             {
                                 "type": "image_url",
@@ -5459,7 +5459,7 @@ async fn handle_developer_code(
     let mut eval_tokens = 0u32;
     let mut tokens_per_sec = 45.0f32;
 
-    let dev_system_prompt = r#"You are J.A.R.V.I.S. Developer Agent.
+    let dev_system_prompt = r#"You are JARVIS Developer Agent.
 The user wants you to generate code to be typed directly into their editor (Notepad or VS Code).
 CRITICAL RULES:
 1. Output ONLY the raw source code.
@@ -5831,7 +5831,7 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: taur
     let client = reqwest::Client::new();
     let ist_temporal = get_ist_temporal_context();
     let system_prompt = format!(
-        r#"You are J.A.R.V.I.S., Tony Stark's exceptionally intelligent, articulate, and suave AI assistant running on Windows.
+        r#"You are JARVIS, NAVI's exceptionally intelligent, articulate, and suave AI assistant running on Windows.
 Your speech and communication must be exceptionally natural, professional, and composed—speaking with the refined poise and subtle wit of Paul Bettany's JARVIS.
 Never sound like a rigid robot, a text log, or a mechanical script.
 

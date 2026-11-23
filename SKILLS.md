@@ -1,6 +1,6 @@
-# J.A.R.V.I.S. Skills & Capabilities Specification
+# JARVIS Skills & Capabilities Specification
 
-This document details the complete functional skills, system actions, execution pathways, and expansion protocols supported by the J.A.R.V.I.S. runtime.
+This document details the complete functional skills, system actions, execution pathways, and expansion protocols supported by the JARVIS runtime.
 
 ---
 
@@ -74,7 +74,7 @@ This document details the complete functional skills, system actions, execution 
 
 ### 4. Background System Audio Ducking & Media Isolation
 * **Modules:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs), [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js)
-* **Capability:** Automatically ducks (pauses/mutes) background media (Spotify, YouTube, browser audio) via `set_system_ducking` when J.A.R.V.I.S. starts listening or speaking, and smoothly restores playback when dialogue concludes. This eliminates background music bleeding into the microphone and prevents audio clashing.
+* **Capability:** Automatically ducks (pauses/mutes) background media (Spotify, YouTube, browser audio) via `set_system_ducking` when JARVIS starts listening or speaking, and smoothly restores playback when dialogue concludes. This eliminates background music bleeding into the microphone and prevents audio clashing.
 
 ### 5. Local "Hey Jarvis" Wake-Word Engine
 * **Modules:** [`scripts/speech_worker.ps1`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/speech_worker.ps1), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)

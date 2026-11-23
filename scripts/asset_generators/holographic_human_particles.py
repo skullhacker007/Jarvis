@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 =============================================================================
-J.A.R.V.I.S. // STARK BIOMETRIC HOLOGRAPHIC HUMAN PARTICLE ENGINE
+JARVIS // NAVI BIOMETRIC HOLOGRAPHIC HUMAN PARTICLE ENGINE
 =============================================================================
 Architecture: Python Particles Technique for 3D Anatomical Point Cloud
 Generates ~2,280 anatomical 3D points forming an athletic human silhouette,
@@ -298,7 +298,7 @@ class HumanParticleSystem:
     def export_obj(self, filename="human.obj"):
         """Exports vertices to wavefront .obj file format."""
         with open(filename, "w", encoding="utf-8") as f:
-            f.write("# J.A.R.V.I.S. Biometric Human Particle Point Cloud\n")
+            f.write("# JARVIS Biometric Human Particle Point Cloud\n")
             f.write(f"# Vertices count: {len(self.particles)}\n")
             for p in self.particles:
                 f.write(f"v {p.tx:.4f} {p.ty:.4f} {p.tz:.4f}\n")
@@ -348,7 +348,7 @@ class HumanParticleSystem:
 def main():
     system = HumanParticleSystem()
     print("=" * 65)
-    print("  J.A.R.V.I.S. // STARK BIOMETRIC HOLOGRAPHIC HUMAN PARTICLES")
+    print("  JARVIS // NAVI BIOMETRIC HOLOGRAPHIC HUMAN PARTICLES")
     print("=" * 65)
     print(f"Total Anatomical Particles: {len(system.particles):,}")
 

@@ -1,4 +1,4 @@
-# J.A.R.V.I.S. Ultra-Realistic Neural Voice Synthesis Engine
+# JARVIS Ultra-Realistic Neural Voice Synthesis Engine
 # Primary: Kokoro-82M ONNX (Local 82M Parameter Neural Weights, British Male Cadence)
 # Multilingual Fallback: te-IN-MohanNeural (Telugu), en-GB-RyanNeural (Edge Cloud)
 
@@ -200,5 +200,5 @@ if __name__ == "__main__":
             port = int(sys.argv[1])
         except ValueError:
             pass
-    print(f"[Neural TTS] Starting J.A.R.V.I.S. Speech Matrix (Kokoro-82M + Edge-TTS) on http://127.0.0.1:{port}...", flush=True)
+    print(f"[Neural TTS] Starting JARVIS Speech Matrix (Kokoro-82M + Edge-TTS) on http://127.0.0.1:{port}...", flush=True)
     web.run_app(app, host="127.0.0.1", port=port, print=None)

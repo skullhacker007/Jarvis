@@ -82,7 +82,7 @@ def run_simulation(image_path="src/assets/humanoid_smart.jpg", max_particles=450
     
     win_w, win_h = 480, 720
     screen = pygame.display.set_mode((win_w, win_h), pygame.DOUBLEBUF)
-    pygame.display.set_caption("J.A.R.V.I.S. // Python Particles Engine (Wind & Aura)")
+    pygame.display.set_caption("JARVIS // Python Particles Engine (Wind & Aura)")
     clock = pygame.time.Clock()
 
     print(f"[Engine] Ingesting visual asset: {image_path}")
@@ -249,7 +249,7 @@ def run_simulation(image_path="src/assets/humanoid_smart.jpg", max_particles=450
     pygame.quit()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="J.A.R.V.I.S. Python Particle Wind Engine")
+    parser = argparse.ArgumentParser(description="JARVIS Python Particle Wind Engine")
     parser.add_argument("image", nargs="?", default="src/assets/humanoid_smart.jpg", help="Path to image file")
     parser.add_argument("--particles", type=int, default=45000, help="Max particle count (e.g. 50000)")
     args = parser.parse_args()

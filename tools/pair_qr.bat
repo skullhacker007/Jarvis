@@ -1,10 +1,10 @@
 @echo off
-title J.A.R.V.I.S. // UNIVERSAL MOBILE UPLINK
+title JARVIS // UNIVERSAL MOBILE UPLINK
 chcp 65001 >nul
 color 0B
 cls
 echo ================================================================
-echo   J.A.R.V.I.S. // UNIVERSAL WIRELESS PHONE PAIRING
+echo   JARVIS // UNIVERSAL WIRELESS PHONE PAIRING
 echo   1. On Phone: Settings ^> Developer Options ^> Wireless Debugging
 echo   2. Tap 'Pair device with QR code'
 echo   3. Point phone camera at the QR code below:

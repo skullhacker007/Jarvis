@@ -48,9 +48,9 @@ class TestMemoryEngine(unittest.TestCase):
 
     def test_rag_bm25_tokenization(self):
         # Test HybridRAGEngine's query term extraction
-        query = "What is the status of project Stark?"
+        query = "What is the status of project NAVI?"
         keywords = HybridRAGEngine.extract_keywords(query) if hasattr(HybridRAGEngine, "extract_keywords") else query.lower().split()
-        self.assertTrue(any("stark" in str(kw).lower() for kw in keywords))
+        self.assertTrue(any("navi" in str(kw).lower() for kw in keywords))
 
 
 if __name__ == "__main__":

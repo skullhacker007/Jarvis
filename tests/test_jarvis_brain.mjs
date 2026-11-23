@@ -1,5 +1,5 @@
 async function runBenchmark() {
-  const systemPrompt = `You are J.A.R.V.I.S., Stark Industries AI controller on Windows.
+  const systemPrompt = `You are JARVIS, NAVI AI controller on Windows.
 Reply ONLY with a single JSON object:
 {"action":"open_app"|"close_app"|"run_cmd"|"system_ctrl"|"none","target":"<app or cmd>","reply":"<spoken reply under 12 words>"}
 Rules:

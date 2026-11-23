@@ -1,4 +1,4 @@
-"""J.A.R.V.I.S. Memory, Storage, Hybrid RAG, and Offline Synchronization Engine."""
+"""JARVIS Memory, Storage, Hybrid RAG, and Offline Synchronization Engine."""
 
 from memory.db_postgres import PostgresManager
 from memory.sync_queue import OfflineSyncQueue

@@ -1,5 +1,5 @@
 // =============================================================
-// J.A.R.V.I.S. HUD NOTIFICATION TOAST ENGINE & PHONE MIRRORING
+// JARVIS HUD NOTIFICATION TOAST ENGINE & PHONE MIRRORING
 // =============================================================
 
 import { JarvisSoundscape } from "./soundscape.js";

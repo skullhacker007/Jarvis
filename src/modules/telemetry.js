@@ -1,5 +1,5 @@
 // =============================================================
-// J.A.R.V.I.S. SYSTEM & PHONE TELEMETRY ENGINE
+// JARVIS SYSTEM & PHONE TELEMETRY ENGINE
 // =============================================================
 
 export async function fetchSystemTelemetry(invokeFn) {

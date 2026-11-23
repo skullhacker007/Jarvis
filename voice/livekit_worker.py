@@ -105,7 +105,7 @@ async def entrypoint(ctx):
             logger.info("[Barge-in]: User interrupted agent. Cancelling speech output instantly.")
 
         assistant.start(ctx.room)
-        logger.info("J.A.R.V.I.S. Voice Assistant started and listening in room.")
+        logger.info("JARVIS Voice Assistant started and listening in room.")
 
     except Exception as err:
         logger.error(f"Failed to start VoiceAssistant pipeline: {err}")

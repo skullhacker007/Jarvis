@@ -1,5 +1,5 @@
 // =============================================================
-// J.A.R.V.I.S. HOLOGRAPHIC PHONE DIALER & COMMUNICATIONS
+// JARVIS HOLOGRAPHIC PHONE DIALER & COMMUNICATIONS
 // =============================================================
 
 import { JarvisSoundscape } from "./soundscape.js";

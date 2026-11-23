@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
-    <title>J.A.R.V.I.S. // STARK AI SYSTEM CONTROLLER</title>
+    <title>JARVIS</title>
     <style>
       html, body {
         background-color: #030712 !important;
@@ -20,6 +20,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800;900&family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Official Google AI Edge MediaPipe Tasks Vision Bundle -->
+    <script src="vendor/mediapipe/vision_bundle.js"></script>
+    <script>
+      if (!window.Vision) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"><\\/script>');
+      }
+    </script>
   </head>
   <body>
     <div class="full-screen-stage">
@@ -28,8 +35,8 @@
         <!-- Full-fit 4K uncompressed master image -->
         <img src="assets/ironman_center.png" alt="Iron Man" class="ironman-master-img" id="ironman-master-img" />
 
-        <!-- STARK CHEST ARC REACTOR (RADIATOR) // PHOTOREALISTIC DYNAMIC ROTOR ENGINE -->
-        <div class="stark-arc-reactor" id="stark-arc-reactor">
+        <!-- NAVI CHEST ARC REACTOR (RADIATOR) // PHOTOREALISTIC DYNAMIC ROTOR ENGINE -->
+        <div class="navi-arc-reactor" id="navi-arc-reactor">
           <div class="reactor-container">
             <!-- 1. Ambient Background Neon Glow -->
             <div class="reactor-ambient-glow"></div>
@@ -86,16 +93,15 @@
       </div>
 
       <!-- ========================================================= -->
-      <!-- LEFT CENTER: PYTHON PARTICLES ENGINE // HUMAN AURA & WIND -->
+      <!-- [DISABLED] nAvI Labs Humanoid Hologram Block (Archived)   -->
       <!-- ========================================================= -->
+      <!--
       <div class="gadget-panel holographic-human-panel" id="holographic-human-panel">
-        <!-- Cyber Corner Reticles -->
         <div class="hud-corner-bracket top-left"></div>
         <div class="hud-corner-bracket top-right"></div>
         <div class="hud-corner-bracket bottom-left"></div>
         <div class="hud-corner-bracket bottom-right"></div>
 
-        <!-- Sleek Minimalist Header: nAvI Labs + Single ON/OFF Toggle -->
         <div class="gadget-top human-panel-top">
           <div class="human-title-group">
             <span class="human-pulse-beacon" id="human-pulse-beacon"></span>
@@ -116,11 +122,9 @@
           </div>
         </div>
 
-        <!-- 3D Holographic Particle Human Canvas Container -->
         <div class="human-canvas-container" id="human-canvas-container" draggable="true" title="Drag to Deploy Hologram to Center Console">
           <canvas id="human-particle-canvas" class="human-particle-canvas"></canvas>
 
-          <!-- Holographic HUD Telemetry Chips -->
           <div class="human-hud-overlay">
             <div class="human-hud-badge top-left-badge">
               <span class="hud-chip-tag">SYSTEM</span>
@@ -138,6 +142,106 @@
               <span class="hud-chip-tag">PARTICLES</span>
               <span class="hud-chip-val purple" id="human-particle-count">30,000 PTS</span>
             </div>
+          </div>
+        </div>
+      </div>
+      -->
+
+      <!-- ========================================================= -->
+      <!-- LEFT CENTER: HOLISTIC LANDMARKER & GESTURE RECOGNIZER     -->
+      <!-- ========================================================= -->
+      <div class="gadget-panel gesture-recognize-panel holistic-gesture-panel" id="holistic-gesture-panel">
+        <!-- Cyber Corner Reticles -->
+        <div class="hud-corner-bracket top-left"></div>
+        <div class="hud-corner-bracket top-right"></div>
+        <div class="hud-corner-bracket bottom-left"></div>
+        <div class="hud-corner-bracket bottom-right"></div>
+
+        <!-- Sleek Header: Holistic Landmarker + Gesture Recognizer -->
+        <div class="gadget-top gesture-panel-top">
+          <div class="gesture-title-group">
+            <span class="gesture-blue-beacon" id="holistic-pulse-beacon"></span>
+            <div class="gesture-title-wrap">
+              <span class="gadget-title gesture-blue-title">HOLISTIC LANDMARKER</span>
+              <span class="gesture-sub-badge">GESTURE RECOGNIZER</span>
+            </div>
+          </div>
+          <div class="holistic-controls-group">
+            <div class="holistic-mode-selector" id="holistic-mode-selector" title="Switch Sensor View Mode">
+              <button type="button" class="holistic-mode-pill active" data-mode="holistic" title="View 543 Holistic Landmarks (Face 468, Pose 33, Hands 42)">HOLISTIC</button>
+              <button type="button" class="holistic-mode-pill" data-mode="gestures" title="View Hand Gestures & Tracking Box">GESTURES</button>
+              <button type="button" class="holistic-mode-pill" data-mode="combined" title="Dual Real-Time Mode">ALL</button>
+            </div>
+            <button type="button" class="holistic-cam-btn" id="holistic-cam-toggle-btn" title="Toggle Real Physical Webcam Stream (Lenovo FHD Webcam)">
+              <span class="cam-icon">📷</span>
+              <span id="holistic-cam-btn-label">CAM: OFF</span>
+            </button>
+            <button type="button" class="holistic-flip-btn" id="holistic-flip-btn" title="Toggle Mirror (Selfie / Normal View)">
+              <span class="flip-icon">🪞</span>
+              <span id="holistic-flip-btn-label">FLIP: OFF</span>
+            </button>
+            <button type="button" class="gesture-cam-toggle-btn enabled" id="holistic-track-toggle-btn" title="Toggle Tracking Sensor">
+              <span class="toggle-dot" id="holistic-toggle-dot"></span>
+              <span id="holistic-track-btn-label">TRACK: ON</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Real-Time Interactive Canvas Container with Live Camera Stream -->
+        <div class="gesture-canvas-container holistic-canvas-container" id="holistic-canvas-container">
+          <div class="holistic-viewport" id="holistic-viewport">
+            <!-- Real Physical Webcam Video Feed -->
+            <video id="holistic-webcam-video" class="holistic-webcam-video" autoplay playsinline muted></video>
+            <!-- Real-Time MediaPipe Holistic Landmarker & Gesture Canvas -->
+            <canvas id="holistic-gesture-canvas" class="gesture-recognize-canvas holistic-recognize-canvas"></canvas>
+          </div>
+
+          <!-- Holographic Floating HUD Overlay Badges -->
+          <div class="human-hud-overlay holistic-hud-overlay">
+            <div class="human-hud-badge top-left-badge">
+              <span class="hud-chip-tag">PIPELINE</span>
+              <span class="hud-chip-val cyan" id="holistic-pipeline-status">HOLISTIC v0.10</span>
+            </div>
+            <div class="human-hud-badge top-right-badge">
+              <span class="hud-chip-tag">LANDMARKS</span>
+              <span class="hud-chip-val emerald" id="holistic-landmark-count">543 PTS (ACTIVE)</span>
+            </div>
+            <div class="human-hud-badge bottom-left-badge">
+              <span class="hud-chip-tag">ACTIVE GESTURE</span>
+              <span class="hud-chip-val cyan" id="holistic-active-gesture">✌️ VICTORY (99.2%)</span>
+            </div>
+            <div class="human-hud-badge bottom-right-badge">
+              <span class="hud-chip-tag">LATENCY / FPS</span>
+              <span class="hud-chip-val purple" id="holistic-fps-val">12ms // 60 FPS</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gesture Recognition Triggers Strip -->
+        <div class="gesture-triggers-strip" id="gesture-triggers-strip">
+          <div class="gesture-trigger-item active" data-gesture="victory" title="Victory / Peace Gesture">
+            <span class="g-icon">✌️</span>
+            <span class="g-name">VICTORY</span>
+          </div>
+          <div class="gesture-trigger-item" data-gesture="open_palm" title="Open Palm">
+            <span class="g-icon">👋</span>
+            <span class="g-name">PALM</span>
+          </div>
+          <div class="gesture-trigger-item" data-gesture="fist" title="Closed Fist">
+            <span class="g-icon">✊</span>
+            <span class="g-name">FIST</span>
+          </div>
+          <div class="gesture-trigger-item" data-gesture="pointing" title="Pointing Index">
+            <span class="g-icon">☝️</span>
+            <span class="g-name">POINT</span>
+          </div>
+          <div class="gesture-trigger-item" data-gesture="pinch" title="Pinch / Precision Select">
+            <span class="g-icon">👌</span>
+            <span class="g-name">PINCH</span>
+          </div>
+          <div class="gesture-trigger-item" data-gesture="arc_strike" title="Love-You / Energy Blast">
+            <span class="g-icon">🤟</span>
+            <span class="g-name">BLAST</span>
           </div>
         </div>
       </div>
@@ -407,7 +511,7 @@
           </button>
 
           <!-- 5. UNIFIED GLOBE (All 3 AI Capabilities: Web Search, Screen Vision, System Actions) -->
-          <button class="dock-app-item" id="btn-dock-search" title="J.A.R.V.I.S. Directive Input (Toggle)">
+          <button class="dock-app-item" id="btn-dock-search" title="JARVIS Directive Input (Toggle)">
             <div class="dock-icon-box dock-icon-ai">
               <svg class="dock-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/>
@@ -431,7 +535,7 @@
             <line x1="8" y1="8" x2="8" y2="16" stroke="currentColor" stroke-width="1" opacity="0.6" />
             <circle cx="8" cy="8" r="1.5" fill="currentColor" opacity="0.8" />
           </svg>
-          <span class="reticle-tag">STARK // HUD-01</span>
+          <span class="reticle-tag">NAVI // HUD-01</span>
         </div>
 
         <!-- Top Right Reticle Bracket -->
@@ -583,7 +687,7 @@
     <!-- ========================================================= -->
     <div class="phone-sync-overlay" id="phone-sync-overlay" style="display: none;">
       <div class="phone-sync-card">
-        <!-- Stark CAD Corner Accents -->
+        <!-- NAVI CAD Corner Accents -->
         <span class="sync-corner top-left">+</span>
         <span class="sync-corner top-right">+</span>
         <span class="sync-corner bottom-left">+</span>
@@ -594,7 +698,7 @@
           <div class="sync-head-left">
             <div class="sync-badge">
               <span class="sync-beacon"></span>
-              <span>STARK UPLINK GATEWAY</span>
+              <span>NAVI UPLINK GATEWAY</span>
             </div>
             <div class="sync-title">UNIVERSAL PHONE PAIRING</div>
           </div>
@@ -735,7 +839,7 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <span>SEMANTIC LOCAL FILE SEARCH // STARK INDEX</span>
+          <span>SEMANTIC LOCAL FILE SEARCH // NAVI INDEX</span>
         </div>
         <button class="fs-modal-close" id="fs-modal-close" title="Close">&times;</button>
       </div>
@@ -760,7 +864,7 @@
             <path d="m16 16-4-4-4 4"></path>
           </svg>
         </div>
-        <div class="airdrop-title">STARK P2P AIRDROP // WIRELESS PHONE BEAM</div>
+        <div class="airdrop-title">NAVI P2P AIRDROP // WIRELESS PHONE BEAM</div>
         <div class="airdrop-subtitle">Drop files anywhere to beam directly to /sdcard/Download/ via High-Speed ADB</div>
         <div class="airdrop-status" id="airdrop-status-text">DROP FILE TO TRANSMIT</div>
       </div>

@@ -1,4 +1,4 @@
-// J.A.R.V.I.S. AI System Controller
+// JARVIS AI System Controller
 // 100% Dynamic Hardware Telemetry (CPU, 64GB RAM, I7 CPU, Network, Active Apps)
 // Real Token Activity (Reference Matrix & Metrics) + Borderless App Dock (Phone, Outlook, WhatsApp, Spotify)
 
@@ -549,7 +549,7 @@ function showVisualTarget(x, y, label = "TARGET ACQUIRED") {
 // PHASE 3: nAvI Labs // HOLOGRAPHIC HUMANOID PROJECTION
 // (Stable High-Definition 32,000 Particle Biometric Matrix)
 // =============================================================
-const StarkBiometricHologram = (() => {
+const NaviBiometricHologram = (() => {
   let canvasEl = null;
   let ctx = null;
   let animId = null;
@@ -635,8 +635,8 @@ const StarkBiometricHologram = (() => {
   // -------------------------------------------------------------
   function loadAvatarModel(avatarKey, w, h) {
     activeAvatarKey = avatarKey || activeAvatarKey || "ultron";
-    const models = window.STARK_HOLOGRAM_MODELS || {};
-    let preset = models[activeAvatarKey] || (activeAvatarKey === "ultron" ? models["navi"] : (activeAvatarKey === "navi" ? models["ultron"] : null)) || window.STARK_HUMAN_PARTICLE_DATA;
+    const models = window.NAVI_HOLOGRAM_MODELS || {};
+    let preset = models[activeAvatarKey] || (activeAvatarKey === "ultron" ? models["navi"] : (activeAvatarKey === "navi" ? models["ultron"] : null)) || window.NAVI_HUMAN_PARTICLE_DATA;
 
     if (!preset || !preset.x || preset.x.length === 0) {
       generateFallbackHuman(w, h);
@@ -715,14 +715,15 @@ const StarkBiometricHologram = (() => {
       loadAvatarModel(key, canvasEl.width, canvasEl.height);
     }
 
-    if (window.StarkCenterHologram && window.StarkCenterHologram.isDeployed()) {
-      window.StarkCenterHologram.deployAvatar(key);
+    const centerHolo = window.NaviCenterHologram;
+    if (centerHolo && centerHolo.isDeployed()) {
+      centerHolo.deployAvatar(key);
     }
 
     triggerMaterialize();
     JarvisSoundscape.play("wake");
 
-    const models = window.STARK_HOLOGRAM_MODELS || {};
+    const models = window.NAVI_HOLOGRAM_MODELS || {};
     const name = models[key]?.name || key;
     showJarvisFeedback(`Hologram: ${name} initializing...`, "avatar_switch");
   }
@@ -840,8 +841,9 @@ const StarkBiometricHologram = (() => {
     if (powerActive) {
       triggerMaterialize();
     } else {
-      if (window.StarkCenterHologram && window.StarkCenterHologram.isDeployed()) {
-        window.StarkCenterHologram.restoreIronMan();
+      const centerHolo = window.NaviCenterHologram;
+      if (centerHolo && centerHolo.isDeployed()) {
+        centerHolo.restoreIronMan();
       }
     }
     showJarvisFeedback(powerActive ? "nAvI Labs projection online." : "nAvI Labs projection standby.", "navi_labs");
@@ -1131,14 +1133,867 @@ const StarkBiometricHologram = (() => {
   };
 })();
 
-// Backward-compatible alias
-const StarkVisionSensor = StarkBiometricHologram;
+// =============================================================
+// GOOGLE MEDIAPIPE HOLISTIC LANDMARKER & GESTURE RECOGNIZER
+// 543 Landmarks: Face Mesh (468) + Pose Skeleton (33) + Dual Hands (42)
+// Live Physical Camera Stream + Real-Time MediaPipe Visualizer (Image 2 Match)
+// =============================================================
+const NaviHolisticGestureTracker = (() => {
+  let canvasEl = null;
+  let ctx = null;
+  let videoEl = null;
+  let viewportEl = null;
+  let containerEl = null;
+  let animId = null;
+  let isTracking = true;
+  let currentMode = "combined"; // "holistic" | "gestures" | "combined"
+  let activeGestureKey = "victory";
+
+  // Physical Webcam Stream State
+  let camToggleBtn = null;
+  let camBtnLabel = null;
+  let flipBtn = null;
+  let flipBtnLabel = null;
+  let isMirrored = false;
+  let isWebcamActive = false;
+  let webcamStream = null;
+  let cameraInUseError = false;
+
+  // Google MediaPipe Tasks Vision State
+  let visionLoaded = false;
+  let holisticLandmarker = null;
+  let isModelLoading = false;
+  let lastVideoTime = -1;
+  let lastTimestampMs = -1;
+  let lastResult = null;
+
+  // UI Element References
+  let modePills = [];
+  let triggerItems = [];
+  let trackToggleBtn = null;
+  let trackBtnLabel = null;
+  let pipelineStatusEl = null;
+  let landmarkCountEl = null;
+  let activeGestureEl = null;
+  let fpsValEl = null;
+  let pulseBeaconEl = null;
+
+  // Telemetry & Metrics
+  let frameCount = 0;
+  let fpsTimer = performance.now();
+  let currentFps = 60;
+  let latencyMs = 11;
+
+  const GESTURES = {
+    victory: {
+      name: "VICTORY",
+      icon: "✌️",
+      action: "DESKTOP_VISOR_TOGGLE",
+      desc: "Visor Hologram Engaged",
+      confidence: 0.992
+    },
+    open_palm: {
+      name: "PALM",
+      icon: "✋",
+      action: "SHIELD_ARRAY_ACTIVATE",
+      desc: "Defensive Kinetic Mesh Active",
+      confidence: 0.985
+    },
+    fist: {
+      name: "FIST",
+      icon: "✊",
+      action: "REPULSOR_CHARGED",
+      desc: "Repulsor Capacitor at 100%",
+      confidence: 0.990
+    },
+    pointing: {
+      name: "POINT",
+      icon: "☝️",
+      action: "SYSTEM_TARGET_LOCK",
+      desc: "Precision Vector Coordinate Locked",
+      confidence: 0.978
+    },
+    pinch: {
+      name: "PINCH",
+      icon: "👌",
+      action: "TACTICAL_DATA_ZOOM",
+      desc: "Holographic Depth Scaled",
+      confidence: 0.965
+    },
+    arc_strike: {
+      name: "BLAST",
+      icon: "🤟",
+      action: "UNIBEAM_OVERCHARGE",
+      desc: "Chest Arc Reactor Unibeam Primed",
+      confidence: 0.982
+    }
+  };
+
+  function updatePipelineStatus(statusText) {
+    if (pipelineStatusEl) {
+      pipelineStatusEl.textContent = statusText;
+    }
+  }
+
+  function toggleFlip(state) {
+    isMirrored = typeof state === "boolean" ? state : !isMirrored;
+    if (viewportEl) {
+      viewportEl.classList.toggle("mirrored", isMirrored);
+    }
+    if (flipBtn) {
+      flipBtn.classList.toggle("active", isMirrored);
+    }
+    if (flipBtnLabel) {
+      flipBtnLabel.textContent = isMirrored ? "FLIP: ON" : "FLIP: OFF";
+    }
+  }
+
+  function setCamButtonState(state) {
+    if (!camToggleBtn) return;
+    if (state === "active") {
+      camToggleBtn.classList.add("enabled");
+      camToggleBtn.classList.remove("error", "starting");
+      if (camBtnLabel) camBtnLabel.textContent = "CAM: ON";
+    } else if (state === "starting") {
+      camToggleBtn.classList.remove("enabled", "error");
+      camToggleBtn.classList.add("starting");
+      if (camBtnLabel) camBtnLabel.textContent = "CAM: ...";
+    } else {
+      camToggleBtn.classList.remove("enabled", "starting");
+      if (state === "error") {
+        camToggleBtn.classList.add("error");
+      } else {
+        camToggleBtn.classList.remove("error");
+      }
+      if (camBtnLabel) camBtnLabel.textContent = "CAM: OFF";
+    }
+  }
+
+  // =============================================================
+  // 1. Google MediaPipe Tasks Vision Initialization
+  // Official reference: google-ai-edge/mediapipe-samples-web/src/tasks/holistic-landmarker.ts
+  // =============================================================
+  async function initMediaPipe() {
+    if (holisticLandmarker || isModelLoading) return;
+    isModelLoading = true;
+    updatePipelineStatus("INIT VISION...");
+
+    try {
+      if (!window.Vision) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = "vendor/mediapipe/vision_bundle.js";
+          s.onload = resolve;
+          s.onerror = () => {
+            const s2 = document.createElement("script");
+            s2.src = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js";
+            s2.crossOrigin = "anonymous";
+            s2.onload = resolve;
+            s2.onerror = reject;
+            document.head.appendChild(s2);
+          };
+          document.head.appendChild(s);
+        });
+      }
+
+      updatePipelineStatus("LOADING MODEL...");
+      let filesetResolver;
+      try {
+        filesetResolver = await window.Vision.FilesetResolver.forVisionTasks(
+          "vendor/mediapipe/wasm"
+        );
+      } catch (wasmErr) {
+        console.warn("[NAVI Holistic] Local wasm failed, using CDN wasm:", wasmErr);
+        filesetResolver = await window.Vision.FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
+        );
+      }
+
+      const localModelPath = "vendor/mediapipe/models/holistic_landmarker.task";
+      const cdnModelPath =
+        "https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task";
+
+      async function createLandmarker(modelPath, delegate) {
+        return await window.Vision.HolisticLandmarker.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: modelPath,
+            delegate: delegate
+          },
+          runningMode: "VIDEO",
+          minFaceDetectionConfidence: 0.5,
+          minFacePresenceConfidence: 0.5,
+          minHandLandmarksConfidence: 0.5,
+          minPoseDetectionConfidence: 0.5
+        });
+      }
+
+      try {
+        holisticLandmarker = await createLandmarker(localModelPath, "GPU");
+        console.log("[NAVI Holistic] Loaded local model with GPU delegate.");
+      } catch (e1) {
+        console.warn("[NAVI Holistic] Local GPU failed, trying local CPU...", e1);
+        try {
+          holisticLandmarker = await createLandmarker(localModelPath, "CPU");
+          console.log("[NAVI Holistic] Loaded local model with CPU delegate.");
+        } catch (e2) {
+          console.warn("[NAVI Holistic] Local model failed, trying CDN model with GPU...", e2);
+          try {
+            holisticLandmarker = await createLandmarker(cdnModelPath, "GPU");
+            console.log("[NAVI Holistic] Loaded CDN model with GPU delegate.");
+          } catch (e3) {
+            console.warn("[NAVI Holistic] CDN GPU failed, trying CDN CPU...", e3);
+            holisticLandmarker = await createLandmarker(cdnModelPath, "CPU");
+            console.log("[NAVI Holistic] Loaded CDN model with CPU delegate.");
+          }
+        }
+      }
+
+      visionLoaded = true;
+      isModelLoading = false;
+      updatePipelineStatus("HOLISTIC v0.10");
+    } catch (err) {
+      console.error("[NAVI Holistic] Failed to initialize MediaPipe Holistic Landmarker:", err);
+      isModelLoading = false;
+      updatePipelineStatus("HOLISTIC STANDBY");
+    }
+  }
+
+  // =============================================================
+  // 2. Physical Webcam Acquisition (Multi-Strategy with Fallbacks)
+  // =============================================================
+  async function acquireCameraStream() {
+    // Strategy 1: Standard video request
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: true });
+    } catch (e1) {
+      console.warn("[NAVI Holistic] Default getUserMedia failed, enumerating devices...", e1);
+    }
+
+    // Strategy 2: Specific videoinput device enumeration
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter((d) => d.kind === "videoinput");
+      for (const dev of videoDevices) {
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: dev.deviceId } }
+          });
+        } catch (eDev) {
+          console.warn(`[NAVI Holistic] Device \${dev.label || dev.deviceId} failed:`, eDev);
+        }
+      }
+    } catch (e2) {
+      console.warn("[NAVI Holistic] Device enumeration failed:", e2);
+    }
+
+    // Strategy 3: Explicit standard resolution
+    return await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 }
+      }
+    });
+  }
+
+  async function enableCam() {
+    if (webcamStream) return;
+    setCamButtonState("starting");
+    updatePipelineStatus("CAM: ...");
+
+    try {
+      const stream = await acquireCameraStream();
+      webcamStream = stream;
+      isWebcamActive = true;
+      cameraInUseError = false;
+
+      if (containerEl) {
+        containerEl.classList.add("webcam-active");
+      }
+
+      if (videoEl) {
+        videoEl.srcObject = stream;
+        videoEl.style.display = "block";
+        const onLoaded = () => {
+          resizeCanvas();
+          videoEl.play().catch(console.error);
+        };
+        if (videoEl.readyState >= 2) {
+          onLoaded();
+        } else {
+          videoEl.addEventListener("loadeddata", onLoaded, { once: true });
+        }
+        videoEl.play().catch(console.error);
+      }
+
+      setCamButtonState("active");
+      updatePipelineStatus("HOLISTIC v0.10");
+      console.log("[NAVI Holistic] Physical webcam stream started successfully.");
+
+      if (!holisticLandmarker && !isModelLoading) {
+        initMediaPipe();
+      }
+    } catch (err) {
+      console.error("[NAVI Holistic] Error starting webcam:", err);
+      cameraInUseError = true;
+      setCamButtonState("error");
+      updatePipelineStatus("CAM BUSY");
+    }
+  }
+
+  function stopCam() {
+    if (webcamStream) {
+      webcamStream.getTracks().forEach((track) => track.stop());
+      webcamStream = null;
+    }
+    isWebcamActive = false;
+    cameraInUseError = false;
+    lastResult = null;
+
+    if (containerEl) {
+      containerEl.classList.remove("webcam-active");
+    }
+
+    if (videoEl) {
+      videoEl.srcObject = null;
+      videoEl.style.display = "none";
+    }
+
+    if (canvasEl) {
+      canvasEl.style.width = "";
+      canvasEl.style.height = "";
+    }
+
+    setCamButtonState("idle");
+    updatePipelineStatus("HOLISTIC v0.10");
+    resizeCanvas();
+    console.log("[NAVI Holistic] Webcam stopped.");
+  }
+
+  function toggleWebcam() {
+    if (isWebcamActive) {
+      stopCam();
+    } else {
+      enableCam();
+    }
+  }
+
+  function resizeCanvas() {
+    if (!canvasEl) return;
+    if (isWebcamActive && videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+      const vw = videoEl.videoWidth;
+      const vh = videoEl.videoHeight;
+      if (canvasEl.width !== vw || canvasEl.height !== vh) {
+        canvasEl.width = vw;
+        canvasEl.height = vh;
+      }
+      if (videoEl.width !== vw || videoEl.height !== vh) {
+        videoEl.width = vw;
+        videoEl.height = vh;
+      }
+      // Ensure canvas element's displayed size matches video element's displayed size exactly
+      const vRect = videoEl.getBoundingClientRect();
+      if (vRect.width > 0 && vRect.height > 0) {
+        const wPx = `${Math.round(vRect.width)}px`;
+        const hPx = `${Math.round(vRect.height)}px`;
+        if (canvasEl.style.width !== wPx) canvasEl.style.width = wPx;
+        if (canvasEl.style.height !== hPx) canvasEl.style.height = hPx;
+      }
+    } else {
+      canvasEl.style.width = "";
+      canvasEl.style.height = "";
+      const rect = containerEl
+        ? containerEl.getBoundingClientRect()
+        : canvasEl.parentElement
+        ? canvasEl.parentElement.getBoundingClientRect()
+        : null;
+      const w = rect && rect.width > 50 ? Math.floor(rect.width) : canvasEl.clientWidth || 380;
+      const h = rect && rect.height > 50 ? Math.floor(rect.height) : canvasEl.clientHeight || 420;
+      if (canvasEl.width !== w || canvasEl.height !== h) {
+        canvasEl.width = w;
+        canvasEl.height = h;
+      }
+    }
+  }
+
+  // =============================================================
+  // 3. Official MediaPipe Holistic Visualizer
+  // Exact 1:1 match to Google AI Edge:
+  // developers.google.com/edge/mediapipe/solutions/vision/holistic_landmarker
+  // =============================================================
+  function drawHolisticResults(ctx, result, w, h) {
+    if (!window.Vision || !window.Vision.DrawingUtils) {
+      return;
+    }
+
+    const DrawingUtils = window.Vision.DrawingUtils;
+    const FL = window.Vision.FaceLandmarker;
+    const PL = window.Vision.PoseLandmarker;
+    const HL = window.Vision.HandLandmarker;
+
+    const drawingUtils = new DrawingUtils(ctx);
+    let totalPoints = 0;
+
+    // Face Landmarks (468 points - exact colors from official Google sample)
+    if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+      for (const landmarks of result.faceLandmarks) {
+        totalPoints += landmarks.length;
+        if (FL) {
+          drawingUtils.drawConnectors(landmarks, FL.FACE_LANDMARKS_TESSELATION, {
+            color: "#C0C0C070",
+            lineWidth: 1
+          });
+          drawingUtils.drawConnectors(landmarks, FL.FACE_LANDMARKS_RIGHT_EYE, { color: "#FF3030", lineWidth: 2 });
+          drawingUtils.drawConnectors(landmarks, FL.FACE_LANDMARKS_RIGHT_EYEBROW, { color: "#FF3030", lineWidth: 2 });
+          drawingUtils.drawConnectors(landmarks, FL.FACE_LANDMARKS_LEFT_EYE, { color: "#30FF30", lineWidth: 2 });
+          drawingUtils.drawConnectors(landmarks, FL.FACE_LANDMARKS_LEFT_EYEBROW, { color: "#30FF30", lineWidth: 2 });
+          drawingUtils.drawConnectors(landmarks, FL.FACE_LANDMARKS_LIPS, { color: "#E0E0E0", lineWidth: 2 });
+          drawingUtils.drawConnectors(landmarks, FL.FACE_LANDMARKS_FACE_OVAL, { color: "#E0E0E0", lineWidth: 2 });
+        }
+      }
+    }
+
+    // Pose Landmarks (33 points - white skeleton with red dots)
+    if (result.poseLandmarks && result.poseLandmarks.length > 0) {
+      for (const landmarks of result.poseLandmarks) {
+        totalPoints += landmarks.length;
+        if (PL) {
+          drawingUtils.drawConnectors(landmarks, PL.POSE_CONNECTIONS, { color: "#FFFFFF", lineWidth: 2 });
+          drawingUtils.drawLandmarks(landmarks, { color: "#FF0000", radius: 3 });
+        }
+      }
+    }
+
+    // Left Hand Landmarks (21 points - red bones with green dots)
+    if (result.leftHandLandmarks && result.leftHandLandmarks.length > 0) {
+      for (const landmarks of result.leftHandLandmarks) {
+        totalPoints += landmarks.length;
+        if (HL) {
+          drawingUtils.drawConnectors(landmarks, HL.HAND_CONNECTIONS, { color: "#CC0000", lineWidth: 4 });
+          drawingUtils.drawLandmarks(landmarks, { color: "#00FF00", lineWidth: 2, radius: 3 });
+        }
+      }
+    }
+
+    // Right Hand Landmarks (21 points - green bones with red dots)
+    if (result.rightHandLandmarks && result.rightHandLandmarks.length > 0) {
+      for (const landmarks of result.rightHandLandmarks) {
+        totalPoints += landmarks.length;
+        if (HL) {
+          drawingUtils.drawConnectors(landmarks, HL.HAND_CONNECTIONS, { color: "#00CC00", lineWidth: 4 });
+          drawingUtils.drawLandmarks(landmarks, { color: "#FF0000", lineWidth: 2, radius: 3 });
+        }
+      }
+    }
+
+    if (landmarkCountEl && totalPoints > 0) {
+      landmarkCountEl.textContent = `${totalPoints} PTS (ACTIVE)`;
+    }
+  }
+
+  // =============================================================
+  // 4. Gesture Detection & HUD Overlay (1:1 lockstep coordinate space)
+  // =============================================================
+  function updateGestureFromLandmarks(result, w, h) {
+    const hands = [];
+    if (result.rightHandLandmarks && result.rightHandLandmarks[0]) {
+      hands.push({ lm: result.rightHandLandmarks[0], label: "RIGHT" });
+    }
+    if (result.leftHandLandmarks && result.leftHandLandmarks[0]) {
+      hands.push({ lm: result.leftHandLandmarks[0], label: "LEFT" });
+    }
+
+    if (hands.length === 0) return;
+
+    for (const hand of hands) {
+      const lm = hand.lm;
+      let minX = 1,
+        maxX = 0,
+        minY = 1,
+        maxY = 0;
+      for (const p of lm) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+
+      const boxX = minX * w - 12;
+      const boxY = minY * h - 12;
+      const boxW = (maxX - minX) * w + 24;
+      const boxH = (maxY - minY) * h + 24;
+
+      // Classify gesture from 21 landmarks
+      const wrist = lm[0];
+      const thumbTip = lm[4];
+      const indexTip = lm[8];
+      const indexPip = lm[6];
+      const middleTip = lm[12];
+      const middlePip = lm[10];
+      const ringTip = lm[16];
+      const ringPip = lm[14];
+      const pinkyTip = lm[20];
+      const pinkyPip = lm[18];
+
+      const indexExt =
+        Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y) >
+        Math.hypot(indexPip.x - wrist.x, indexPip.y - wrist.y) * 1.15;
+      const middleExt =
+        Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y) >
+        Math.hypot(middlePip.x - wrist.x, middlePip.y - wrist.y) * 1.15;
+      const ringExt =
+        Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y) >
+        Math.hypot(ringPip.x - wrist.x, ringPip.y - wrist.y) * 1.15;
+      const pinkyExt =
+        Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y) >
+        Math.hypot(pinkyPip.x - wrist.x, pinkyPip.y - wrist.y) * 1.15;
+      const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+
+      let detected = "victory";
+      let confidence = 0.985;
+
+      if (pinchDist < 0.05) {
+        detected = "pinch";
+        confidence = 0.965;
+      } else if (indexExt && middleExt && !ringExt && !pinkyExt) {
+        detected = "victory";
+        confidence = 0.992;
+      } else if (indexExt && !middleExt && !ringExt && !pinkyExt) {
+        detected = "pointing";
+        confidence = 0.978;
+      } else if (!indexExt && !middleExt && !ringExt && !pinkyExt) {
+        detected = "fist";
+        confidence = 0.99;
+      } else if (indexExt && middleExt && ringExt && pinkyExt) {
+        detected = "open_palm";
+        confidence = 0.985;
+      } else if (indexExt && pinkyExt && !ringExt) {
+        detected = "arc_strike";
+        confidence = 0.982;
+      }
+
+      setGesture(detected);
+
+      // Draw Unmirrored Tracking Bracket & Clean Text when gestures or combined mode active
+      if (currentMode === "gestures" || currentMode === "combined") {
+        ctx.save();
+        ctx.strokeStyle = "#00d2ff";
+        ctx.lineWidth = Math.max(1.5, Math.round(w * 0.002));
+
+        const bLen = Math.min(24, boxW * 0.28);
+        // Top-Left
+        ctx.beginPath();
+        ctx.moveTo(boxX, boxY + bLen);
+        ctx.lineTo(boxX, boxY);
+        ctx.lineTo(boxX + bLen, boxY);
+        // Top-Right
+        ctx.moveTo(boxX + boxW - bLen, boxY);
+        ctx.lineTo(boxX + boxW, boxY);
+        ctx.lineTo(boxX + boxW, boxY + bLen);
+        // Bottom-Left
+        ctx.moveTo(boxX, boxY + boxH - bLen);
+        ctx.lineTo(boxX, boxY + boxH);
+        ctx.lineTo(boxX + bLen, boxY + boxH);
+        // Bottom-Right
+        ctx.moveTo(boxX + boxW - bLen, boxY + boxH);
+        ctx.lineTo(boxX + boxW, boxY + boxH);
+        ctx.lineTo(boxX + boxW, boxY + boxH - bLen);
+        ctx.stroke();
+
+        const fontSize = Math.max(12, Math.round(w * 0.018));
+        ctx.font = `bold ${fontSize}px 'JetBrains Mono', monospace`;
+        ctx.fillStyle = "#00f0ff";
+        ctx.shadowColor = "#00f0ff";
+        ctx.shadowBlur = 6;
+        const gObj = GESTURES[detected] || { name: detected.toUpperCase(), icon: "⚡" };
+        const labelText = `${gObj.icon} ${gObj.name} ${(confidence * 100).toFixed(0)}%`;
+
+        if (isMirrored) {
+          ctx.save();
+          ctx.translate(boxX + boxW / 2, boxY);
+          ctx.scale(-1, 1);
+          ctx.fillText(labelText, -boxW / 2 + 4, -6);
+          ctx.restore();
+        } else {
+          ctx.fillText(labelText, boxX + 4, boxY - 6);
+        }
+        ctx.restore();
+      }
+    }
+  }
+
+  // =============================================================
+  // 5. Standby HUD Display (Webcam Off - Minimal "Just ON/OFF")
+  // =============================================================
+  function drawStandbyScreen(ctx, w, h, now) {
+    // Subtle tactical grid
+    ctx.strokeStyle = "rgba(0, 180, 255, 0.08)";
+    ctx.lineWidth = 1;
+    const step = 28;
+    for (let x = 0; x < w; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = 0; y < h; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    const cx = w * 0.5;
+    const cy = h * 0.5;
+
+    // Camera target reticle
+    ctx.strokeStyle = "rgba(0, 210, 255, 0.4)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 15, 36, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy - 15, 42, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(0, 210, 255, 0.15)";
+    ctx.stroke();
+
+    // Pulsing core dot
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.004);
+    ctx.fillStyle = `rgba(0, 240, 255, ${0.4 + 0.6 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 15, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Minimal single-line HUD status (no clutter)
+    ctx.textAlign = "center";
+    ctx.font = "bold 13px 'Orbitron', 'Rajdhani', sans-serif";
+    if (cameraInUseError) {
+      ctx.fillStyle = "#f87171";
+      ctx.shadowColor = "#ef4444";
+      ctx.shadowBlur = 8;
+      ctx.fillText("CAM IN USE (CLOSE OTHER APPS)", cx, cy + 38);
+    } else {
+      ctx.fillStyle = "#38bdf8";
+      ctx.shadowColor = "#38bdf8";
+      ctx.shadowBlur = 8;
+      ctx.fillText("CAM: OFF", cx, cy + 38);
+    }
+    ctx.shadowBlur = 0;
+    ctx.textAlign = "left";
+  }
+
+  // =============================================================
+  // 6. Main Render Loop
+  // =============================================================
+  function renderLoop() {
+    if (!isTracking) {
+      animId = requestAnimationFrame(renderLoop);
+      return;
+    }
+
+    const now = performance.now();
+    frameCount++;
+    if (now - fpsTimer >= 1000) {
+      currentFps = Math.round((frameCount * 1000) / (now - fpsTimer));
+      frameCount = 0;
+      fpsTimer = now;
+      if (fpsValEl) {
+        fpsValEl.textContent = `${Math.round(latencyMs)}ms // ${currentFps} FPS`;
+      }
+    }
+
+    resizeCanvas();
+    const w = canvasEl.width;
+    const h = canvasEl.height;
+
+    if (isWebcamActive && videoEl && videoEl.readyState >= 2) {
+      if (videoEl.currentTime !== lastVideoTime) {
+        lastVideoTime = videoEl.currentTime;
+
+        if (holisticLandmarker) {
+          const t0 = performance.now();
+          const timestampMs = now > lastTimestampMs ? now : lastTimestampMs + 1;
+          lastTimestampMs = timestampMs;
+
+          try {
+            lastResult = holisticLandmarker.detectForVideo(videoEl, timestampMs);
+            latencyMs = performance.now() - t0;
+          } catch (e) {
+            console.warn("[NAVI Holistic] detectForVideo warning:", e);
+          }
+        }
+      }
+
+      ctx.clearRect(0, 0, w, h);
+
+      if (lastResult) {
+        if (currentMode === "holistic" || currentMode === "combined") {
+          drawHolisticResults(ctx, lastResult, w, h);
+        }
+        updateGestureFromLandmarks(lastResult, w, h);
+      } else {
+        // Video playing, waiting for initial detection
+        ctx.save();
+        ctx.fillStyle = "rgba(56, 189, 248, 0.6)";
+        ctx.font = "11px 'JetBrains Mono', monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("INITIALIZING NEURAL LANDMARKER...", w * 0.5, 30);
+        ctx.restore();
+      }
+    } else {
+      ctx.clearRect(0, 0, w, h);
+      drawStandbyScreen(ctx, w, h, now);
+    }
+
+    animId = requestAnimationFrame(renderLoop);
+  }
+
+  function setMode(mode) {
+    currentMode = mode;
+    modePills.forEach((pill) => {
+      pill.classList.toggle("active", pill.getAttribute("data-mode") === mode);
+    });
+  }
+
+  function setGesture(gestureKey) {
+    if (!GESTURES[gestureKey] || activeGestureKey === gestureKey) return;
+    activeGestureKey = gestureKey;
+    const g = GESTURES[gestureKey];
+
+    triggerItems.forEach((item) => {
+      item.classList.toggle("active", item.getAttribute("data-gesture") === gestureKey);
+    });
+
+    if (activeGestureEl) {
+      activeGestureEl.textContent = `${g.icon} ${g.name} (${(g.confidence * 100).toFixed(1)}%)`;
+    }
+  }
+
+  function toggleTracking(state) {
+    isTracking = typeof state === "boolean" ? state : !isTracking;
+    if (trackToggleBtn) {
+      trackToggleBtn.classList.toggle("enabled", isTracking);
+      trackToggleBtn.classList.toggle("active", isTracking);
+    }
+    if (trackBtnLabel) {
+      trackBtnLabel.textContent = isTracking ? "TRACK: ON" : "TRACK: OFF";
+    }
+    if (pulseBeaconEl) {
+      pulseBeaconEl.style.opacity = isTracking ? "1" : "0.2";
+    }
+  }
+
+  function init() {
+    canvasEl = document.getElementById("holistic-gesture-canvas");
+    videoEl = document.getElementById("holistic-webcam-video");
+    viewportEl = document.getElementById("holistic-viewport");
+    containerEl = document.getElementById("holistic-canvas-container");
+    camToggleBtn = document.getElementById("holistic-cam-toggle-btn");
+    camBtnLabel = document.getElementById("holistic-cam-btn-label");
+    flipBtn = document.getElementById("holistic-flip-btn");
+    flipBtnLabel = document.getElementById("holistic-flip-btn-label");
+    trackToggleBtn = document.getElementById("holistic-track-toggle-btn");
+    trackBtnLabel = document.getElementById("holistic-track-btn-label");
+    pipelineStatusEl = document.getElementById("holistic-pipeline-status");
+    landmarkCountEl = document.getElementById("holistic-landmark-count");
+    activeGestureEl = document.getElementById("holistic-active-gesture");
+    fpsValEl = document.getElementById("holistic-fps-val");
+    pulseBeaconEl = document.getElementById("holistic-pulse-beacon");
+
+    modePills = Array.from(document.querySelectorAll(".holistic-mode-pill"));
+    triggerItems = Array.from(document.querySelectorAll(".gesture-trigger-item"));
+
+    if (canvasEl) {
+      ctx = canvasEl.getContext("2d");
+      resizeCanvas();
+    }
+
+    // Connect Webcam Button Click
+    if (camToggleBtn) {
+      camToggleBtn.addEventListener("click", () => {
+        toggleWebcam();
+      });
+    }
+
+    // Connect Flip / Mirror Button Click
+    if (flipBtn) {
+      flipBtn.addEventListener("click", () => {
+        toggleFlip();
+      });
+    }
+
+    // Clicking canvas when off also prompts or activates webcam
+    if (canvasEl) {
+      canvasEl.addEventListener("click", () => {
+        if (!isWebcamActive) {
+          enableCam();
+        }
+      });
+    }
+
+    // Connect Track Toggle Button
+    if (trackToggleBtn) {
+      trackToggleBtn.addEventListener("click", () => {
+        toggleTracking();
+      });
+    }
+
+    // Connect Mode Selectors
+    modePills.forEach((pill) => {
+      pill.addEventListener("click", () => {
+        const mode = pill.getAttribute("data-mode");
+        if (mode) setMode(mode);
+      });
+    });
+
+    // Connect Gesture Strip Triggers
+    triggerItems.forEach((item) => {
+      item.addEventListener("click", () => {
+        const gesture = item.getAttribute("data-gesture");
+        if (gesture) setGesture(gesture);
+      });
+    });
+
+    window.addEventListener("resize", () => {
+      resizeCanvas();
+    });
+
+    // Initialize MediaPipe Tasks in background
+    initMediaPipe();
+
+    // Start render loop
+    if (!animId) {
+      animId = requestAnimationFrame(renderLoop);
+    }
+
+    console.log("[NAVI Holistic] NaviHolisticGestureTracker initialized successfully.");
+  }
+
+  return {
+    init,
+    start: () => toggleTracking(true),
+    stop: () => toggleTracking(false),
+    toggleTracking: (state) => toggleTracking(state),
+    toggleGestures: (state) => toggleTracking(state),
+    togglePresenceLock: () => {},
+    startWebcam: enableCam,
+    stopWebcam: stopCam,
+    toggleWebcam,
+    isWebcamRunning: () => isWebcamActive,
+    setMode,
+    setGesture,
+    isGesturesRunning: () => isTracking,
+    getActiveGesture: () => activeGestureKey
+  };
+})();
+
+const NaviVisionSensor = NaviHolisticGestureTracker;
 
 // =============================================================
 // CENTER HOLOGRAPHIC PROJECTION ENGINE (DEPLOYED NAVI LABS AVATARS)
 // (32,000 Particle High-Definition Transparent Stage Projection)
 // =============================================================
-const StarkCenterHologramEngine = (() => {
+const NaviCenterHologramEngine = (() => {
   let displayEl = null;
   let canvasEl = null;
   let ctx = null;
@@ -1214,8 +2069,8 @@ const StarkCenterHologramEngine = (() => {
 
   function loadAvatarModel(avatarKey, w, h) {
     activeAvatarKey = avatarKey || activeAvatarKey || "ultron";
-    const models = window.STARK_HOLOGRAM_MODELS || {};
-    let preset = models[activeAvatarKey] || (activeAvatarKey === "ultron" ? models["navi"] : (activeAvatarKey === "navi" ? models["ultron"] : null)) || window.STARK_HUMAN_PARTICLE_DATA;
+    const models = window.NAVI_HOLOGRAM_MODELS || {};
+    let preset = models[activeAvatarKey] || (activeAvatarKey === "ultron" ? models["navi"] : (activeAvatarKey === "navi" ? models["ultron"] : null)) || window.NAVI_HUMAN_PARTICLE_DATA;
 
     if (!preset || !preset.x || preset.x.length === 0) {
       return;
@@ -1283,7 +2138,7 @@ const StarkCenterHologramEngine = (() => {
 
     // 1. Hide Iron Man and Arc Reactor with smooth transition
     if (!ironmanImgEl) ironmanImgEl = document.getElementById("ironman-master-img") || document.querySelector(".ironman-master-img");
-    if (!arcReactorEl) arcReactorEl = document.getElementById("stark-arc-reactor");
+    if (!arcReactorEl) arcReactorEl = document.getElementById("navi-arc-reactor");
     if (ironmanImgEl) ironmanImgEl.classList.add("stage-hidden");
     if (arcReactorEl) arcReactorEl.classList.add("stage-hidden");
 
@@ -1306,7 +2161,7 @@ const StarkCenterHologramEngine = (() => {
 
     // 4. Soundscape and Feedback
     JarvisSoundscape.play("wake");
-    const models = window.STARK_HOLOGRAM_MODELS || {};
+    const models = window.NAVI_HOLOGRAM_MODELS || {};
     const model = models[activeAvatarKey] || { name: activeAvatarKey.toUpperCase() };
     showJarvisFeedback(`Center Console: ${model.name || activeAvatarKey} deployed.`, "avatar_switch");
 
@@ -1334,13 +2189,13 @@ const StarkCenterHologramEngine = (() => {
 
     // 2. Restore Iron Man and Arc Reactor
     if (!ironmanImgEl) ironmanImgEl = document.getElementById("ironman-master-img") || document.querySelector(".ironman-master-img");
-    if (!arcReactorEl) arcReactorEl = document.getElementById("stark-arc-reactor");
+    if (!arcReactorEl) arcReactorEl = document.getElementById("navi-arc-reactor");
     if (ironmanImgEl) ironmanImgEl.classList.remove("stage-hidden");
     if (arcReactorEl) arcReactorEl.classList.remove("stage-hidden");
 
     // 3. Audio Feedback
     JarvisSoundscape.play("wake");
-    showJarvisFeedback("Primary Stark Console restored.", "stark_restore");
+    showJarvisFeedback("Primary NAVI Console restored.", "navi_restore");
   }
 
   function renderLoop(now) {
@@ -1501,7 +2356,7 @@ const StarkCenterHologramEngine = (() => {
     displayEl = document.getElementById("center-hologram-display");
     canvasEl = document.getElementById("center-particle-canvas");
     ironmanImgEl = document.getElementById("ironman-master-img") || document.querySelector(".ironman-master-img");
-    arcReactorEl = document.getElementById("stark-arc-reactor");
+    arcReactorEl = document.getElementById("navi-arc-reactor");
 
     if (canvasEl) {
       ctx = canvasEl.getContext("2d", { alpha: true });
@@ -1528,7 +2383,7 @@ const StarkCenterHologramEngine = (() => {
 // NAVI LABS DRAG & DROP CONTROLLER
 // (Clean drag from NAVI Labs to Center Stage without intrusive UI overlays)
 // =============================================================
-const StarkAvatarDragDropController = (() => {
+const NaviAvatarDragDropController = (() => {
   let dropTargetEl = null;
   let isDragging = false;
   let draggedAvatarKey = null;
@@ -1700,7 +2555,7 @@ const StarkAvatarDragDropController = (() => {
   function executeDrop(avatarKey) {
     endDrag();
     const key = avatarKey || getActiveNaviKey() || "ultron";
-    StarkCenterHologramEngine.deployAvatar(key);
+    NaviCenterHologramEngine.deployAvatar(key);
   }
 
   return {
@@ -1709,11 +2564,10 @@ const StarkAvatarDragDropController = (() => {
   };
 })();
 
-
 // =============================================================
 // PHASE 3: SEMANTIC LOCAL FILE SEARCH CONTROLLER
 // =============================================================
-const StarkFileSearch = (() => {
+const NaviFileSearch = (() => {
   const modalEl = document.getElementById("file-search-modal");
   const closeBtn = document.getElementById("fs-modal-close");
   const searchInput = document.getElementById("fs-search-input");
@@ -1815,7 +2669,7 @@ const StarkFileSearch = (() => {
 // =============================================================
 // PHASE 3: P2P LOCAL AIRDROP DROPZONE CONTROLLER
 // =============================================================
-const StarkAirDrop = (() => {
+const NaviAirDrop = (() => {
   const overlay = document.getElementById("airdrop-dropzone");
 
   function init() {
@@ -1876,10 +2730,11 @@ const StarkAirDrop = (() => {
   return { init, beamFile };
 })();
 
+// Backward-compatible alias
 // =============================================================
 // PHASE 3: VOICEPRINT BIOMETRIC AUTH CONTROLLER
 // =============================================================
-const StarkVoiceprintAuth = (() => {
+const NaviVoiceprintAuth = (() => {
   const pillEl = document.getElementById("biometric-auth-pill");
   let isVerified = true; // Authorized profile: Chowdary (Master Administrator)
 
@@ -2298,7 +3153,7 @@ function updateArcReactorAudio() {
     currentAudioAmp = 0.0;
   }
 
-  const arcReactorEl = document.getElementById("stark-arc-reactor");
+  const arcReactorEl = document.getElementById("navi-arc-reactor");
   if (arcReactorEl) {
     arcReactorEl.style.setProperty("--audio-amp", currentAudioAmp.toFixed(3));
     arcReactorEl.style.setProperty("--speech-amp", currentAudioAmp.toFixed(3));
@@ -3301,7 +4156,7 @@ phoneSyncOverlay?.addEventListener("click", (e) => {
 });
 
 btnQrLaunch?.addEventListener("click", async () => {
-  if (syncStatusText) syncStatusText.textContent = "GENERATING STARK PAIRING QR...";
+  if (syncStatusText) syncStatusText.textContent = "GENERATING NAVI PAIRING QR...";
   try {
     const lines = await invoke("generate_pairing_qr");
     if (lines && lines.length > 0) {
@@ -3461,7 +4316,7 @@ function setSystemState(state) {
     }
   }
 
-  const arcReactorEl = document.getElementById("stark-arc-reactor");
+  const arcReactorEl = document.getElementById("navi-arc-reactor");
   if (arcReactorEl) {
     arcReactorEl.classList.remove("state-idle", "state-listening", "state-thinking", "state-speaking", "overdrive");
     arcReactorEl.classList.add(`state-${state}`);
@@ -4173,7 +5028,7 @@ async function processDirective(prompt, shouldOpenInput = false) {
   const gitCommitMatch = clean.match(/^(?:git\s+commit|commit\s+changes|commit)(?:\s+(?:as|with message)?\s*["']?([^"']+)["']?)?$/i);
   if (gitCommitMatch) {
     JarvisSoundscape.play("confirm");
-    const commitMsg = (gitCommitMatch[1] || "Update via J.A.R.V.I.S.").trim();
+    const commitMsg = (gitCommitMatch[1] || "Update via JARVIS").trim();
     try {
       const out = await invoke("run_direct_action", { action: "git_commit", target: commitMsg });
       showJarvisFeedback(out, "git_commit");
@@ -4398,70 +5253,70 @@ async function processDirective(prompt, shouldOpenInput = false) {
 
   // 2. nAvI Labs Holographic Projection & Character Directives
   if (/^(?:optimus|optimus\s*prime|switch\s+to\s+optimus(?:\s*prime)?|prime)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.selectAvatar("optimus");
+    NaviBiometricHologram.selectAvatar("optimus");
     speakResponse("Optimus Prime matrix online, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:bumblebee|bee|switch\s+to\s+bumblebee|switch\s+to\s+bee)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.selectAvatar("bumblebee");
+    NaviBiometricHologram.selectAvatar("bumblebee");
     speakResponse("Bumblebee scout matrix online, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:spider\s*man|switch\s+to\s+spider\s*man|spider\s*man\s+(?:suit|model|avatar))$/i.test(lowerDirective)) {
-    StarkBiometricHologram.selectAvatar("spiderman");
+    NaviBiometricHologram.selectAvatar("spiderman");
     speakResponse("Spider-Man web matrix projection initialized, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:mecha|robot|switch\s+to\s+mecha|switch\s+to\s+robot|mecha\s+robo|tactical\s+robot)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.selectAvatar("mecha");
+    NaviBiometricHologram.selectAvatar("mecha");
     speakResponse("Tactical Mecha Robo chassis online, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:ultron|navi|switch\s+to\s+ultron|switch\s+to\s+navi|ultron\s+avatar|navi\s+labs|humanoid\s+avatar)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.selectAvatar("ultron");
+    NaviBiometricHologram.selectAvatar("ultron");
     speakResponse("Ultron biometric humanoid active, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:next\s+(?:character|avatar|hologram|model)|cycle\s+(?:character|avatar|hologram|model)|change\s+(?:character|avatar))$/i.test(lowerDirective)) {
-    StarkBiometricHologram.cycleAvatar();
+    NaviBiometricHologram.cycleAvatar();
     speakResponse("Cycling holographic character, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:navi\s+labs?\s+on|enable\s+navi(?:\s+labs?)?|turn\s+on\s+navi(?:\s+labs?)?|turn\s+on\s+humanoid|enable\s+humanoid|projection\s+on)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.togglePower(true);
+    NaviBiometricHologram.togglePower(true);
     speakResponse("nAvI Labs projection activated, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:navi\s+labs?\s+off|disable\s+navi(?:\s+labs?)?|turn\s+off\s+navi(?:\s+labs?)?|turn\s+off\s+humanoid|disable\s+humanoid|projection\s+off)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.togglePower(false);
+    NaviBiometricHologram.togglePower(false);
     speakResponse("nAvI Labs projection standby, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:toggle\s+navi(?:\s+labs?)?|toggle\s+humanoid|toggle\s+projection|navi\s+labs?)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.togglePower();
+    NaviBiometricHologram.togglePower();
     speakResponse("Toggling nAvI Labs projection, sir.");
     setSystemState("idle");
     return;
   }
 
   if (/^(?:scan\s+human|biometric\s+scan|toggle\s+scan|toggle\s+biometrics?|human\s+scan)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.togglePower(true);
+    NaviBiometricHologram.togglePower(true);
     speakResponse("Biometric matrix online, sir.");
     setSystemState("idle");
     return;
@@ -4469,32 +5324,32 @@ async function processDirective(prompt, shouldOpenInput = false) {
 
   // 2b. Legacy Gesture Sensor Toggles
   if (/^(?:enable\s+gestures?|start\s+gestures?|turn\s+on\s+gestures?|launch\s+gestures?)$/i.test(lowerDirective)) {
-    StarkVisionSensor.toggleGestures(true);
+    NaviVisionSensor.toggleGestures(true);
     setSystemState("idle");
     return;
   }
 
   if (/^(?:disable\s+gestures?|stop\s+gestures?|turn\s+off\s+gestures?)$/i.test(lowerDirective)) {
-    StarkVisionSensor.toggleGestures(false);
+    NaviVisionSensor.toggleGestures(false);
     setSystemState("idle");
     return;
   }
 
   if (/^(?:toggle\s+gestures?)$/i.test(lowerDirective)) {
-    StarkVisionSensor.toggleGestures();
+    NaviVisionSensor.toggleGestures();
     setSystemState("idle");
     return;
   }
 
   // 3. Presence & Glance Auto-Lock Toggles
   if (/^(?:enable\s+presence\s+lock|arm\s+presence\s+lock|turn\s+on\s+presence\s+lock|presence\s+lock)$/i.test(lowerDirective)) {
-    StarkVisionSensor.togglePresenceLock(true);
+    NaviVisionSensor.togglePresenceLock(true);
     setSystemState("idle");
     return;
   }
 
   if (/^(?:disable\s+presence\s+lock|disarm\s+presence\s+lock|turn\s+off\s+presence\s+lock)$/i.test(lowerDirective)) {
-    StarkVisionSensor.togglePresenceLock(false);
+    NaviVisionSensor.togglePresenceLock(false);
     setSystemState("idle");
     return;
   }
@@ -4503,7 +5358,7 @@ async function processDirective(prompt, shouldOpenInput = false) {
   const fileSearchMatch = clean.match(/^(?:find\s+file|search\s+files?|locate\s+file|search\s+local\s+files?)\s+(.+)$/i);
   if (fileSearchMatch) {
     const q = fileSearchMatch[1].trim();
-    StarkFileSearch.openModal(q);
+    NaviFileSearch.openModal(q);
     const replyMsg = `Scanning workstation and directories for "${q}", sir.`;
     showJarvisFeedback(replyMsg, "file_search");
     speakResponse(replyMsg);
@@ -4513,8 +5368,8 @@ async function processDirective(prompt, shouldOpenInput = false) {
 
   if (/^(?:open\s+file\s+search|file\s+search|local\s+file\s+search)$/i.test(lowerDirective)) {
     JarvisSoundscape.play("click");
-    StarkFileSearch.openModal();
-    const replyMsg = "Opening Stark local file search index, sir.";
+    NaviFileSearch.openModal();
+    const replyMsg = "Opening NAVI local file search index, sir.";
     showJarvisFeedback(replyMsg, "file_search");
     speakResponse(replyMsg);
     setSystemState("idle");
@@ -4525,14 +5380,14 @@ async function processDirective(prompt, shouldOpenInput = false) {
   const airdropMatch = clean.match(/^(?:airdrop|send\s+to\s+phone|beam\s+to\s+phone|beam\s+file)\s+(.+)$/i);
   if (airdropMatch) {
     const filePath = airdropMatch[1].trim().replace(/^["']|["']$/g, "");
-    await StarkAirDrop.beamFile(filePath, filePath);
+    await NaviAirDrop.beamFile(filePath, filePath);
     setSystemState("idle");
     return;
   }
 
   // 6. Voiceprint Biometric Security Verification
-  if (StarkVoiceprintAuth.isSensitiveAction(clean, clean)) {
-    StarkVoiceprintAuth.verifyVoiceCommand();
+  if (NaviVoiceprintAuth.isSensitiveAction(clean, clean)) {
+    NaviVoiceprintAuth.verifyVoiceCommand();
     JarvisSoundscape.play("confirm");
   }
 
@@ -4694,7 +5549,7 @@ window.addEventListener("keydown", (e) => {
     closeInputBar();
     SmartClipboard.closeModal();
     PersistentMemoryManager.closeModal();
-    StarkFileSearch.closeModal();
+    NaviFileSearch.closeModal();
   }
 });
 
@@ -5441,15 +6296,17 @@ jarvisNeural.onWakeWord(() => {
 startPhoneNotificationSync(invoke);
 
 // Phase 3 Systems Initialization
-StarkVisionSensor.init();
-StarkFileSearch.init();
-StarkAirDrop.init();
-StarkVoiceprintAuth.init();
-StarkCenterHologramEngine.init();
-StarkAvatarDragDropController.init();
+NaviVisionSensor.init();
+NaviFileSearch.init();
+NaviAirDrop.init();
+NaviVoiceprintAuth.init();
+NaviCenterHologramEngine.init();
+NaviAvatarDragDropController.init();
 
 // Expose center hologram controls
-window.StarkCenterHologram = StarkCenterHologramEngine;
-window.StarkAvatarDragDrop = StarkAvatarDragDropController;
+window.NaviCenterHologram = NaviCenterHologramEngine;
+window.NaviAvatarDragDrop = NaviAvatarDragDropController;
+window.NaviHolisticTracker = NaviHolisticGestureTracker;
+window.HolisticGestureRecognizer = NaviHolisticGestureTracker;
 
-console.log("J.A.R.V.I.S. Real Dynamic System Initialized.");
+console.log("JARVIS Real Dynamic System Initialized.");

@@ -34,7 +34,7 @@ class SkillsRegistry:
     Dynamic Custom Skill & Plugin Registry:
     - Scans `skills/` directory for custom `.json` skill manifests and macros.
     - Matches user voice/text directives to installed custom skills.
-    - Allows extending J.A.R.V.I.S. with zero binary recompilation.
+    - Allows extending JARVIS with zero binary recompilation.
     """
 
     def __init__(self, skills_dir: str = "skills"):

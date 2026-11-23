@@ -41,7 +41,7 @@ class PiperTTSFallback:
             except Exception as e:
                 logger.debug(f"Piper CLI not active ({e}). Routing to local Neural TTS service...")
 
-        # 2. Resilient Local Fallback: J.A.R.V.I.S. Kokoro-82M Neural Service on port 5000
+        # 2. Resilient Local Fallback: JARVIS Kokoro-82M Neural Service on port 5000
         try:
             import requests
             resp = requests.post(

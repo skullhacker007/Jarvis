@@ -1,5 +1,5 @@
 // =============================================================
-// J.A.R.V.I.S. AUTONOMOUS TASK PLANNER & EXECUTION RUNTIME
+// JARVIS AUTONOMOUS TASK PLANNER & EXECUTION RUNTIME
 // =============================================================
 
 export class JarvisTaskPlanner {

@@ -1,4 +1,4 @@
-"""J.A.R.V.I.S. Core Reasoning, Context, Persona and Telemetry Engine."""
+"""JARVIS Core Reasoning, Context, Persona and Telemetry Engine."""
 
 from core.context import TemporalContext, ContextCompressor
 from core.persona import SYSTEM_PERSONA, build_system_prompt

@@ -29,6 +29,6 @@ try {
 }
 
 console.log(`\n========================================`);
-console.log(`  J.A.R.V.I.S. Build Complete!`);
+console.log(`  JARVIS Build Complete!`);
 console.log(`  Executable created: ${destExe}`);
 console.log(`========================================\n`);

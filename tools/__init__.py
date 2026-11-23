@@ -1,4 +1,4 @@
-"""J.A.R.V.I.S. System Tools, Hardware Integrations, and Web Intelligence."""
+"""JARVIS System Tools, Hardware Integrations, and Web Intelligence."""
 
 from tools.web_search import WebSearchTool
 

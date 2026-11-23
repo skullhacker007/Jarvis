@@ -87,9 +87,9 @@ body {
 }
 
 /* ========================================================= */
-/* STARK CHEST ARC REACTOR (RADIATOR) // HYPER-REALISTIC ENGINE */
+/* NAVI CHEST ARC REACTOR (RADIATOR) // HYPER-REALISTIC ENGINE */
 /* ========================================================= */
-.stark-arc-reactor {
+.navi-arc-reactor {
   position: absolute;
   left: 50.42%;
   top: 72.0%;
@@ -109,7 +109,7 @@ body {
   transition: box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1), filter 0.35s ease, opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.stark-arc-reactor.stage-hidden {
+.navi-arc-reactor.stage-hidden {
   opacity: 0 !important;
   transform: translate(-50%, -50%) scale(0.3) !important;
   filter: blur(6px) !important;
@@ -271,41 +271,41 @@ body {
 }
 
 /* 1. IDLE: Gentle breathing pulse with cyan illumination */
-.stark-arc-reactor.state-idle,
-.stark-arc-reactor:not([class*="state-"]) {
+.navi-arc-reactor.state-idle,
+.navi-arc-reactor:not([class*="state-"]) {
   box-shadow:
     0 0 6px rgba(56, 189, 248, 0.36),
     0 0 12px rgba(56, 189, 248, 0.18);
   animation: reactor-rim-pulse 3s ease-in-out infinite alternate;
 }
-.stark-arc-reactor.state-idle .reactor-rotor {
+.navi-arc-reactor.state-idle .reactor-rotor {
   animation: reactor-rotor-spin 16s linear infinite;
   filter: drop-shadow(0 0 2px rgba(56, 189, 248, 0.288));
 }
-.stark-arc-reactor.state-idle .reactor-stator {
+.navi-arc-reactor.state-idle .reactor-stator {
   filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.324));
 }
-.stark-arc-reactor.state-idle .core-plasma-disc {
+.navi-arc-reactor.state-idle .core-plasma-disc {
   animation: core-pulse-glow 2.5s ease-in-out infinite alternate;
   box-shadow: 0 0 4px #ffffff, 0 0 10px #38bdf8;
 }
 
 /* 2. LISTENING: Concentrated cyan rings that pulse dynamically with live voice / microphone audio */
-.stark-arc-reactor.state-listening {
+.navi-arc-reactor.state-listening {
   box-shadow:
     0 0 calc(14px + 24px * var(--audio-amp, 0.2)) rgba(56, 189, 248, 0.9),
     0 0 calc(28px + 44px * var(--audio-amp, 0.2)) rgba(56, 189, 248, 0.5),
     inset 0 0 calc(12px + 16px * var(--audio-amp, 0.2)) rgba(56, 189, 248, 0.65);
   animation: reactor-listening-pulse 1.8s ease-in-out infinite alternate;
 }
-.stark-arc-reactor.state-listening .reactor-rotor {
+.navi-arc-reactor.state-listening .reactor-rotor {
   animation: reactor-rotor-spin 7s linear infinite;
   filter: drop-shadow(0 0 calc(6px + 12px * var(--audio-amp, 0.2)) #38bdf8) drop-shadow(0 0 calc(2px + 4px * var(--audio-amp, 0.2)) #ffffff);
 }
-.stark-arc-reactor.state-listening .reactor-stator {
+.navi-arc-reactor.state-listening .reactor-stator {
   filter: drop-shadow(0 0 calc(6px + 12px * var(--audio-amp, 0.2)) #38bdf8) drop-shadow(0 0 calc(1px + 3px * var(--audio-amp, 0.2)) rgba(255, 255, 255, 0.6));
 }
-.stark-arc-reactor.state-listening .reactor-color-glow-overlay {
+.navi-arc-reactor.state-listening .reactor-color-glow-overlay {
   background: radial-gradient(
     circle,
     rgba(255, 255, 255, calc(0.2 + 0.35 * var(--audio-amp, 0.2))) 0%,
@@ -313,7 +313,7 @@ body {
     transparent 70%
   );
 }
-.stark-arc-reactor.state-listening .core-plasma-disc {
+.navi-arc-reactor.state-listening .core-plasma-disc {
   transform: scale(calc(1.02 + 0.22 * var(--audio-amp, 0.2)));
   box-shadow:
     0 0 calc(6px + 8px * var(--audio-amp, 0.2)) #ffffff,
@@ -321,22 +321,22 @@ body {
     0 0 calc(22px + 30px * var(--audio-amp, 0.2)) rgba(56, 189, 248, 0.7);
 }
 
-/* 3. THINKING / PROCESSING: Rapid clockwise rotation with electric Stark cyan/blue illumination */
-.stark-arc-reactor.state-thinking {
+/* 3. THINKING / PROCESSING: Rapid clockwise rotation with electric NAVI cyan/blue illumination */
+.navi-arc-reactor.state-thinking {
   box-shadow:
     0 0 18px #00f0ff,
     0 0 36px rgba(14, 165, 233, 0.65),
     inset 0 0 14px #38bdf8;
   animation: reactor-thinking-pulse 0.9s ease-in-out infinite alternate;
 }
-.stark-arc-reactor.state-thinking .reactor-rotor {
+.navi-arc-reactor.state-thinking .reactor-rotor {
   animation: reactor-rotor-spin 1.8s linear infinite; /* Rapid clockwise rotation */
   filter: drop-shadow(0 0 8px #00f0ff) drop-shadow(0 0 5px #38bdf8);
 }
-.stark-arc-reactor.state-thinking .reactor-stator {
+.navi-arc-reactor.state-thinking .reactor-stator {
   filter: drop-shadow(0 0 8px #00f0ff) drop-shadow(0 0 4px #0284c7);
 }
-.stark-arc-reactor.state-thinking .reactor-color-glow-overlay {
+.navi-arc-reactor.state-thinking .reactor-color-glow-overlay {
   background: radial-gradient(
     circle,
     rgba(255, 255, 255, 0.4) 0%,
@@ -344,7 +344,7 @@ body {
     transparent 70%
   );
 }
-.stark-arc-reactor.state-thinking .core-plasma-disc {
+.navi-arc-reactor.state-thinking .core-plasma-disc {
   transform: scale(1.15);
   box-shadow:
     0 0 10px #ffffff,
@@ -353,20 +353,20 @@ body {
 }
 
 /* 4. SPEAKING: Light pulses synchronized with speech amplitude */
-.stark-arc-reactor.state-speaking {
+.navi-arc-reactor.state-speaking {
   box-shadow:
     0 0 calc(8px + 22px * var(--audio-amp, 0.5)) #38bdf8,
     0 0 calc(16px + 44px * var(--audio-amp, 0.5)) rgba(56, 189, 248, 0.6),
     inset 0 0 calc(6px + 14px * var(--audio-amp, 0.5)) #38bdf8;
 }
-.stark-arc-reactor.state-speaking .reactor-rotor {
+.navi-arc-reactor.state-speaking .reactor-rotor {
   animation: reactor-rotor-spin 4s linear infinite;
   filter: drop-shadow(0 0 calc(4px + 12px * var(--audio-amp, 0.5)) #38bdf8) drop-shadow(0 0 calc(1px + 4px * var(--audio-amp, 0.5)) #ffffff);
 }
-.stark-arc-reactor.state-speaking .reactor-stator {
+.navi-arc-reactor.state-speaking .reactor-stator {
   filter: drop-shadow(0 0 calc(4px + 12px * var(--audio-amp, 0.5)) #38bdf8);
 }
-.stark-arc-reactor.state-speaking .reactor-color-glow-overlay {
+.navi-arc-reactor.state-speaking .reactor-color-glow-overlay {
   background: radial-gradient(
     circle,
     rgba(255, 255, 255, calc(0.15 + 0.4 * var(--audio-amp, 0.5))) 0%,
@@ -374,7 +374,7 @@ body {
     transparent 70%
   );
 }
-.stark-arc-reactor.state-speaking .core-plasma-disc {
+.navi-arc-reactor.state-speaking .core-plasma-disc {
   transform: scale(calc(0.96 + 0.28 * var(--audio-amp, 0.5)));
   box-shadow:
     0 0 calc(6px + 10px * var(--audio-amp, 0.5)) #ffffff,
@@ -382,19 +382,19 @@ body {
 }
 
 /* Backward compatibility overdrive state */
-.stark-arc-reactor.overdrive:not([class*="state-"]) {
+.navi-arc-reactor.overdrive:not([class*="state-"]) {
   box-shadow:
     0 0 12px #38bdf8,
     0 0 24px rgba(56, 189, 248, 0.432);
 }
-.stark-arc-reactor.overdrive:not([class*="state-"]) .reactor-rotor {
+.navi-arc-reactor.overdrive:not([class*="state-"]) .reactor-rotor {
   animation-duration: 3.5s;
   filter: drop-shadow(0 0 6px #38bdf8);
 }
-.stark-arc-reactor.overdrive:not([class*="state-"]) .reactor-stator {
+.navi-arc-reactor.overdrive:not([class*="state-"]) .reactor-stator {
   filter: drop-shadow(0 0 6px #38bdf8);
 }
-.stark-arc-reactor.overdrive:not([class*="state-"]) .core-plasma-disc {
+.navi-arc-reactor.overdrive:not([class*="state-"]) .core-plasma-disc {
   box-shadow:
     0 0 8px #ffffff,
     0 0 16px #38bdf8;
@@ -1588,7 +1588,7 @@ body {
 
 
 /* ========================================================= */
-/* HOLOGRAPHIC PHONE DIALER & KEYPAD HUD (ULTRA-PRO STARK UI) */
+/* HOLOGRAPHIC PHONE DIALER & KEYPAD HUD (ULTRA-PRO NAVI UI) */
 /* ========================================================= */
 .phone-dialer-overlay {
   position: fixed;
@@ -1622,7 +1622,7 @@ body {
   position: relative;
 }
 
-/* Subtle Stark CAD Corner Highlights */
+/* Subtle NAVI CAD Corner Highlights */
 .phone-dialer-card::before {
   content: "";
   position: absolute;
@@ -1965,7 +1965,7 @@ body {
   box-sizing: border-box;
 }
 
-/* Stark CAD Reticle Corners */
+/* NAVI CAD Reticle Corners */
 .sync-corner {
   position: absolute;
   color: #38bdf8;
@@ -3616,6 +3616,297 @@ body:not(.island-mode-active) .dynamic-island-pill {
 .hud-chip-val.purple {
   color: #a855f7;
   text-shadow: 0 0 6px rgba(168, 85, 247, 0.6);
+}
+
+/* ========================================================= */
+/* HOLISTIC LANDMARKER & GESTURE RECOGNIZER COMPONENT STYLES  */
+/* ========================================================= */
+.gesture-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gesture-sub-badge {
+  font-family: var(--font-mono);
+  font-size: 6.5px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  color: #10b981;
+  text-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+  text-transform: uppercase;
+}
+
+.holistic-controls-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.holistic-mode-selector {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(3, 7, 18, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 4px;
+  padding: 1.5px;
+  gap: 2px;
+}
+
+.holistic-mode-pill {
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  color: #64748b;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.holistic-mode-pill:hover {
+  color: #94a3b8;
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.holistic-mode-pill.active {
+  color: #00ffff;
+  background: rgba(14, 165, 233, 0.25);
+  box-shadow: 0 0 8px rgba(0, 255, 255, 0.35);
+}
+
+.holistic-cam-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3.5px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 3px;
+  color: #38bdf8;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 2.5px 6px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.holistic-cam-btn .cam-icon {
+  font-size: 8px;
+  line-height: 1;
+}
+
+.holistic-cam-btn:hover {
+  color: #ffffff;
+  border-color: #00d2ff;
+  background: rgba(14, 165, 233, 0.25);
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.35);
+}
+
+.holistic-cam-btn.enabled {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.holistic-cam-btn.starting {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: #f59e0b;
+  color: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+.holistic-cam-btn.error {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
+
+.holistic-cam-btn.standby {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  box-shadow: none;
+}
+
+.holistic-flip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font-size: 8.5px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 3px;
+  color: #7dd3fc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.holistic-flip-btn .flip-icon {
+  font-size: 8px;
+  line-height: 1;
+}
+
+.holistic-flip-btn:hover {
+  color: #ffffff;
+  border-color: #00d2ff;
+  background: rgba(14, 165, 233, 0.25);
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.35);
+}
+
+.holistic-flip-btn.active {
+  background: rgba(168, 85, 247, 0.2);
+  border-color: #a855f7;
+  color: #c084fc;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+}
+
+.holistic-canvas-container {
+  min-height: clamp(220px, 28vh, 420px);
+  position: relative;
+  overflow: hidden;
+  background: #020716;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.holistic-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.holistic-viewport.mirrored .holistic-webcam-video,
+.holistic-viewport.mirrored .gesture-recognize-canvas.holistic-recognize-canvas {
+  transform: translate(-50%, -50%) scaleX(-1);
+}
+
+.holistic-webcam-video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  z-index: 1;
+  display: none;
+}
+
+.gesture-recognize-canvas.holistic-recognize-canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+/* Standby screen mode: canvas fills full container */
+.holistic-canvas-container:not(.webcam-active) .gesture-recognize-canvas.holistic-recognize-canvas {
+  width: 100% !important;
+  height: 100% !important;
+  top: 0;
+  left: 0;
+  transform: none !important;
+}
+
+.holistic-hud-overlay {
+  z-index: 3;
+  pointer-events: none;
+}
+
+.gesture-triggers-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  width: 100%;
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid rgba(56, 189, 248, 0.18);
+  flex-shrink: 0;
+}
+
+.gesture-trigger-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 3px 2px;
+  background: rgba(8, 20, 42, 0.65);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+  min-width: 0;
+}
+
+.gesture-trigger-item .g-icon {
+  font-size: 8px;
+  line-height: 1;
+}
+
+.gesture-trigger-item .g-name {
+  font-family: var(--font-mono);
+  font-size: 6.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gesture-trigger-item:hover {
+  background: rgba(14, 165, 233, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.gesture-trigger-item:hover .g-name {
+  color: #ffffff;
+}
+
+.gesture-trigger-item.active {
+  background: rgba(0, 210, 255, 0.22);
+  border-color: #00ffff;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.4);
+}
+
+.gesture-trigger-item.active .g-name {
+  color: #00ffff;
+  text-shadow: 0 0 6px rgba(0, 255, 255, 0.6);
 }
 
 /* ========================================================= */

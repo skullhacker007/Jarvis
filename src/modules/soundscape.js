@@ -1,5 +1,5 @@
 // =============================================================
-// J.A.R.V.I.S. SOUNDSCAPE MODULE (PURE WEB AUDIO SCI-FI SYNTHESIZER)
+// JARVIS SOUNDSCAPE MODULE (PURE WEB AUDIO SCI-FI SYNTHESIZER)
 // =============================================================
 
 export const JarvisSoundscape = (() => {

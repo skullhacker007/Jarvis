@@ -1,4 +1,4 @@
-# J.A.R.V.I.S. High-Performance Continuous Speech & Wake-Word Recognition Worker
+# JARVIS High-Performance Continuous Speech & Wake-Word Recognition Worker
 # Features:
 # 1. Zero-latency Dedicated Wake-Word Grammar ("hey jarvis", "jarvis", "ok jarvis", "hello jarvis", "hi jarvis")
 # 2. Continuous Real-time Dictation Streaming via SAPI In-Process Engine (Non-blocking Multiple Mode)

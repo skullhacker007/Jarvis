@@ -1,4 +1,4 @@
-# J.A.R.V.I.S. // STARK AI SYSTEM CONTROLLER
+# JARVIS
 
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2.0-blue.svg)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg)](https://www.rust-lang.org/)
@@ -9,7 +9,7 @@
 [![Kokoro-82M](https://img.shields.io/badge/TTS-Kokoro--82M%20ONNX-FF6F00.svg)](https://github.com/hexgrad/kokoro)
 [![Windows](https://img.shields.io/badge/OS-Windows%2011%20%2F%2010-0078D6.svg)](https://microsoft.com/windows)
 
-**J.A.R.V.I.S.** (Just A Rather Very Intelligent System) is an autonomous, real-time AI desktop assistant for Windows. Engineered with a **Tauri v2 + Rust backend**, powered by a **Zero-Compromise 3-Tier Brain (NVIDIA Llama 3.3 70B Primary + Gemini Flash Cloud Backup + Local Ollama Fallback)**, persistent **OCI PostgreSQL + `pgvector`** memory, **LiveKit + Deepgram Flux + Cartesia Sonic / Kokoro-82M Neural ONNX** voice streaming, an Anti-Collision Vocal Matrix with acoustic feedback silencing, a holographic HUD Visor, and comprehensive multi-agent automation.
+**JARVIS** (Just A Rather Very Intelligent System) is an autonomous, real-time AI desktop assistant for Windows. Engineered with a **Tauri v2 + Rust backend**, powered by a **Zero-Compromise 3-Tier Brain (NVIDIA Llama 3.3 70B Primary + Gemini Flash Cloud Backup + Local Ollama Fallback)**, persistent **OCI PostgreSQL + `pgvector`** memory, **LiveKit + Deepgram Flux + Cartesia Sonic / Kokoro-82M Neural ONNX** voice streaming, an Anti-Collision Vocal Matrix with acoustic feedback silencing, a holographic HUD Visor, and comprehensive multi-agent automation.
 
 ---
 
@@ -36,8 +36,8 @@
 ### 1. 3-Tier Cognitive Hierarchy & Socratic Debate Engine
 * **Tier 1 (Primary Online): NVIDIA NIM API (`meta/llama-3.3-70b-instruct`)**: Massive 70-billion-parameter open-weights reasoning. Uncensored, deeply intellectual, and configured for vigorous Socratic debate, counter-arguments, and logic analysis.
 * **Tier 2 (Cloud Backup): Google Gemini Flash**: High-speed, high-availability secondary cloud backup that automatically takes over if NVIDIA hits rate limits or latency spikes.
-* **Tier 3 (Local Fallback): Ollama (`llama3.2:3b` / `8b`)**: 100% private, offline fallback ensuring J.A.R.V.I.S. never fails during internet outages.
-* **Temporal Context Injector**: Dynamically injects live calendar date, day of week, local clock, timezone, and system metrics into every prompt so J.A.R.V.I.S. always knows "now."
+* **Tier 3 (Local Fallback): Ollama (`llama3.2:3b` / `8b`)**: 100% private, offline fallback ensuring JARVIS never fails during internet outages.
+* **Temporal Context Injector**: Dynamically injects live calendar date, day of week, local clock, timezone, and system metrics into every prompt so JARVIS always knows "now."
 
 ### 2. Zero-Compromise Real-Time Voice Engine & Anti-Collision Matrix
 * **Unified Anti-Collision Voice Arbiter**: Prevents overlapping responses by wrapping speech synthesis in a Promise-based lock (`processDirective`), ensuring single-voice natural flow.

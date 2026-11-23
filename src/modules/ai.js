@@ -1,5 +1,5 @@
 // =============================================================
-// J.A.R.V.I.S. QUEEN NEURAL AI & STREAMING ENGINE
+// JARVIS QUEEN NEURAL AI & STREAMING ENGINE
 // =============================================================
 
 export class JarvisNeuralClient {

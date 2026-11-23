@@ -1,6 +1,6 @@
-# J.A.R.V.I.S. Agent Architecture & Multi-Agent Roadmap
+# JARVIS Agent Architecture & Multi-Agent Roadmap
 
-This document outlines the cognitive architecture of J.A.R.V.I.S., the rules governing its 3-tier brain (NVIDIA Llama 3.3 70B Primary + Gemini Flash Cloud Backup + Ollama Local Fallback), and the multi-agent orchestration roadmap.
+This document outlines the cognitive architecture of JARVIS, the rules governing its 3-tier brain (NVIDIA Llama 3.3 70B Primary + Gemini Flash Cloud Backup + Ollama Local Fallback), and the multi-agent orchestration roadmap.
 
 ---
 
@@ -24,7 +24,7 @@ This document outlines the cognitive architecture of J.A.R.V.I.S., the rules gov
 
 ## 🧠 2. Cognitive 3-Tier Brain Hierarchy
 
-J.A.R.V.I.S. utilizes a **3-Tier Cognitive Architecture** to ensure zero latency, deep reasoning, and 100% offline uptime:
+JARVIS utilizes a **3-Tier Cognitive Architecture** to ensure zero latency, deep reasoning, and 100% offline uptime:
 
 ```mermaid
 flowchart TD
@@ -64,7 +64,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Dispatcher[J.A.R.V.I.S. Dispatcher] --> Agent1[Voice Agent\nLiveKit + Anti-Collision Matrix]
+    Dispatcher[JARVIS Dispatcher] --> Agent1[Voice Agent\nLiveKit + Anti-Collision Matrix]
     Dispatcher --> Agent2[Speculative Turn Agent\nDraft & Discard Engine]
     Dispatcher --> Agent3[Memory & RAG Agent\nOCI PostgreSQL + Mem0 + Sync Queue]
     Dispatcher --> Agent4[Web Research Agent\nTavily Live Search & Citations]
