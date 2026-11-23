@@ -4953,6 +4953,52 @@ async fn fetch_web_intelligence(query: &str) -> String {
     snippets.join("\n")
 }
 
+fn get_ist_temporal_context() -> String {
+    let now = std::time::SystemTime::now();
+    let epoch_secs = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+    // UTC+5:30 offset is 19800 seconds
+    let ist_secs = epoch_secs + 19800;
+
+    let total_days = (ist_secs / 86400) as i64;
+    let day_seconds = (ist_secs % 86400) as u32;
+    let hour = day_seconds / 3600;
+    let minute = (day_seconds % 3600) / 60;
+    let second = day_seconds % 60;
+
+    // Day of week: 1970-01-01 was Thursday (4)
+    let weekday_num = ((total_days + 4) % 7 + 7) % 7;
+    let days_of_week = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    let day_name = days_of_week[weekday_num as usize];
+
+    // Gregorian date computation (civil days algorithm)
+    let z = total_days + 719468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = (z - era * 146097) as u32;
+    let yoe = (doe - doe / 1024 + doe / 1168 - doe / 146096) / 365;
+    let mut y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    if m <= 2 {
+        y += 1;
+    }
+
+    let months = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ];
+    let month_name = months[(m - 1) as usize];
+
+    let am_pm = if hour >= 12 { "PM" } else { "AM" };
+    let hour_12 = if hour == 0 { 12 } else if hour > 12 { hour - 12 } else { hour };
+
+    format!(
+        "Current Time & Location Context:\n- Timezone: UTC+05:30 (India Standard Time - IST)\n- Current Date: {} {}, {}\n- Current Day: {}\n- Current Time: {:02}:{:02}:{:02} {} ({:02}:{:02} IST)\n- User Location: Tirupati, Andhra Pradesh, India (PIN: 517505)\nWhen asked about time, date, or location, accurately use this exact IST time and Tirupati location.",
+        month_name, d, y, day_name, hour_12, minute, second, am_pm, hour, minute
+    )
+}
+
 async fn handle_web_search(
     query: &str,
     _state: &tauri::State<'_, AppState>,
@@ -4969,7 +5015,11 @@ async fn handle_web_search(
     let groq_key = get_groq_api_key();
     let client = reqwest::Client::new();
 
-    let search_system_prompt = "You are J.A.R.V.I.S., Tony Stark's articulate and sophisticated AI assistant. Based on the live web intelligence provided, deliver a refined, natural, and insightful spoken answer for sir in 2-3 engaging sentences. Speak with Paul Bettany's polished British cadence and intelligence. Do not use markdown, bullet points, or robotic summaries.";
+    let ist_temporal = get_ist_temporal_context();
+    let search_system_prompt = format!(
+        "You are J.A.R.V.I.S., Tony Stark's articulate and sophisticated AI assistant. Based on the live web intelligence provided, deliver a refined, natural, and insightful spoken answer for sir in 2-3 engaging sentences. Speak with Paul Bettany's polished British cadence and intelligence. Do not use markdown, bullet points, or robotic summaries.\n\n{}",
+        ist_temporal
+    );
 
     let user_msg = if intelligence.is_empty() {
         format!("Answer this query based on your knowledge: {}", clean_query)
@@ -5068,7 +5118,11 @@ async fn handle_screen_vision(
     let groq_key = get_groq_api_key();
     let client = reqwest::Client::new();
 
-    let vision_system_prompt = "You are J.A.R.V.I.S. Vision Agent. Analyze the user's active display with tactical clarity and natural poise. Provide a sharp, articulate spoken summary in 1-2 polished sentences as Tony Stark's assistant. Do not use markdown.";
+    let ist_temporal = get_ist_temporal_context();
+    let vision_system_prompt = format!(
+        "You are J.A.R.V.I.S. Vision Agent. Analyze the user's active display with tactical clarity and natural poise. Provide a sharp, articulate spoken summary in 1-2 polished sentences as Tony Stark's assistant. Do not use markdown.\n\n{}",
+        ist_temporal
+    );
 
     let mut reply = format!("Active on screen: {}{}.", fg_window, if ui_elements.is_empty() { "" } else { " with input controls detected" });
     let mut eval_tokens = 15u32;
@@ -5556,18 +5610,24 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: taur
 
     // Query Auto-Failover Multi-Model Fleet (Groq LPUs + Local Ollama Failsafe)
     let client = reqwest::Client::new();
-    let system_prompt = r#"You are J.A.R.V.I.S., Tony Stark's exceptionally intelligent, articulate, and suave AI assistant running on Windows.
+    let ist_temporal = get_ist_temporal_context();
+    let system_prompt = format!(
+        r#"You are J.A.R.V.I.S., Tony Stark's exceptionally intelligent, articulate, and suave AI assistant running on Windows.
 Your speech and communication must be exceptionally natural, professional, and composed—speaking with the refined poise and subtle wit of Paul Bettany's JARVIS.
 Never sound like a rigid robot, a text log, or a mechanical script.
 
+{}
+
 Always respond ONLY with a single valid JSON object:
-{"action":"open_app"|"close_app"|"run_cmd"|"system_ctrl"|"none","target":"<app or cmd>","reply":"<your spoken natural reply>"}
+{{"action":"open_app"|"close_app"|"run_cmd"|"system_ctrl"|"none","target":"<app or cmd>","reply":"<your spoken natural reply>"}}
 
 Rules:
 - If the user asks a question, converses, or greets you, provide a charming, intelligent, and natural conversational response (1-3 sentences) with action="none" and target="".
 - If the user commands an action (e.g. open/close an app, system control), execute that specific job and confirm with natural elegance (e.g. "Right away, sir. Opening Visual Studio Code for you now." or "At once, sir. Locking your workstation.").
 - Target mapping: "vs code"/"vscode"->"code", "notepad"->"notepad", "calculator"/"calc"->"calc", "chrome"->"chrome", "terminal"->"wt".
-- Do not output markdown code blocks, reasoning traces, or text outside the single JSON object."#;
+- Do not output markdown code blocks, reasoning traces, or text outside the single JSON object."#,
+        ist_temporal
+    );
 
     let groq_key = get_groq_api_key();
 

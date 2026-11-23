@@ -2628,8 +2628,11 @@ function updateWeatherDisplay() {
   }
 }
 
+const TIRUPATI_LAT = 13.6288;
+const TIRUPATI_LON = 79.4192;
+
 async function fetchLocalWeather() {
-  const applyWeather = (tempC, city = "LOCAL", weatherCode = 0, isDay = null) => {
+  const applyWeather = (tempC, weatherCode = 0, isDay = null) => {
     currentTempC = tempC;
     currentWeatherCode = weatherCode;
     currentIsDay = isDay;
@@ -2637,54 +2640,21 @@ async function fetchLocalWeather() {
   };
 
   try {
-    // 1. Try browser geolocation first (exact GPS)
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          try {
-            const { latitude, longitude } = pos.coords;
-            const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code,is_day`);
-            const data = await res.json();
-            if (data?.current) {
-              applyWeather(data.current.temperature_2m, "GPS", data.current.weather_code, data.current.is_day);
-              return;
-            }
-          } catch (e) {
-            fallbackIpWeather();
-          }
-        },
-        () => {
-          fallbackIpWeather();
-        },
-        { timeout: 3500 }
-      );
-    } else {
-      fallbackIpWeather();
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${TIRUPATI_LAT}&longitude=${TIRUPATI_LON}&current=temperature_2m,weather_code,is_day`);
+    const data = await res.json();
+    if (data?.current) {
+      applyWeather(data.current.temperature_2m, data.current.weather_code, data.current.is_day);
+      return;
     }
   } catch (err) {
-    fallbackIpWeather();
+    console.warn("Direct Tirupati weather query failed, applying local fallback:", err);
   }
 
-  async function fallbackIpWeather() {
-    try {
-      const geoRes = await fetch("https://ipapi.co/json/");
-      const geo = await geoRes.json();
-      const lat = geo.latitude;
-      const lon = geo.longitude;
-      const city = geo.city || "LOCAL";
-
-      const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,is_day`);
-      const wData = await wRes.json();
-      if (wData?.current) {
-        applyWeather(wData.current.temperature_2m, city, wData.current.weather_code, wData.current.is_day);
-      }
-    } catch (e) {
-      const hour = new Date().getHours();
-      const isNight = hour < 6 || hour >= 18;
-      const estTemp = hour >= 10 && hour <= 16 ? 26 : (hour >= 17 && hour <= 21 ? 22 : 20);
-      applyWeather(estTemp, "LOCAL", 0, isNight ? 0 : 1);
-    }
-  }
+  // Graceful fallback if offline
+  const hour = new Date().getHours();
+  const isNight = hour < 6 || hour >= 18;
+  const estTemp = hour >= 10 && hour <= 16 ? 28 : (hour >= 17 && hour <= 21 ? 24 : 22);
+  applyWeather(estTemp, 0, isNight ? 0 : 1);
 }
 fetchLocalWeather();
 setInterval(fetchLocalWeather, 300000); // 5 min refresh
@@ -3667,6 +3637,10 @@ async function playNeuralPiperVoice(cleanText, turnId) {
 }
 
 async function speakResponse(text) {
+  if (voiceMutedByUser) {
+    stopAllSpokenAudio();
+    return;
+  }
   const clean = (text || "").replace(/[*#_`]/g, "").trim();
   if (!clean) {
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
@@ -3830,6 +3804,78 @@ async function processDirective(prompt, shouldOpenInput = false) {
 
   // Fast-Path: Direct Phone Keypad / Dialer Matrix (100% Direct - No Microsoft Phone Link)
   const lowerDirective = clean.toLowerCase();
+
+  // Fast-Path: Mute Jarvis / Stop Speaking
+  if (/^(?:mute|mute\s+mic|mute\s+microphone|be\s+quiet|stop\s+talking|silence|shh|shut\s+up|cancel\s+speech)$/i.test(lowerDirective)) {
+    voiceMutedByUser = true;
+    stopAllSpokenAudio();
+    isVoiceListening = false;
+    isListening = false;
+    if (visorMicBtn) {
+      visorMicBtn.classList.add("muted");
+      visorMicBtn.classList.remove("listening");
+      visorMicBtn.title = "Microphone Muted (Click to Unmute)";
+    }
+    setSystemState("idle");
+    showJarvisFeedback("Voice muted, sir. Click mic or type to unmute.", "mute");
+    try { await invoke("set_voice_listening", { active: false }); } catch (e) {}
+    stopContinuousVoiceRecognition();
+    return;
+  }
+
+  // Fast-Path: Unmute Jarvis
+  if (/^(?:unmute|unmute\s+mic|unmute\s+microphone|start\s+listening|resume\s+voice)$/i.test(lowerDirective)) {
+    voiceMutedByUser = false;
+    isVoiceListening = true;
+    isListening = true;
+    if (visorMicBtn) {
+      visorMicBtn.classList.remove("muted");
+      visorMicBtn.classList.add("listening");
+      visorMicBtn.title = "Microphone Active (Click to Mute)";
+    }
+    setSystemState("listening");
+    const replyMsg = "Voice activated, sir. Listening for your directive.";
+    showJarvisFeedback(replyMsg, "unmute");
+    speakResponse(replyMsg);
+    try { await invoke("set_voice_listening", { active: true }); } catch (e) {}
+    await startContinuousVoiceRecognition();
+    return;
+  }
+
+  // Fast-Path: Real-time IST Time Query
+  if (/^(?:what\s+is\s+the\s+time|what\s+time\s+is\s+it|current\s+time|tell\s+me\s+the\s+time|time|clock)$/i.test(lowerDirective)) {
+    const now = new Date();
+    const timeOptions = { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true };
+    const istTimeStr = now.toLocaleTimeString("en-IN", timeOptions);
+    const replyMsg = `The time is currently ${istTimeStr} India Standard Time, sir.`;
+    showJarvisFeedback(replyMsg, "time");
+    speakResponse(replyMsg);
+    setSystemState("idle");
+    return;
+  }
+
+  // Fast-Path: Real-time IST Date Query
+  if (/^(?:what\s+is\s+the\s+date|what\s+is\s+today's\s+date|today's\s+date|what\s+date\s+is\s+it|what\s+day\s+is\s+it|date|today)$/i.test(lowerDirective)) {
+    const now = new Date();
+    const dateOptions = { timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric" };
+    const istDateStr = now.toLocaleDateString("en-IN", dateOptions);
+    const replyMsg = `Today is ${istDateStr}, sir.`;
+    showJarvisFeedback(replyMsg, "date");
+    speakResponse(replyMsg);
+    setSystemState("idle");
+    return;
+  }
+
+  // Fast-Path: Live Tirupati 517505 Weather / Temperature Query
+  if (/^(?:what\s+is\s+the\s+weather|weather|current\s+weather|temperature|what\s+is\s+the\s+temperature|how\s+hot\s+is\s+it|how\s+cold\s+is\s+it|tirupati\s+weather|tirupati\s+temperature)$/i.test(lowerDirective)) {
+    const tempRounded = Math.round(currentTempC || 24);
+    const { desc } = determineWeatherIcon(currentWeatherCode, currentTempC, currentIsDay);
+    const replyMsg = `In Tirupati, it is currently ${tempRounded} degrees Celsius with ${desc.toLowerCase()}, sir.`;
+    showJarvisFeedback(replyMsg, "weather");
+    speakResponse(replyMsg);
+    setSystemState("idle");
+    return;
+  }
   if (
     lowerDirective === "open phone" ||
     lowerDirective === "phone" ||
@@ -5264,6 +5310,7 @@ async function handleMicButtonClick() {
   } else {
     // Mute
     voiceMutedByUser = true;
+    stopAllSpokenAudio();
     isVoiceListening = false;
     isListening = false;
     if (visorMicBtn) {

@@ -5,14 +5,15 @@ class TemporalContext:
     """
     Dynamically injects real-time temporal and system metrics
     into NAVI's prompt so it always knows the exact date, time, and system state.
+    Anchored to UTC+05:30 (India Standard Time - IST) and Tirupati 517505.
     """
 
     @staticmethod
     def get_context_block() -> str:
-        now = datetime.datetime.now()
-        local_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
-        day_of_week = now.strftime("%A")
-        timezone = datetime.datetime.now(datetime.timezone.utc).astimezone().tzname()
+        ist_tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        now_ist = datetime.datetime.now(ist_tz)
+        local_time_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p")
+        day_of_week = now_ist.strftime("%A")
 
         # Optional hardware metrics
         metrics = ""
@@ -28,9 +29,11 @@ class TemporalContext:
 
         return (
             f"[SYSTEM TEMPORAL & HARDWARE CONTEXT]\n"
-            f"- Current Date: {now.strftime('%B %d, %Y')}\n"
+            f"- Location Anchor: Tirupati, Andhra Pradesh, India (PIN: 517505)\n"
+            f"- Timezone: UTC+05:30 (India Standard Time - IST)\n"
+            f"- Current Date: {now_ist.strftime('%B %d, %Y')}\n"
             f"- Current Day: {day_of_week}\n"
-            f"- Current Local Time: {local_time_str} ({timezone})\n"
+            f"- Current IST Time: {local_time_str}\n"
             f"- Host OS: {platform.system()} {platform.release()}\n"
             f"{metrics}"
             f"--------------------------------------------------"
