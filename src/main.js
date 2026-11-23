@@ -3514,13 +3514,43 @@ function setSystemState(state) {
 }
 
 // -------------------------------------------------------------
-// NEURAL JARVIS VOICE (PIPER / SHERPA & BETTANY VOCAL MATRIX)
+// NEURAL JARVIS VOICE & UNIFIED ANTI-COLLISION VOCAL MATRIX
 // -------------------------------------------------------------
-async function playNeuralPiperVoice(cleanText) {
+let currentActiveAudioSource = null;
+let currentNeuralAbortCtrl = null;
+let currentSpeechTurnId = 0;
+let lastSpeechEndTime = 0;
+
+function stopAllSpokenAudio() {
+  currentSpeechTurnId++;
+  if (currentNeuralAbortCtrl) {
+    try { currentNeuralAbortCtrl.abort(); } catch (e) {}
+    currentNeuralAbortCtrl = null;
+  }
+  if (currentActiveAudioSource) {
+    try {
+      currentActiveAudioSource.onended = null;
+      currentActiveAudioSource.stop();
+      currentActiveAudioSource.disconnect();
+    } catch (e) {}
+    currentActiveAudioSource = null;
+  }
+  if ("speechSynthesis" in window) {
+    try { window.speechSynthesis.cancel(); } catch (e) {}
+  }
+  isSpeakingTTS = false;
+  speechTargetAmp = 0.0;
+  speechVocalAmp = 0.0;
+}
+
+async function playNeuralPiperVoice(cleanText, turnId) {
   try {
     const hasTelugu = /[\u0C00-\u0C7F]/.test(cleanText);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    currentNeuralAbortCtrl = new AbortController();
+    const timeoutId = setTimeout(() => {
+      if (currentNeuralAbortCtrl) currentNeuralAbortCtrl.abort();
+    }, 9000);
+
     const resp = await fetch("http://127.0.0.1:5000/v1/audio/speech", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3529,39 +3559,88 @@ async function playNeuralPiperVoice(cleanText) {
         voice: hasTelugu ? "telugu" : "jarvis", 
         speed: 1.0 
       }),
-      signal: controller.signal
+      signal: currentNeuralAbortCtrl.signal
     });
     clearTimeout(timeoutId);
+    currentNeuralAbortCtrl = null;
+
+    if (turnId !== currentSpeechTurnId) {
+      console.log("[Neural Voice] Dropping stale response turn:", turnId);
+      return true;
+    }
+
     if (resp.ok) {
       const arrayBuffer = await resp.arrayBuffer();
+      if (turnId !== currentSpeechTurnId) return true;
+
       const actx = JarvisSoundscape.getAudioCtx();
       if (actx) {
         if (actx.state === "suspended") {
           try { await actx.resume(); } catch (e) {}
         }
+        if (turnId !== currentSpeechTurnId) return true;
+
         const audioBuffer = await actx.decodeAudioData(arrayBuffer);
+        if (turnId !== currentSpeechTurnId) return true;
+
+        // Clean up any lingering active audio source immediately before playing
+        if (currentActiveAudioSource) {
+          try {
+            currentActiveAudioSource.onended = null;
+            currentActiveAudioSource.stop();
+            currentActiveAudioSource.disconnect();
+          } catch (e) {}
+          currentActiveAudioSource = null;
+        }
+
         const source = actx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(actx.destination);
-        source.onended = () => {
-          isSpeakingTTS = false;
-          speechTargetAmp = 0.0;
-          speechVocalAmp = 0.0;
-          setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
-          setTimeout(() => {
-            resumeListeningIfAllowed();
-          }, 300);
-        };
+        currentActiveAudioSource = source;
+
         isSpeakingTTS = true;
         speechTargetAmp = 0.88;
         speechVocalAmp = 0.88;
         setSystemState("speaking");
-        source.start(0);
-        return true;
+
+        return new Promise((resolve) => {
+          source.onended = () => {
+            if (currentActiveAudioSource === source) {
+              currentActiveAudioSource = null;
+            }
+            if (turnId === currentSpeechTurnId) {
+              isSpeakingTTS = false;
+              lastSpeechEndTime = Date.now();
+              speechTargetAmp = 0.0;
+              speechVocalAmp = 0.0;
+              setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+
+              // Post-speech calm window (500ms) prevents speaker audio feedback loop into mic
+              setTimeout(() => {
+                if (!isSpeakingTTS && turnId === currentSpeechTurnId) {
+                  try {
+                    invoke("set_voice_listening", { active: true }).catch(() => {});
+                  } catch (e) {}
+                  resumeListeningIfAllowed();
+                }
+              }, 500);
+            }
+            resolve(true);
+          };
+
+          try {
+            source.start(0);
+          } catch (err) {
+            console.warn("[Neural Voice] source.start notice:", err);
+            resolve(false);
+          }
+        });
       }
     }
   } catch (e) {
-    console.warn("[Neural Voice notice]:", e);
+    if (e.name !== "AbortError") {
+      console.warn("[Neural Voice notice]:", e);
+    }
   }
   return false;
 }
@@ -3574,12 +3653,33 @@ async function speakResponse(text) {
     return;
   }
 
-  // 1. Try Ultra-High-Fidelity Neural Voice Engine (Ryan Paul Bettany & Mohan Telugu)
-  const usedNeural = await playNeuralPiperVoice(clean);
-  if (usedNeural) return;
+  // 1. Immediately cancel all previous speech and establish exclusive turn
+  stopAllSpokenAudio();
+  const turnId = ++currentSpeechTurnId;
 
-  // 2. Failsafe: Paul Bettany British Acoustic Voice Matrix (Windows OneCore / SAPI)
+  // 2. Lock system state to speaking & mute hardware mic to prevent self-echo
+  isSpeakingTTS = true;
+  speechTargetAmp = 0.85;
+  speechVocalAmp = 0.85;
+  setSystemState("speaking");
+
+  try {
+    invoke("set_voice_listening", { active: false }).catch(() => {});
+  } catch (e) {}
+
+  // Flush any VAD audio chunks to avoid picking up the start of speech
+  audioChunks = [];
+  hasSpokenInCycle = false;
+  isVadSpeaking = false;
+
+  // 3. Try Ultra-High-Fidelity Neural Voice Engine (Kokoro-82M / Edge-TTS)
+  const usedNeural = await playNeuralPiperVoice(clean, turnId);
+  if (usedNeural || turnId !== currentSpeechTurnId) return;
+
+  // 4. Failsafe: Paul Bettany British Acoustic Voice Matrix (Windows SAPI)
   if (!("speechSynthesis" in window)) {
+    isSpeakingTTS = false;
+    lastSpeechEndTime = Date.now();
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
     resumeListeningIfAllowed();
     return;
@@ -3587,12 +3687,11 @@ async function speakResponse(text) {
 
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(clean);
-  utterance.pitch = 0.98; // Natural, articulate tone
-  utterance.rate = 1.0;   // Natural human conversational tempo
+  utterance.pitch = 0.98;
+  utterance.rate = 1.0;
 
   const hasTelugu = /[\u0C00-\u0C7F]/.test(clean);
 
-  // Search for the most natural voice available
   let voice = null;
   if (hasTelugu) {
     voice = synthesisVoices.find(v => v.lang.startsWith("te")) || null;
@@ -3609,52 +3708,72 @@ async function speakResponse(text) {
 
   if (voice) utterance.voice = voice;
 
-  utterance.onstart = () => {
-    isSpeakingTTS = true;
-    speechTargetAmp = 0.85;
-    speechVocalAmp = 0.85;
-    setSystemState("speaking");
-  };
+  return new Promise((resolve) => {
+    utterance.onstart = () => {
+      if (turnId !== currentSpeechTurnId) {
+        window.speechSynthesis.cancel();
+        resolve();
+        return;
+      }
+      isSpeakingTTS = true;
+      speechTargetAmp = 0.85;
+      speechVocalAmp = 0.85;
+      setSystemState("speaking");
+    };
 
-  utterance.onboundary = (event) => {
-    // Exact word / syllable boundary event from SpeechSynthesis
-    const charIdx = event.charIndex || 0;
-    const remaining = clean.slice(charIdx, charIdx + 12);
-    const vowelCount = (remaining.match(/[aeiouyAEIOUY]/g) || []).length;
-    const energy = Math.min(1.0, 0.65 + vowelCount * 0.12 + Math.random() * 0.18);
-    speechTargetAmp = energy;
-    speechVocalAmp = Math.max(speechVocalAmp, energy * 0.85);
-  };
+    utterance.onboundary = (event) => {
+      const charIdx = event.charIndex || 0;
+      const remaining = clean.slice(charIdx, charIdx + 12);
+      const vowelCount = (remaining.match(/[aeiouyAEIOUY]/g) || []).length;
+      const energy = Math.min(1.0, 0.65 + vowelCount * 0.12 + Math.random() * 0.18);
+      speechTargetAmp = energy;
+      speechVocalAmp = Math.max(speechVocalAmp, energy * 0.85);
+    };
 
-  utterance.onend = () => {
-    isSpeakingTTS = false;
-    speechTargetAmp = 0.0;
-    speechVocalAmp = 0.0;
-    setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+    utterance.onend = () => {
+      if (turnId === currentSpeechTurnId) {
+        isSpeakingTTS = false;
+        lastSpeechEndTime = Date.now();
+        speechTargetAmp = 0.0;
+        speechVocalAmp = 0.0;
+        setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+        setTimeout(() => {
+          if (!isSpeakingTTS && turnId === currentSpeechTurnId) {
+            try {
+              invoke("set_voice_listening", { active: true }).catch(() => {});
+            } catch (e) {}
+            resumeListeningIfAllowed();
+          }
+        }, 500);
+      }
+      resolve();
+    };
+
+    utterance.onerror = () => {
+      if (turnId === currentSpeechTurnId) {
+        isSpeakingTTS = false;
+        lastSpeechEndTime = Date.now();
+        speechTargetAmp = 0.0;
+        speechVocalAmp = 0.0;
+        setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+        resumeListeningIfAllowed();
+      }
+      resolve();
+    };
+
+    const safetyTimeout = Math.max(3000, clean.length * 90);
     setTimeout(() => {
-      resumeListeningIfAllowed();
-    }, 350);
-  };
+      if (isSpeakingTTS && turnId === currentSpeechTurnId) {
+        isSpeakingTTS = false;
+        lastSpeechEndTime = Date.now();
+        setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
+        resumeListeningIfAllowed();
+        resolve();
+      }
+    }, safetyTimeout);
 
-  utterance.onerror = () => {
-    isSpeakingTTS = false;
-    speechTargetAmp = 0.0;
-    speechVocalAmp = 0.0;
-    setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
-    resumeListeningIfAllowed();
-  };
-
-  // Fallback safety: ensure speaking state doesn't hang if browser drops speech event
-  const safetyTimeout = Math.max(3000, clean.length * 90);
-  setTimeout(() => {
-    if (isSpeakingTTS) {
-      isSpeakingTTS = false;
-      setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
-      resumeListeningIfAllowed();
-    }
-  }, safetyTimeout);
-
-  window.speechSynthesis.speak(utterance);
+    window.speechSynthesis.speak(utterance);
+  });
 }
 
 // -------------------------------------------------------------
@@ -4374,7 +4493,7 @@ async function processDirective(prompt, shouldOpenInput = false) {
     }
 
     // 5. Vocalize response
-    speakResponse(res.reply);
+    await speakResponse(res.reply);
 
     // Refresh telemetry to reflect active apps or hardware updates
     refreshSystemTelemetry();
@@ -4556,25 +4675,69 @@ let isListenLoopRunning = false;
 let lastProcessedVoice = "";
 let lastProcessedTime = 0;
 
+// Unified similarity check between consecutive voice transcriptions
+function isDuplicateOrSimilarVoice(textA, textB) {
+  if (!textA || !textB) return false;
+  const a = textA.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  const b = textB.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) {
+    const minLen = Math.min(a.length, b.length);
+    const maxLen = Math.max(a.length, b.length);
+    if (minLen / maxLen > 0.55) return true;
+  }
+  const wordsA = new Set(a.split(/\s+/).filter(Boolean));
+  const wordsB = new Set(b.split(/\s+/).filter(Boolean));
+  let intersection = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) intersection++;
+  }
+  const union = new Set([...wordsA, ...wordsB]).size;
+  return union > 0 && (intersection / union) >= 0.65;
+}
+
 async function handleVoiceDirective(rawText) {
   if (!isVoiceListening || voiceMutedByUser) {
     console.log("[Voice] Ignored because voice is muted:", rawText);
     return;
   }
 
-  // Voice Barge-In: interrupt TTS playback immediately when user speaks
-  if (isSpeakingTTS) {
-    console.log("[Voice Barge-In] Interrupting TTS for incoming user directive:", rawText);
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-    isSpeakingTTS = false;
-  }
-
   const clean = (rawText || "").trim();
   if (!clean) return;
 
-  // Embedded Offline Wake-Word Detection ("Hey Jarvis" / "Jarvis" / "Ok Jarvis")
+  const now = Date.now();
+
+  // 1. Acoustic Self-Echo & Feedback Suppression:
+  // If Jarvis is currently speaking out of the speakers:
+  if (isSpeakingTTS) {
+    const isInterrupt = /^(?:stop|cancel|shut\s*up|hold\s*on|wait|be\s*quiet|silence)$/i.test(clean);
+    if (isInterrupt) {
+      console.log("[Voice Interrupt] User issued voice halt command:", clean);
+      stopAllSpokenAudio();
+      isProcessingDirective = false;
+      showJarvisFeedback("Standing by, sir.", null, false);
+      setSystemState("idle");
+      return;
+    }
+    // Speaker acoustic feedback detected - ignore own echo!
+    console.log("[Acoustic Rejection] Ignored speaker feedback during active TTS:", clean);
+    return;
+  }
+
+  // 2. Post-Speech Room Decay Calm Window (600ms)
+  if (now - lastSpeechEndTime < 600) {
+    console.log("[Acoustic Rejection] Ignored audio in post-speech room decay window:", clean);
+    return;
+  }
+
+  // 3. Directive Execution Lock: prevent running two queries at the same time
+  if (isProcessingDirective) {
+    console.log("[Directive Lock] Directive already in progress, dropping concurrent directive:", clean);
+    return;
+  }
+
+  // 4. Embedded Offline Wake-Word Detection ("Hey Jarvis" / "Jarvis" / "Ok Jarvis")
   const wakeWordMatch = clean.match(/^(?:hey\s+|ok\s+|hello\s+)?jarvis[\s,.:;!-]*(.*)$/i);
   let effectiveText = clean;
   if (wakeWordMatch) {
@@ -4585,39 +4748,32 @@ async function handleVoiceDirective(rawText) {
       setSystemState("listening");
       const wakeReply = "Yes, sir? Standing by for your directive.";
       showJarvisFeedback(wakeReply, "wake_word");
-      speakResponse(wakeReply);
+      await speakResponse(wakeReply);
       return;
     }
     effectiveText = trailing;
   }
 
-  const lowerRaw = effectiveText.toLowerCase();
+  const lowerEffective = effectiveText.toLowerCase();
   // Fast halt on direct interrupt words
-  if (lowerRaw === "stop" || lowerRaw === "cancel" || lowerRaw === "shut up" || lowerRaw === "hold on" || lowerRaw === "wait") {
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-    isSpeakingTTS = false;
+  if (lowerEffective === "stop" || lowerEffective === "cancel" || lowerEffective === "shut up" || lowerEffective === "hold on" || lowerEffective === "wait") {
+    stopAllSpokenAudio();
     isProcessingDirective = false;
     showJarvisFeedback("Standing by, sir.", null, false);
     setSystemState("idle");
     return;
   }
 
-  if (isProcessingDirective) {
-    console.log("[Voice] Directive currently executing, ignoring:", rawText);
-    return;
-  }
-
-  const now = Date.now();
-  if (effectiveText.toLowerCase() === lastProcessedVoice.toLowerCase() && (now - lastProcessedTime) < 2000) {
-    return;
-  }
-  lastProcessedVoice = effectiveText;
-  lastProcessedTime = now;
-
   const normalized = normalizeVoiceTranscription(effectiveText);
   if (!normalized) return;
+
+  // 5. Anti-Collision Deduplication Window (3.5s window across parallel STT engines)
+  if (isDuplicateOrSimilarVoice(normalized, lastProcessedVoice) && (now - lastProcessedTime) < 3500) {
+    console.log("[Deduplication] Dropping duplicate voice directive from parallel STT stream:", normalized);
+    return;
+  }
+  lastProcessedVoice = normalized;
+  lastProcessedTime = now;
 
   console.log(`[JARVIS Directive Triggered]: "${rawText}" -> "${normalized}"`);
   openInputBar();
@@ -4632,7 +4788,7 @@ async function handleVoiceDirective(rawText) {
     await processDirective(normalized, true);
   } finally {
     isProcessingDirective = false;
-    if (!isSpeakingTTS) {
+    if (!isSpeakingTTS && (Date.now() - lastSpeechEndTime >= 600)) {
       resumeListeningIfAllowed();
     }
   }
@@ -4655,17 +4811,19 @@ async function startTauriVoiceListener() {
         handleVoiceDirective(event.payload);
       });
       console.log("[Tauri Voice] Event listener hooked to jarvis://voice_directive");
+      return; // Do not run secondary polling loop if event listener succeeded!
     } else if (window.__TAURI_INTERNALS__?.listen) {
       await window.__TAURI_INTERNALS__.listen("jarvis://voice_directive", (event) => {
         handleVoiceDirective(event.payload);
       });
       console.log("[Tauri Voice] Internals event listener hooked to jarvis://voice_directive");
+      return; // Do not run secondary polling loop if event listener succeeded!
     }
   } catch (e) {
     console.warn("[Tauri Voice] Event listener hook notice:", e);
   }
 
-  // 2. Secondary: Resilient background recognition loop via listen_mic IPC
+  // 2. Secondary fallback ONLY if event listening failed
   runContinuousListenLoop();
 }
 
@@ -4674,7 +4832,8 @@ async function runContinuousListenLoop() {
   isListenLoopRunning = true;
 
   while (true) {
-    if (isVoiceListening && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective) {
+    const now = Date.now();
+    if (isVoiceListening && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective && (now - lastSpeechEndTime >= 600)) {
       try {
         const text = await invoke("listen_mic");
         if (text && text.trim().length > 0) {
@@ -4746,7 +4905,8 @@ async function initAudioEngine() {
 
 function startUtteranceRecording() {
   if (!mediaStream || !mediaStream.active) return;
-  if (voiceMutedByUser || !isVoiceListening || isSpeakingTTS || isProcessingDirective || isWhisperTranscribing) {
+  const now = Date.now();
+  if (voiceMutedByUser || !isVoiceListening || isSpeakingTTS || isProcessingDirective || isWhisperTranscribing || (now - lastSpeechEndTime < 600)) {
     return;
   }
 
@@ -4783,7 +4943,8 @@ function startUtteranceRecording() {
     const recordedChunks = [...audioChunks];
     audioChunks = [];
 
-    if (hasSpokenInCycle && recordedChunks.length > 0 && !voiceMutedByUser) {
+    const stopNow = Date.now();
+    if (hasSpokenInCycle && recordedChunks.length > 0 && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective && (stopNow - lastSpeechEndTime >= 600)) {
       hasSpokenInCycle = false;
       const audioBlob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType || "audio/webm" });
       if (audioBlob.size > 2000) {
@@ -4811,10 +4972,12 @@ function startUtteranceRecording() {
 }
 
 function checkVadTick() {
-  if (!analyser || voiceMutedByUser || !isVoiceListening || isSpeakingTTS || isProcessingDirective || isWhisperTranscribing) {
-    if (isVadSpeaking) {
+  const now = Date.now();
+  if (!analyser || voiceMutedByUser || !isVoiceListening || isSpeakingTTS || isProcessingDirective || isWhisperTranscribing || (now - lastSpeechEndTime < 600)) {
+    if (isVadSpeaking || hasSpokenInCycle) {
       isVadSpeaking = false;
       hasSpokenInCycle = false;
+      audioChunks = [];
     }
     return;
   }
@@ -4835,7 +4998,6 @@ function checkVadTick() {
   }
 
   const threshold = Math.max(0.022, vadNoiseFloor * 2.2);
-  const now = Date.now();
 
   if (rms > threshold) {
     vadConsecutiveSpeechFrames++;
@@ -4889,7 +5051,11 @@ function checkVadTick() {
 }
 
 async function processAudioBlobWithWhisper(audioBlob) {
-  if (isWhisperTranscribing || voiceMutedByUser) return;
+  const now = Date.now();
+  if (isWhisperTranscribing || voiceMutedByUser || isSpeakingTTS || isProcessingDirective || (now - lastSpeechEndTime < 600)) {
+    audioChunks = [];
+    return;
+  }
   isWhisperTranscribing = true;
 
   try {
@@ -4910,6 +5076,12 @@ async function processAudioBlobWithWhisper(audioBlob) {
       mimeType: mediaRecorder?.mimeType || "audio/webm",
     });
 
+    // Guard against late arrival when speaking has already started
+    if (isSpeakingTTS || isProcessingDirective || (Date.now() - lastSpeechEndTime < 600)) {
+      console.log("[Groq Whisper STT] Discarding late transcription during speech or active processing:", text);
+      return;
+    }
+
     if (text && text.trim().length > 0) {
       console.log("[Groq Whisper STT Transcribed]:", text);
       await handleVoiceDirective(text.trim());
@@ -4923,14 +5095,15 @@ async function processAudioBlobWithWhisper(audioBlob) {
     if (visorCmdInput && (!visorCmdInput.value || visorCmdInput.value.trim() === "")) {
       visorCmdInput.placeholder = "Give an instruction or ask anything...";
     }
-    if (!isSpeakingTTS && !isProcessingDirective) {
+    if (!isSpeakingTTS && !isProcessingDirective && (Date.now() - lastSpeechEndTime >= 600)) {
       resumeListeningIfAllowed();
     }
   }
 }
 
 function resumeListeningIfAllowed() {
-  if (isVoiceListening && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective && !isWhisperTranscribing) {
+  const now = Date.now();
+  if (isVoiceListening && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective && !isWhisperTranscribing && (now - lastSpeechEndTime >= 500)) {
     setSystemState("listening");
     if (visorMicBtn) {
       visorMicBtn.classList.remove("muted");
