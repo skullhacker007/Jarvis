@@ -686,6 +686,7 @@ body {
   gap: clamp(6px, 1vh, 14px);
   z-index: 10;
   box-sizing: border-box;
+  background: transparent !important;
 }
 
 /* Gadget Panels (Full Width, Sci-Fi HUD Framing) */
@@ -4149,75 +4150,22 @@ body:not(.island-mode-active) .dynamic-island-pill {
   pointer-events: none;
 }
 
-/* Center Holographic HUD Overlay (Clean Minimalist Restore Trigger) */
-.center-hologram-hud-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  display: flex;
-  justify-content: flex-end;
-  padding: 24px 30px;
-  box-sizing: border-box;
-  z-index: 6;
-}
-
-.center-holo-restore-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: rgba(15, 23, 42, 0.75);
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  border-radius: 4px;
-  color: #94a3b8;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  padding: 6px 14px;
-  cursor: pointer;
-  pointer-events: auto;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
-}
-
-.center-holo-restore-btn:hover {
-  color: #38bdf8;
-  border-color: #38bdf8;
-  background: rgba(14, 165, 233, 0.2);
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
-  transform: translateY(-1px);
-}
-
-.center-holo-restore-btn:active {
-  transform: translateY(1px);
-}
-
-.restore-icon {
-  font-size: 11px;
-  color: #38bdf8;
-}
-
 /* ========================================================= */
 /* INVISIBLE CENTER DROP TARGET (NO VISIBLE EXTRA UI)        */
 /* ========================================================= */
 
 .center-drop-target {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 58%;
-  height: 74%;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   display: block;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
   border: none;
-  background: transparent;
+  background: transparent !important;
   box-shadow: none;
   z-index: 8;
 }
@@ -4227,11 +4175,26 @@ body.is-avatar-dragging .center-drop-target {
   pointer-events: auto;
 }
 
+body.is-avatar-dragging,
+body.is-avatar-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
 .avatar-pill {
   cursor: grab;
+  user-select: none;
 }
 
 .avatar-pill:active {
+  cursor: grabbing;
+}
+
+.human-canvas-container {
+  cursor: grab;
+}
+
+.human-canvas-container:active {
   cursor: grabbing;
 }
 

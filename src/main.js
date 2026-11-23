@@ -714,6 +714,10 @@ const StarkBiometricHologram = (() => {
       loadAvatarModel(key, canvasEl.width, canvasEl.height);
     }
 
+    if (window.StarkCenterHologram && window.StarkCenterHologram.isDeployed()) {
+      window.StarkCenterHologram.deployAvatar(key);
+    }
+
     triggerMaterialize();
     JarvisSoundscape.play("wake");
 
@@ -834,6 +838,10 @@ const StarkBiometricHologram = (() => {
     JarvisSoundscape.play("click");
     if (powerActive) {
       triggerMaterialize();
+    } else {
+      if (window.StarkCenterHologram && window.StarkCenterHologram.isDeployed()) {
+        window.StarkCenterHologram.restoreIronMan();
+      }
     }
     showJarvisFeedback(powerActive ? "nAvI Labs projection online." : "nAvI Labs projection standby.", "navi_labs");
   }
@@ -1485,7 +1493,6 @@ const StarkCenterHologramEngine = (() => {
     canvasEl = document.getElementById("center-particle-canvas");
     ironmanImgEl = document.getElementById("ironman-master-img") || document.querySelector(".ironman-master-img");
     arcReactorEl = document.getElementById("stark-arc-reactor");
-    restoreBtn = document.getElementById("center-holo-restore-btn");
 
     if (canvasEl) {
       ctx = canvasEl.getContext("2d", { alpha: true });
@@ -1497,11 +1504,6 @@ const StarkCenterHologramEngine = (() => {
         }
       });
     }
-
-    restoreBtn?.addEventListener("click", (e) => {
-      e.preventDefault();
-      restoreIronMan();
-    });
   }
 
   return {
@@ -1537,6 +1539,12 @@ const StarkAvatarDragDropController = (() => {
     pills.forEach((pill) => {
       const avatarKey = pill.dataset.avatar;
 
+      // Pointer / Mouse Drag (Smooth, instant, zero latency on first gesture)
+      pill.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        startPointerDrag(e, avatarKey);
+      });
+
       // Native HTML5 Drag Start
       pill.addEventListener("dragstart", (e) => {
         draggedAvatarKey = avatarKey;
@@ -1550,18 +1558,18 @@ const StarkAvatarDragDropController = (() => {
       pill.addEventListener("dragend", () => {
         endDrag();
       });
-
-      // Pointer / Mouse Drag Fallback
-      pill.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0) return;
-        startPointerDrag(e, avatarKey);
-      });
     });
   }
 
   function setupCanvasContainer() {
     const canvasContainer = document.getElementById("human-canvas-container");
     if (!canvasContainer) return;
+
+    canvasContainer.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const activeKey = getActiveNaviKey();
+      startPointerDrag(e, activeKey);
+    });
 
     canvasContainer.addEventListener("dragstart", (e) => {
       const activeKey = getActiveNaviKey();
@@ -1576,12 +1584,6 @@ const StarkAvatarDragDropController = (() => {
     canvasContainer.addEventListener("dragend", () => {
       endDrag();
     });
-
-    canvasContainer.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      const activeKey = getActiveNaviKey();
-      startPointerDrag(e, activeKey);
-    });
   }
 
   function getActiveNaviKey() {
@@ -1591,6 +1593,7 @@ const StarkAvatarDragDropController = (() => {
 
   function endDrag() {
     isDragging = false;
+    draggedAvatarKey = null;
     document.body.classList.remove("is-avatar-dragging");
   }
 
@@ -1604,21 +1607,23 @@ const StarkAvatarDragDropController = (() => {
 
     dropTargetEl.addEventListener("drop", (e) => {
       e.preventDefault();
-      const avatarKey = e.dataTransfer.getData("application/x-jarvis-avatar") || e.dataTransfer.getData("text/plain") || draggedAvatarKey;
+      const avatarKey = e.dataTransfer.getData("application/x-jarvis-avatar") || e.dataTransfer.getData("text/plain") || draggedAvatarKey || getActiveNaviKey();
       executeDrop(avatarKey);
     });
 
     window.addEventListener("dragover", (e) => {
-      if (!isDragging) return;
-      e.preventDefault();
+      if (isDragging || draggedAvatarKey) {
+        e.preventDefault();
+      }
     });
 
     window.addEventListener("drop", (e) => {
-      if (!isDragging) return;
+      if (!isDragging && !draggedAvatarKey) return;
       e.preventDefault();
       const isCenter = isCursorInCenterZone(e.clientX, e.clientY);
-      if (isCenter && draggedAvatarKey) {
-        executeDrop(draggedAvatarKey);
+      const avatarKey = (e.dataTransfer ? e.dataTransfer.getData("application/x-jarvis-avatar") || e.dataTransfer.getData("text/plain") : null) || draggedAvatarKey || getActiveNaviKey();
+      if (isCenter && avatarKey) {
+        executeDrop(avatarKey);
       } else {
         endDrag();
       }
@@ -1628,10 +1633,10 @@ const StarkAvatarDragDropController = (() => {
   function isCursorInCenterZone(x, y) {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    const minX = w * 0.22;
-    const maxX = w * 0.78;
-    const minY = h * 0.08;
-    const maxY = h * 0.92;
+    const minX = w * 0.18;
+    const maxX = w * 0.82;
+    const minY = h * 0.05;
+    const maxY = h * 0.95;
     return x >= minX && x <= maxX && y >= minY && y <= maxY;
   }
 
@@ -1639,16 +1644,17 @@ const StarkAvatarDragDropController = (() => {
     const startX = e.clientX;
     const startY = e.clientY;
     let dragInitiated = false;
+    const targetKey = avatarKey || getActiveNaviKey();
 
     function onPointerMove(moveEvent) {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (!dragInitiated && dist > 8) {
+      if (!dragInitiated && dist >= 3) {
         dragInitiated = true;
         isDragging = true;
-        draggedAvatarKey = avatarKey;
+        draggedAvatarKey = targetKey;
         document.body.classList.add("is-avatar-dragging");
       }
     }
@@ -1656,25 +1662,36 @@ const StarkAvatarDragDropController = (() => {
     function onPointerUp(upEvent) {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
 
       if (dragInitiated) {
         const droppedInCenter = isCursorInCenterZone(upEvent.clientX, upEvent.clientY);
-        if (droppedInCenter && draggedAvatarKey) {
-          executeDrop(draggedAvatarKey);
+        if (droppedInCenter && (targetKey || draggedAvatarKey)) {
+          executeDrop(targetKey || draggedAvatarKey);
         } else {
           endDrag();
         }
+      } else {
+        endDrag();
       }
     }
 
-    window.addEventListener("pointermove", onPointerMove);
+    function onPointerCancel() {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+      endDrag();
+    }
+
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
   }
 
   function executeDrop(avatarKey) {
     endDrag();
-    if (!avatarKey) avatarKey = "ultron";
-    StarkCenterHologramEngine.deployAvatar(avatarKey);
+    const key = avatarKey || getActiveNaviKey() || "ultron";
+    StarkCenterHologramEngine.deployAvatar(key);
   }
 
   return {
@@ -1794,6 +1811,8 @@ const StarkAirDrop = (() => {
 
   function init() {
     window.addEventListener("dragenter", (e) => {
+      const types = e.dataTransfer ? Array.from(e.dataTransfer.types || []) : [];
+      if (!types.includes("Files")) return;
       e.preventDefault();
       if (overlay) {
         overlay.style.display = "flex";
@@ -1802,6 +1821,8 @@ const StarkAirDrop = (() => {
     });
 
     window.addEventListener("dragover", (e) => {
+      const types = e.dataTransfer ? Array.from(e.dataTransfer.types || []) : [];
+      if (!types.includes("Files")) return;
       e.preventDefault();
     });
 
@@ -1813,6 +1834,8 @@ const StarkAirDrop = (() => {
     });
 
     window.addEventListener("drop", async (e) => {
+      const types = e.dataTransfer ? Array.from(e.dataTransfer.types || []) : [];
+      if (!types.includes("Files")) return;
       e.preventDefault();
       if (!overlay) return;
       overlay.classList.remove("drag-over");
