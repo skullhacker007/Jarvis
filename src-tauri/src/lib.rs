@@ -122,11 +122,11 @@ pub mod jarvis_memory {
         let vec = text_to_hash_vector(clean, 128);
 
         let record = MemoryRecord {
-            id: format!("mem_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()),
+            id: format!("mem_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()),
             text: clean.to_string(),
             category: category.trim().to_lowercase(),
             tags: words,
-            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
             vector: Some(vec),
         };
 
@@ -505,12 +505,43 @@ pub fn airdrop_file_to_phone(file_path: &str) -> Result<String, String> {
     }
 }
 
+fn get_candidate_paths(relative_path: &str) -> Vec<std::path::PathBuf> {
+    let mut candidates = vec![
+        std::path::PathBuf::from(relative_path),
+        std::path::PathBuf::from(".").join(relative_path),
+        std::path::PathBuf::from("..").join(relative_path),
+    ];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.join(relative_path));
+            if let Some(pp) = parent.parent() {
+                candidates.push(pp.join(relative_path));
+            }
+        }
+    }
+    let clean_rel = relative_path.trim_start_matches("./").trim_start_matches("../");
+    candidates.push(std::path::PathBuf::from(format!("C:/Users/Chowdary/Desktop/Project/Jarvis/{}", clean_rel)));
+    candidates
+}
+
+fn find_file_in_candidates(relative_path: &str) -> Option<std::path::PathBuf> {
+    for p in get_candidate_paths(relative_path) {
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
 fn parse_key_from_env_str(content: &str, key_name: &str) -> Option<String> {
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with(key_name) {
-            if let Some(val) = trimmed.split('=').nth(1) {
-                let res = val.trim().trim_matches('\'').trim_matches('"').to_string();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = trimmed.split_once('=') {
+            if k.trim() == key_name {
+                let res = v.trim().trim_matches('\'').trim_matches('"').to_string();
                 if !res.is_empty() {
                     return Some(res);
                 }
@@ -520,44 +551,36 @@ fn parse_key_from_env_str(content: &str, key_name: &str) -> Option<String> {
     None
 }
 
-fn get_groq_api_key() -> String {
-    if let Ok(k) = std::env::var("GROQ_API_KEY") {
+fn get_env_or_file_key(key_name: &str) -> Option<String> {
+    if let Ok(k) = std::env::var(key_name) {
         let t = k.trim().trim_matches('\'').trim_matches('"');
         if !t.is_empty() {
-            return t.to_string();
+            return Some(t.to_string());
         }
     }
-    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
-        if let Ok(content) = std::fs::read_to_string(p) {
-            if let Some(val) = parse_key_from_env_str(&content, "GROQ_API_KEY") {
-                return val;
+    for file_name in [".env.local", ".env"] {
+        for candidate in get_candidate_paths(file_name) {
+            if let Ok(content) = std::fs::read_to_string(&candidate) {
+                if let Some(val) = parse_key_from_env_str(&content, key_name) {
+                    return Some(val);
+                }
             }
         }
     }
-    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "GROQ_API_KEY") {
-        return val;
+    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, key_name) {
+        return Some(val);
     }
-    String::new()
+    None
+}
+
+fn get_groq_api_key() -> String {
+    get_env_or_file_key("GROQ_API_KEY").unwrap_or_default()
 }
 
 fn get_ollama_base_url() -> String {
-    if let Ok(u) = std::env::var("OLLAMA_BASE_URL") {
-        let t = u.trim().trim_matches('\'').trim_matches('"');
-        if !t.is_empty() {
-            return t.trim_end_matches('/').to_string();
-        }
-    }
-    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
-        if let Ok(content) = std::fs::read_to_string(p) {
-            if let Some(val) = parse_key_from_env_str(&content, "OLLAMA_BASE_URL") {
-                return val.trim_end_matches('/').to_string();
-            }
-        }
-    }
-    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "OLLAMA_BASE_URL") {
-        return val.trim_end_matches('/').to_string();
-    }
-    "http://127.0.0.1:11434".to_string()
+    get_env_or_file_key("OLLAMA_BASE_URL")
+        .map(|u| u.trim_end_matches('/').to_string())
+        .unwrap_or_else(|| "http://127.0.0.1:11434".to_string())
 }
 
 fn get_ollama_chat_url() -> String {
@@ -569,83 +592,21 @@ fn get_ollama_ps_url() -> String {
 }
 
 fn get_ollama_model_name() -> String {
-    if let Ok(m) = std::env::var("OLLAMA_MODEL") {
-        let t = m.trim().trim_matches('\'').trim_matches('"');
-        if !t.is_empty() {
-            return t.to_string();
-        }
-    }
-    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
-        if let Ok(content) = std::fs::read_to_string(p) {
-            if let Some(val) = parse_key_from_env_str(&content, "OLLAMA_MODEL") {
-                return val;
-            }
-        }
-    }
-    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "OLLAMA_MODEL") {
-        return val;
-    }
-    "qwen3.5:2b".to_string()
+    get_env_or_file_key("OLLAMA_MODEL").unwrap_or_else(|| "qwen3.5:2b".to_string())
 }
 
 fn get_ai_provider() -> String {
-    if let Ok(p) = std::env::var("AI_PROVIDER") {
-        let t = p.trim().trim_matches('\'').trim_matches('"').to_lowercase();
-        if !t.is_empty() {
-            return t;
-        }
-    }
-    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
-        if let Ok(content) = std::fs::read_to_string(p) {
-            if let Some(val) = parse_key_from_env_str(&content, "AI_PROVIDER") {
-                return val.to_lowercase();
-            }
-        }
-    }
-    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "AI_PROVIDER") {
-        return val.to_lowercase();
-    }
-    "ollama".to_string()
+    get_env_or_file_key("AI_PROVIDER")
+        .map(|p| p.to_lowercase())
+        .unwrap_or_else(|| "ollama".to_string())
 }
 
 fn get_navi_api_token() -> Option<String> {
-    if let Ok(u) = std::env::var("NAVI_API_TOKEN") {
-        let t = u.trim().trim_matches('\'').trim_matches('"');
-        if !t.is_empty() {
-            return Some(t.to_string());
-        }
-    }
-    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
-        if let Ok(content) = std::fs::read_to_string(p) {
-            if let Some(val) = parse_key_from_env_str(&content, "NAVI_API_TOKEN") {
-                return Some(val);
-            }
-        }
-    }
-    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "NAVI_API_TOKEN") {
-        return Some(val);
-    }
-    None
+    get_env_or_file_key("NAVI_API_TOKEN")
 }
 
 fn get_kaggle_api_token() -> Option<String> {
-    if let Ok(u) = std::env::var("KAGGLE_API_TOKEN") {
-        let t = u.trim().trim_matches('\'').trim_matches('"');
-        if !t.is_empty() {
-            return Some(t.to_string());
-        }
-    }
-    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
-        if let Ok(content) = std::fs::read_to_string(p) {
-            if let Some(val) = parse_key_from_env_str(&content, "KAGGLE_API_TOKEN") {
-                return Some(val);
-            }
-        }
-    }
-    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "KAGGLE_API_TOKEN") {
-        return Some(val);
-    }
-    None
+    get_env_or_file_key("KAGGLE_API_TOKEN")
 }
 
 fn add_navi_headers(mut req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
@@ -721,17 +682,9 @@ fn get_local_gpu_name() -> String {
 }
 
 fn get_phone_config_path() -> String {
-    for p in [
-        "phone_config.json",
-        "./phone_config.json",
-        "../phone_config.json",
-        "C:/Users/Chowdary/Desktop/Project/Jarvis/phone_config.json",
-    ] {
-        if std::path::Path::new(p).exists() {
-            return p.to_string();
-        }
-    }
-    "phone_config.json".to_string()
+    find_file_in_candidates("phone_config.json")
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "phone_config.json".to_string())
 }
 
 fn get_phone_config_content() -> String {
@@ -773,37 +726,13 @@ fn get_phone_adb_endpoint() -> String {
             }
         }
     }
-    if let Ok(k) = std::env::var("PHONE_ADB_ENDPOINT") {
-        let t = k.trim().trim_matches('\'').trim_matches('"');
-        if !t.is_empty() {
-            return t.to_string();
-        }
-    }
-    for p in ["./.env.local", "../.env.local", "C:/Users/Chowdary/Desktop/Project/Jarvis/.env.local"] {
-        if let Ok(content) = std::fs::read_to_string(p) {
-            if let Some(val) = parse_key_from_env_str(&content, "PHONE_ADB_ENDPOINT") {
-                return val;
-            }
-        }
-    }
-    if let Some(val) = parse_key_from_env_str(EMBEDDED_ENV, "PHONE_ADB_ENDPOINT") {
-        return val;
-    }
-    "192.168.1.7:5555".to_string()
+    get_env_or_file_key("PHONE_ADB_ENDPOINT").unwrap_or_else(|| "192.168.1.7:5555".to_string())
 }
 
 fn get_adb_path() -> String {
-    for p in [
-        "tools/platform-tools/adb.exe",
-        "./tools/platform-tools/adb.exe",
-        "../tools/platform-tools/adb.exe",
-        "C:/Users/Chowdary/Desktop/Project/Jarvis/tools/platform-tools/adb.exe",
-    ] {
-        if std::path::Path::new(p).exists() {
-            return p.to_string();
-        }
-    }
-    "adb".to_string()
+    find_file_in_candidates("tools/platform-tools/adb.exe")
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "adb".to_string())
 }
 
 #[cfg(windows)]
@@ -2111,7 +2040,7 @@ fn set_auto_startup(enable: bool) -> Result<String, String> {
         if enable {
             let exe_path = std::env::current_exe()
                 .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| r"C:\Users\Chowdary\Desktop\Project\Jarvis\Jarvis.exe".to_string());
+                .unwrap_or_else(|_| "Jarvis.exe".to_string());
             let quoted_exe = format!(r#""{}""#, exe_path);
             let out = silent_command("reg")
                 .args([
@@ -2881,7 +2810,7 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
             // Direct URL or URI Protocol support
             if app_clean.starts_with("http://") || app_clean.starts_with("https://") || app_clean.starts_with("www.") || app_clean.starts_with("ms-") || app_clean.ends_with(':') {
                 let url = if app_clean.starts_with("www.") { format!("https://{}", app_clean) } else { app_clean.to_string() };
-                let ps_script = format!("Start-Process '{}' -ErrorAction SilentlyContinue", url);
+                let ps_script = format!("Start-Process '{}' -ErrorAction SilentlyContinue", url.replace("'", "''"));
                 let _ = silent_command("powershell")
                     .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
                     .spawn();
@@ -2915,7 +2844,7 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
             // Launch single instance using invisible PowerShell runner with normal target window
             let ps_script = format!(
                 "try {{ Start-Process '{}' -WindowStyle Normal -ErrorAction Stop; 'OK' }} catch {{ $_.Exception.Message }}",
-                executable
+                executable.replace("'", "''")
             );
             let output = silent_command("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
@@ -2950,7 +2879,7 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
                 .args(["/IM", &exe_name, "/F"])
                 .output();
 
-            let ps_script = format!("Stop-Process -Name '{}' -Force -ErrorAction SilentlyContinue", app_clean.trim_end_matches(".exe"));
+            let ps_script = format!("Stop-Process -Name '{}' -Force -ErrorAction SilentlyContinue", app_clean.trim_end_matches(".exe").replace("'", "''"));
             let _ = silent_command("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
                 .output();
@@ -3515,7 +3444,7 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
             }
         }
         "open_file" => {
-            let ps_script = format!("Start-Process -FilePath '{}'", clean_target);
+            let ps_script = format!("Start-Process -FilePath '{}'", clean_target.replace("'", "''"));
             let _ = silent_command("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
                 .spawn();
@@ -4326,16 +4255,23 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
         });
     }
 
-    // Safety Guardrail for Payments & Sensitive Submissions
+    // Safety Guardrail for Payments & Destructive Actions
     let is_sensitive_intent = (lower.contains("pay ") || lower.contains("payment") || lower.contains("buy now") || lower.contains("checkout") || lower.contains("transfer money"))
         && !lower.contains("confirm");
+    let is_destructive_intent = (lower.contains("format ") || lower.contains("delete system") || lower.contains("rmdir /s") || lower.contains("del /f") || lower.contains("wipe disk"))
+        && !lower.contains("confirm");
 
-    if is_sensitive_intent {
+    if is_sensitive_intent || is_destructive_intent {
+        let msg = if is_destructive_intent {
+            "⚠️ Destructive system command detected. Please say 'Confirm action' to proceed."
+        } else {
+            "⚠️ Sensitive transaction detected. Please say 'Confirm submission' to proceed."
+        };
         return Some(JarvisResponse {
-            reply: "⚠️ Sensitive transaction detected. Please say 'Confirm submission' to proceed.".into(),
+            reply: msg.into(),
             action: Some("🛡️ Safety Guardrail".into()),
-            command: Some("Sensitive Transaction Halted".into()),
-            output: Some("Action paused for explicit voice confirmation.".into()),
+            command: Some("Action Halted for Voice Confirmation".into()),
+            output: Some("Action paused for explicit user confirmation.".into()),
             latency_ms: start.elapsed().as_millis(),
             prompt_tokens: 4,
             eval_tokens: 12,
@@ -4346,7 +4282,7 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
         });
     }
 
-    if lower == "confirm submission" || lower == "confirm payment" || lower == "confirm purchase" {
+    if lower == "confirm submission" || lower == "confirm payment" || lower == "confirm purchase" || lower == "confirm action" {
         #[cfg(windows)]
         {
             win32_system_agent::restore_external_focus(None);
@@ -5715,15 +5651,8 @@ Rules:
 }
 
 fn get_speech_worker_path() -> String {
-    for p in [
-        "scripts/speech_worker.ps1",
-        "./scripts/speech_worker.ps1",
-        "../scripts/speech_worker.ps1",
-        "C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/speech_worker.ps1",
-    ] {
-        if std::path::Path::new(p).exists() {
-            return p.to_string();
-        }
+    if let Some(p) = find_file_in_candidates("scripts/speech_worker.ps1") {
+        return p.to_string_lossy().to_string();
     }
     let temp_file = std::env::temp_dir().join("jarvis_speech_worker.ps1");
     let _ = std::fs::write(&temp_file, EMBEDDED_SPEECH_WORKER);
@@ -5731,15 +5660,8 @@ fn get_speech_worker_path() -> String {
 }
 
 fn get_tts_worker_path() -> String {
-    for p in [
-        "scripts/neural_tts_service.py",
-        "./scripts/neural_tts_service.py",
-        "../scripts/neural_tts_service.py",
-        "C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/neural_tts_service.py",
-    ] {
-        if std::path::Path::new(p).exists() {
-            return p.to_string();
-        }
+    if let Some(p) = find_file_in_candidates("scripts/neural_tts_service.py") {
+        return p.to_string_lossy().to_string();
     }
     let temp_file = std::env::temp_dir().join("jarvis_neural_tts_service.py");
     let _ = std::fs::write(&temp_file, EMBEDDED_TTS_WORKER);
@@ -6235,7 +6157,7 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         is_chrome_running,
         model_metrics,
         has_mic,
-        username: std::env::var("USERNAME").unwrap_or_else(|_| "CHOWDARY".to_string()).to_uppercase(),
+        username: std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_else(|_| "CHOWDARY".to_string()).to_uppercase(),
         available_models,
         active_model_id: active_id,
         tunnel_status: get_cached_tunnel_status(),

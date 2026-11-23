@@ -35,7 +35,7 @@ class LiveKitAudioBridge:
 
         logger.info("Streaming Windows microphone to LiveKit AudioSource...")
         while self._streaming:
-            chunk = self.binding.read_mic_chunk(timeout=0.05)
+            chunk = self.binding.read_mic_chunk(timeout=0.0)
             if chunk:
                 # 16000Hz, 1 channel, 16-bit int PCM = 2 bytes per sample
                 num_samples = len(chunk) // 2
@@ -46,7 +46,9 @@ class LiveKitAudioBridge:
                     samples_per_channel=num_samples
                 )
                 await audio_source.capture_frame(frame)
-            await asyncio.sleep(0.001)
+                await asyncio.sleep(0.001)
+            else:
+                await asyncio.sleep(0.005)
 
     async def forward_livekit_to_speaker(self, audio_stream):
         """

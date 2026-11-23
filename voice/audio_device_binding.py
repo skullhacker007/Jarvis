@@ -94,13 +94,24 @@ class AudioDeviceBinding:
 
     def play_audio_chunk(self, audio_bytes: bytes):
         """Pushes raw PCM audio bytes to the speaker output queue."""
+        if not audio_bytes:
+            return
+        elem_size = 2 * self.channels
+        remainder = len(audio_bytes) % elem_size
+        if remainder != 0:
+            audio_bytes = audio_bytes[:-remainder]
+        if not audio_bytes:
+            return
         data = np.frombuffer(audio_bytes, dtype=np.int16).reshape(-1, self.channels)
         self.output_queue.put(data)
 
-    def read_mic_chunk(self, timeout: float = 0.5) -> bytes:
-        """Reads the next available PCM chunk from the microphone queue."""
+    def read_mic_chunk(self, timeout: float = 0.0) -> bytes:
+        """Reads the next available PCM chunk from the microphone queue without blocking."""
         try:
-            chunk = self.input_queue.get(timeout=timeout)
+            if timeout <= 0:
+                chunk = self.input_queue.get_nowait()
+            else:
+                chunk = self.input_queue.get(timeout=timeout)
             return chunk.tobytes()
         except queue.Empty:
             return b""

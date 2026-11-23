@@ -16,28 +16,32 @@ Rules:
 
   for (const q of tests) {
     const t0 = Date.now();
-    const res = await fetch("http://127.0.0.1:11434/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "qwen3.5:2b",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: q }
-        ],
-        think: false,
-        options: {
-          temperature: 0.0,
-          num_predict: 45,
-          num_thread: 10
-        },
-        keep_alive: "24h",
-        stream: false
-      })
-    });
-    const data = await res.json();
-    const elapsed = Date.now() - t0;
-    console.log(`[${elapsed}ms] "${q}" => ${data.message?.content}`);
+    try {
+      const res = await fetch("http://127.0.0.1:11434/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "qwen3.5:2b",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: q }
+          ],
+          think: false,
+          options: {
+            temperature: 0.0,
+            num_predict: 45,
+            num_thread: 10
+          },
+          keep_alive: "24h",
+          stream: false
+        })
+      });
+      const data = await res.json();
+      const elapsed = Date.now() - t0;
+      console.log(`[${elapsed}ms] "${q}" => ${data.message?.content}`);
+    } catch (err) {
+      console.error(`[Benchmark Notice] Failed to query Ollama for "${q}": ${err.message}`);
+    }
   }
 }
 

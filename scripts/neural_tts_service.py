@@ -184,7 +184,7 @@ async def handle_health(request):
         "kokoro_ready": kokoro_available,
         "default_voice": DEFAULT_KOKORO_VOICE if kokoro_available else DEFAULT_EDGE_VOICE,
         "telugu_support": True,
-        "voices": kokoro_engine.get_voices() if kokoro_available else list(EDGE_VOICE_MAP.keys())
+        "voices": kokoro_engine.get_voices() if (kokoro_available and kokoro_engine is not None) else list(EDGE_VOICE_MAP.keys())
     }, headers={"Access-Control-Allow-Origin": "*"})
 
 app = web.Application()

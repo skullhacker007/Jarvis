@@ -40,46 +40,51 @@ class PostgresManager:
             logger.warning("Skipping schema initialization: DB connection offline.")
             return False
 
-        with conn.cursor() as cur:
-            # 1. Enable pgvector extension
-            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+        try:
+            with conn.cursor() as cur:
+                # 1. Enable pgvector extension
+                cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
 
-            # 2. Long-term memory table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS user_memories (
-                    id SERIAL PRIMARY KEY,
-                    category VARCHAR(50),
-                    content TEXT NOT NULL,
-                    embedding vector(1536),
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
+                # 2. Long-term memory table
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS user_memories (
+                        id SERIAL PRIMARY KEY,
+                        category VARCHAR(50),
+                        content TEXT NOT NULL,
+                        embedding vector(1536),
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
 
-            # 3. Document chunks & RAG citations table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS rag_documents (
-                    id SERIAL PRIMARY KEY,
-                    source_file VARCHAR(255) NOT NULL,
-                    page_number INT,
-                    chunk_text TEXT NOT NULL,
-                    embedding vector(1536),
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
+                # 3. Document chunks & RAG citations table
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS rag_documents (
+                        id SERIAL PRIMARY KEY,
+                        source_file VARCHAR(255) NOT NULL,
+                        page_number INT,
+                        chunk_text TEXT NOT NULL,
+                        embedding vector(1536),
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
 
-            # 4. Conversation logs & debate records
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS conversation_logs (
-                    id SERIAL PRIMARY KEY,
-                    session_id VARCHAR(100),
-                    role VARCHAR(20) NOT NULL,
-                    content TEXT NOT NULL,
-                    latency_ms FLOAT,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
+                # 4. Conversation logs & debate records
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS conversation_logs (
+                        id SERIAL PRIMARY KEY,
+                        session_id VARCHAR(100),
+                        role VARCHAR(20) NOT NULL,
+                        content TEXT NOT NULL,
+                        latency_ms FLOAT,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
 
-            conn.commit()
-            logger.info("PostgreSQL + pgvector schema successfully verified/initialized.")
-            return True
+                conn.commit()
+                logger.info("PostgreSQL + pgvector schema successfully verified/initialized.")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to initialize schema ({e}). Resetting DB connection.")
+            self.conn = None
+            return False

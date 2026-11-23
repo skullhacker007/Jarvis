@@ -2,8 +2,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file
+# Load .env / .env.local file
 BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env.local")
 load_dotenv(BASE_DIR / ".env")
 
 class Config:
