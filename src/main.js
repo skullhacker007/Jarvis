@@ -566,10 +566,10 @@ const StarkBiometricHologram = (() => {
   // -------------------------------------------------------------
   let time = 0;
   let powerActive = true;
-  let activeAvatarKey = "navi";
+  let activeAvatarKey = "ultron";
   let isMaterializing = true;
   let materializeProgress = 0.0;
-  const MATERIALIZE_DURATION = 1.6; // seconds for bottom-up assembly
+  const MATERIALIZE_DURATION = 1.6; // seconds for simultaneous holographic convergence assembly
   let lastFrameTime = performance.now();
   let frameCount = 0;
   let fpsTimer = 0;
@@ -584,13 +584,58 @@ const StarkBiometricHologram = (() => {
   let phases = null;
   let totalParticles = 0;
 
+  // Holographic Convergence Scatter Buffers (Simultaneous Assembly)
+  let scatterOffsetX = null;
+  let scatterOffsetY = null;
+  let scatterSwirl = null;
+  let scatterDelay = null;
+
+  // -------------------------------------------------------------
+  // SCATTER GENERATOR: FUTURISTIC HOLOGRAPHIC DISPERSION
+  // -------------------------------------------------------------
+  function initScatter(w, h) {
+    if (!homeX || totalParticles === 0) return;
+    const width = w || (canvasEl ? canvasEl.width : 280);
+    const height = h || (canvasEl ? canvasEl.height : 420);
+    const cx = width * 0.5;
+    const cy = height * 0.5;
+    const maxDim = Math.max(width, height);
+
+    for (let i = 0; i < totalParticles; i++) {
+      const hx = homeX[i];
+      const hy = homeY[i];
+
+      // Direction vector outward from character center
+      const dx = hx - cx;
+      const dy = hy - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1.0;
+      const ndx = dx / dist;
+      const ndy = dy / dist;
+
+      // Omnidirectional holographic cloud dispersion
+      const angle = Math.random() * Math.PI * 2;
+      // Exponential falloff spread: dense quantum halo with wide atmospheric sparks
+      const spread = (0.2 + 0.8 * Math.pow(Math.random(), 1.4)) * (maxDim * 0.52);
+
+      // Blend radial expulsion with omnidirectional scattered cloud
+      scatterOffsetX[i] = ndx * (spread * 0.45) + Math.cos(angle) * (spread * 0.65);
+      scatterOffsetY[i] = ndy * (spread * 0.45) + Math.sin(angle) * (spread * 0.65);
+
+      // Curved magnetic field curl torque (-35 to +35 px)
+      scatterSwirl[i] = (Math.random() - 0.5) * 40.0;
+
+      // Subtle arrival cadence offset so particles assemble organically
+      scatterDelay[i] = Math.random() * 0.18;
+    }
+  }
+
   // -------------------------------------------------------------
   // PARTICLE DATA INGESTION & MODEL LOADER
   // -------------------------------------------------------------
   function loadAvatarModel(avatarKey, w, h) {
-    activeAvatarKey = avatarKey || activeAvatarKey || "navi";
+    activeAvatarKey = avatarKey || activeAvatarKey || "ultron";
     const models = window.STARK_HOLOGRAM_MODELS || {};
-    let preset = models[activeAvatarKey] || window.STARK_HUMAN_PARTICLE_DATA;
+    let preset = models[activeAvatarKey] || (activeAvatarKey === "ultron" ? models["navi"] : (activeAvatarKey === "navi" ? models["ultron"] : null)) || window.STARK_HUMAN_PARTICLE_DATA;
 
     if (!preset || !preset.x || preset.x.length === 0) {
       generateFallbackHuman(w, h);
@@ -607,6 +652,10 @@ const StarkBiometricHologram = (() => {
       colorsG = new Uint8Array(n);
       colorsB = new Uint8Array(n);
       phases = new Float32Array(n);
+      scatterOffsetX = new Float32Array(n);
+      scatterOffsetY = new Float32Array(n);
+      scatterSwirl = new Float32Array(n);
+      scatterDelay = new Float32Array(n);
     }
 
     // Scaling factors to fit canvas cleanly with sleek proportions
@@ -629,6 +678,8 @@ const StarkBiometricHologram = (() => {
       phases[i] = Math.random() * Math.PI * 2;
     }
 
+    initScatter(w, h);
+
     if (particleCountEl) {
       particleCountEl.textContent = `${totalParticles.toLocaleString()} PTS`;
     }
@@ -641,6 +692,9 @@ const StarkBiometricHologram = (() => {
   function triggerMaterialize() {
     isMaterializing = true;
     materializeProgress = 0.0;
+    if (canvasEl) {
+      initScatter(canvasEl.width, canvasEl.height);
+    }
   }
 
   function selectAvatar(key) {
@@ -650,7 +704,9 @@ const StarkBiometricHologram = (() => {
     // Update active pill UI
     if (avatarPills && avatarPills.length > 0) {
       avatarPills.forEach(pill => {
-        pill.classList.toggle("active", pill.dataset.avatar === key);
+        const pillKey = pill.dataset.avatar;
+        const matches = pillKey === key || (key === "ultron" && pillKey === "navi") || (key === "navi" && pillKey === "ultron");
+        pill.classList.toggle("active", matches);
       });
     }
 
@@ -671,12 +727,14 @@ const StarkBiometricHologram = (() => {
     totalParticles = n;
     homeX = new Float32Array(n);
     homeY = new Float32Array(n);
-    posX = new Float32Array(n);
-    posY = new Float32Array(n);
     colorsR = new Uint8Array(n);
     colorsG = new Uint8Array(n);
     colorsB = new Uint8Array(n);
     phases = new Float32Array(n);
+    scatterOffsetX = new Float32Array(n);
+    scatterOffsetY = new Float32Array(n);
+    scatterSwirl = new Float32Array(n);
+    scatterDelay = new Float32Array(n);
 
     const cx = w * 0.5;
     const cy = h * 0.5;
@@ -686,13 +744,13 @@ const StarkBiometricHologram = (() => {
       const v = (Math.random() - 0.5) * 1.8;
       homeX[i] = cx + u * (h * 0.4);
       homeY[i] = cy + v * (h * 0.4);
-      posX[i] = homeX[i];
-      posY[i] = homeY[i];
       colorsR[i] = 0;
       colorsG[i] = 210;
       colorsB[i] = 255;
       phases[i] = Math.random() * Math.PI * 2;
     }
+
+    initScatter(w, h);
   }
 
   // -------------------------------------------------------------
@@ -831,7 +889,7 @@ const StarkBiometricHologram = (() => {
     }
 
     // ---------------------------------------------------------
-    // MATERIALIZATION EFFECT (Bottom-Up Particle Ascent)
+    // HOLOGRAPHIC CONVERGENCE MATERIALIZATION (Simultaneous Assembly)
     // ---------------------------------------------------------
     if (isMaterializing) {
       materializeProgress += dt / MATERIALIZE_DURATION;
@@ -870,43 +928,47 @@ const StarkBiometricHologram = (() => {
       let b = colorsB[i];
 
       if (isMaterializing && materializeProgress < 1.0) {
-        // Individual activation delayed based on vertical anatomical height (bottom to top)
-        const normY = Math.max(0.0, Math.min(1.0, (hy - h * 0.06) / (h * 0.88))); // 0 at head, 1 at feet
-        const startT = (1.0 - normY) * 0.65; // feet start at 0.0, head starts at 0.65
-        const travelT = 0.28;
+        // All particles converge and assemble together simultaneously across the entire body
+        const delay = scatterDelay ? scatterDelay[i] : 0.0;
+        // Organic finish variance so particles dock smoothly between 0.88 and 1.0
+        const targetEnd = 1.0 - delay * 0.55;
+        const localT = Math.min(1.0, materializeProgress / targetEnd);
 
-        if (materializeProgress < startT) {
-          // In the energetic bottom projector stream
-          const streamFrac = materializeProgress / Math.max(0.01, startT);
-          const streamY = emitterY - streamFrac * 14.0;
-          px = Math.round(emitterX + Math.sin(time * 12.0 + phase) * (w * 0.035 * (1.0 - streamFrac)));
-          py = Math.round(streamY);
-          r = 180; g = 255; b = 255;
-        } else if (materializeProgress < startT + travelT) {
-          // Actively ascending from bottom emitter to anatomical anchor
-          const frac = (materializeProgress - startT) / travelT;
-          const ease = 1.0 - Math.pow(1.0 - frac, 3);
-          const curX = emitterX + (hx - emitterX) * ease + Math.sin(frac * Math.PI) * (phase - Math.PI) * 12.0;
-          const curY = emitterY + (hy - emitterY) * ease;
+        // Quintic-Cubic ease-out: swift inward holographic snap decelerating into precise position
+        const ease = 1.0 - Math.pow(1.0 - localT, 3.2);
+
+        // Holographic magnetic flux curvature mid-flight
+        const midFlight = Math.sin(localT * Math.PI) * (1.0 - ease);
+        const curlX = Math.cos(phase + localT * 3.5) * (scatterSwirl ? scatterSwirl[i] : 0) * midFlight;
+        const curlY = Math.sin(phase + localT * 3.5) * (scatterSwirl ? scatterSwirl[i] : 0) * midFlight;
+
+        const curX = hx + (scatterOffsetX ? scatterOffsetX[i] : 0) * (1.0 - ease) + curlX;
+        const curY = hy + (scatterOffsetY ? scatterOffsetY[i] : 0) * (1.0 - ease) + curlY;
+
+        if (localT < 1.0) {
           px = Math.round(curX);
           py = Math.round(curY);
 
-          // Energy laser glow transitioning to target particle color
-          r = Math.min(255, (((1.0 - ease) * 180 + ease * r) * (1.0 + (1.0 - ease) * 0.5)) | 0);
-          g = Math.min(255, (((1.0 - ease) * 255 + ease * g) * (1.0 + (1.0 - ease) * 0.5)) | 0);
-          b = Math.min(255, (((1.0 - ease) * 255 + ease * b) * (1.0 + (1.0 - ease) * 0.5)) | 0);
+          // Electric ionization plasma glow converging into authentic character palette
+          const energy = 1.0 - ease;
+          const blend = ease;
+          // Futuristic ionized cyan-blue glow: rgb(130, 230, 255)
+          r = Math.min(255, (((1.0 - blend) * 130 + blend * r) * (1.0 + energy * 0.35)) | 0);
+          g = Math.min(255, (((1.0 - blend) * 230 + blend * g) * (1.0 + energy * 0.35)) | 0);
+          b = Math.min(255, (((1.0 - blend) * 255 + blend * b) * (1.0 + energy * 0.35)) | 0);
         } else {
-          // Locked in place with landing spark
-          const settleFrac = Math.min(1.0, (materializeProgress - (startT + travelT)) / 0.15);
+          // Locked in place with subtle settling micro-resonance
+          const settleFrac = Math.min(1.0, (materializeProgress - targetEnd) / (1.0 - targetEnd + 0.001));
           const settleDamp = 1.0 - settleFrac;
-          px = Math.round(hx + vibX * (1.0 + settleDamp * 2.0));
-          py = Math.round(hy + vibY * (1.0 + settleDamp * 2.0));
+          px = Math.round(hx + vibX * (1.0 + settleDamp * 1.5));
+          py = Math.round(hy + vibY * (1.0 + settleDamp * 1.5));
 
-          // Brief lock-in flash
+          // Brief luminous lock-in flash
           if (settleFrac < 0.6) {
-            r = Math.min(255, (r * 1.4) | 0);
-            g = Math.min(255, (g * 1.4) | 0);
-            b = Math.min(255, (b * 1.4) | 0);
+            const glow = 1.0 + (1.0 - settleFrac / 0.6) * 0.45;
+            r = Math.min(255, (r * glow) | 0);
+            g = Math.min(255, (g * glow) | 0);
+            b = Math.min(255, (b * glow) | 0);
           }
         }
       } else {
@@ -963,31 +1025,73 @@ const StarkBiometricHologram = (() => {
     ctx.putImageData(imgData, 0, 0);
 
     // ---------------------------------------------------------
-    // HOLOGRAPHIC PROJECTOR FLOOR EMITTER & IONIZATION BEAM
+    // HOLOGRAPHIC CONVERGENCE MATRIX & PROJECTOR FIELD
     // ---------------------------------------------------------
     if (isMaterializing && materializeProgress < 0.98) {
-      const alpha = 0.8 * (1.0 - materializeProgress);
-      // Floor projector beacon
-      ctx.strokeStyle = `rgba(0, 240, 255, ${alpha})`;
+      const alpha = 0.85 * (1.0 - materializeProgress);
+      const cy = h * 0.5;
+
+      // Holographic floor projector beacon
+      ctx.strokeStyle = `rgba(0, 240, 255, ${alpha * 0.7})`;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.ellipse(emitterX, emitterY, w * 0.24 * (0.6 + 0.4 * materializeProgress), 4.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(emitterX, emitterY, w * 0.26 * (0.8 + 0.2 * Math.sin(time * 6.0)), 4.5, 0, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Rising materialization ionization plane
-      const planeY = Math.round(emitterY - (materializeProgress / 0.85) * (emitterY - h * 0.08));
-      if (planeY > 0 && planeY < h) {
-        const sweepGrad = ctx.createLinearGradient(w * 0.15, planeY, w * 0.85, planeY);
-        sweepGrad.addColorStop(0, "rgba(0, 240, 255, 0)");
-        sweepGrad.addColorStop(0.5, `rgba(220, 255, 255, ${alpha * 0.8})`);
-        sweepGrad.addColorStop(1, "rgba(0, 240, 255, 0)");
-        ctx.strokeStyle = sweepGrad;
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.moveTo(w * 0.15, planeY);
-        ctx.lineTo(w * 0.85, planeY);
-        ctx.stroke();
-      }
+      ctx.strokeStyle = `rgba(56, 189, 248, ${alpha * 0.4})`;
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.ellipse(emitterX, emitterY, w * 0.14, 2.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Contracting Holographic Convergence Reticle (contracts inward as hologram forms)
+      const ringRadius = Math.max(w, h) * 0.48 * (1.25 - 0.45 * materializeProgress);
+      ctx.save();
+      ctx.strokeStyle = `rgba(56, 189, 248, ${alpha * 0.35})`;
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([5, 8]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 4 Cyber targeting brackets tracking inward
+      const boxW = w * (0.36 + 0.12 * (1.0 - materializeProgress));
+      const boxH = h * (0.40 + 0.12 * (1.0 - materializeProgress));
+      const l = cx - boxW, r = cx + boxW, t = cy - boxH, b = cy + boxH;
+      const tick = 10;
+      ctx.strokeStyle = `rgba(0, 240, 255, ${alpha * 0.5})`;
+      ctx.lineWidth = 1.0;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      // Top-left
+      ctx.moveTo(l, t + tick); ctx.lineTo(l, t); ctx.lineTo(l + tick, t);
+      // Top-right
+      ctx.moveTo(r - tick, t); ctx.lineTo(r, t); ctx.lineTo(r, t + tick);
+      // Bottom-left
+      ctx.moveTo(l, b - tick); ctx.lineTo(l, b); ctx.lineTo(l + tick, b);
+      // Bottom-right
+      ctx.moveTo(r - tick, b); ctx.lineTo(r, b); ctx.lineTo(r, b - tick);
+      ctx.stroke();
+      ctx.restore();
+
+      // Convergence Micro-HUD Status
+      ctx.font = "8px 'JetBrains Mono', monospace";
+      ctx.fillStyle = `rgba(56, 189, 248, ${alpha * 0.65})`;
+      ctx.textAlign = "center";
+      ctx.fillText(`HOLO // CONVERGENCE: ${(materializeProgress * 100).toFixed(0)}%`, cx, h * 0.06);
+      ctx.textAlign = "left";
+    }
+
+    // Final Holographic Docking Pulse Ring
+    if (isMaterializing && materializeProgress >= 0.92) {
+      const pulseT = (materializeProgress - 0.92) / 0.08;
+      const pulseRadius = (w * 0.18) + pulseT * (w * 0.32);
+      const pulseAlpha = (1.0 - pulseT) * 0.4;
+      ctx.strokeStyle = `rgba(180, 255, 255, ${pulseAlpha})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, h * 0.5, pulseRadius, 0, Math.PI * 2);
+      ctx.stroke();
     }
   }
 
@@ -996,8 +1100,10 @@ const StarkBiometricHologram = (() => {
     togglePower,
     selectAvatar,
     cycleAvatar: () => {
-      const keys = ["navi", "optimus", "bumblebee", "spiderman", "mecha"];
-      const nextIdx = (keys.indexOf(activeAvatarKey) + 1) % keys.length;
+      const keys = ["ultron", "optimus", "bumblebee", "spiderman", "mecha"];
+      const currentCanonical = (activeAvatarKey === "navi") ? "ultron" : activeAvatarKey;
+      const curIdx = keys.indexOf(currentCanonical);
+      const nextIdx = curIdx >= 0 ? (curIdx + 1) % keys.length : 0;
       selectAvatar(keys[nextIdx]);
     },
     // Backward-compatible aliases
@@ -3505,9 +3611,9 @@ async function processDirective(prompt, shouldOpenInput = false) {
     return;
   }
 
-  if (/^(?:navi|switch\s+to\s+navi|navi\s+labs|humanoid\s+avatar)$/i.test(lowerDirective)) {
-    StarkBiometricHologram.selectAvatar("navi");
-    speakResponse("nAvI Labs biometric humanoid active, sir.");
+  if (/^(?:ultron|navi|switch\s+to\s+ultron|switch\s+to\s+navi|ultron\s+avatar|navi\s+labs|humanoid\s+avatar)$/i.test(lowerDirective)) {
+    StarkBiometricHologram.selectAvatar("ultron");
+    speakResponse("Ultron biometric humanoid active, sir.");
     setSystemState("idle");
     return;
   }

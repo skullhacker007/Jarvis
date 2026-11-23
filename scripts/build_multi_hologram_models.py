@@ -75,7 +75,9 @@ def main():
     end_idx = content.find(suffix)
     existing_models = json.loads(content[start_idx:end_idx])
     
-    navi_model = existing_models["navi"]
+    navi_model = existing_models.get("ultron", existing_models.get("navi", {}))
+    navi_model["name"] = "Ultron"
+    navi_model["tag"] = "ULTRON TACTICAL MATRIX"
     spiderman_model = existing_models["spiderman"]
     mecha_model = existing_models["mecha"]
 
@@ -101,8 +103,9 @@ def main():
         **bee_raw
     }
 
-    # Bundle all models (Iron Man removed as requested)
+    # Bundle all models (first model is Ultron)
     models_bundle = {
+        "ultron": navi_model,
         "navi": navi_model,
         "optimus": optimus_model,
         "bumblebee": bumblebee_model,
@@ -112,7 +115,7 @@ def main():
 
     dest_js = "src/assets/human_particles_preset.js"
     js_content = f"window.STARK_HOLOGRAM_MODELS = {json.dumps(models_bundle)};\n"
-    js_content += "window.STARK_HUMAN_PARTICLE_DATA = window.STARK_HOLOGRAM_MODELS.navi;\n"
+    js_content += "window.STARK_HUMAN_PARTICLE_DATA = window.STARK_HOLOGRAM_MODELS.ultron || window.STARK_HOLOGRAM_MODELS.navi;\n"
 
     with open(dest_js, "w", encoding="utf-8") as f:
         f.write(js_content)
