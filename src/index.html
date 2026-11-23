@@ -24,9 +24,9 @@
   <body>
     <div class="full-screen-stage">
       <!-- Master 16:9 Stage Container for Iron Man & Arc Reactor HUD -->
-      <div class="ironman-stage-container">
+      <div class="ironman-stage-container" id="ironman-stage-container">
         <!-- Full-fit 4K uncompressed master image -->
-        <img src="assets/ironman_center.png" alt="Iron Man" class="ironman-master-img" />
+        <img src="assets/ironman_center.png" alt="Iron Man" class="ironman-master-img" id="ironman-master-img" />
 
         <!-- STARK CHEST ARC REACTOR (RADIATOR) // PHOTOREALISTIC DYNAMIC ROTOR ENGINE -->
         <div class="stark-arc-reactor" id="stark-arc-reactor">
@@ -46,6 +46,45 @@
             <!-- 5. Pulsing White-Hot Plasma Core -->
             <div class="reactor-hot-core">
               <div class="core-plasma-disc"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CENTER HOLOGRAPHIC PROJECTION (DEPLOYED NAVI LABS AVATAR) -->
+        <div class="center-hologram-display" id="center-hologram-display">
+          <canvas id="center-particle-canvas" class="center-particle-canvas"></canvas>
+          <div class="center-hologram-hud-overlay">
+            <div class="center-hologram-identity">
+              <div class="center-hologram-badge">
+                <span class="center-holo-dot"></span>
+                <span class="center-holo-name" id="center-holo-name">ULTRON</span>
+                <span class="center-holo-tag" id="center-holo-tag">TACTICAL MATRIX // CENTER CONSOLE</span>
+              </div>
+              <button type="button" class="center-holo-restore-btn" id="center-holo-restore-btn" title="Restore Iron Man & Arc Reactor HUD">
+                <span class="restore-icon">↺</span> RESTORE STARK HUD
+              </button>
+            </div>
+            <div class="center-hologram-telemetry">
+              <div class="center-tel-pill"><span class="tel-lbl">FPS</span><span class="tel-val" id="center-fps-val">60</span></div>
+              <div class="center-tel-pill"><span class="tel-lbl">PTS</span><span class="tel-val" id="center-pts-val">32,000</span></div>
+              <div class="center-tel-pill"><span class="tel-lbl">STATE</span><span class="tel-val cyan" id="center-state-val">DEPLOYED</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HOLOGRAPHIC DROP ZONE RETICLE OVERLAY -->
+        <div class="center-drop-target" id="center-drop-target">
+          <div class="drop-target-inner">
+            <div class="drop-reticle-circle"></div>
+            <div class="drop-reticle-scan"></div>
+            <div class="drop-corner-bracket top-left"></div>
+            <div class="drop-corner-bracket top-right"></div>
+            <div class="drop-corner-bracket bottom-left"></div>
+            <div class="drop-corner-bracket bottom-right"></div>
+            <div class="drop-info-group">
+              <div class="drop-icon-symbol">⤓</div>
+              <div class="drop-title-text">DEPLOY TO CENTER STAGE</div>
+              <div class="drop-sub-text">DROP AVATAR TO REPLACE IRON MAN & ARC REACTOR</div>
             </div>
           </div>
         </div>
@@ -94,12 +133,12 @@
             <span class="gadget-title human-neon-title">nAvI Labs</span>
           </div>
           <div class="human-controls-group">
-            <div class="human-avatar-selector" id="human-avatar-selector" title="Select Hologram Character">
-              <button type="button" class="avatar-pill active" data-avatar="ultron">ULTRON</button>
-              <button type="button" class="avatar-pill" data-avatar="optimus">PRIME</button>
-              <button type="button" class="avatar-pill" data-avatar="bumblebee">BEE</button>
-              <button type="button" class="avatar-pill" data-avatar="spiderman">SPIDER</button>
-              <button type="button" class="avatar-pill" data-avatar="mecha">MECHA</button>
+            <div class="human-avatar-selector" id="human-avatar-selector" title="Click to preview or Drag to Center Stage">
+              <button type="button" class="avatar-pill active" data-avatar="ultron" draggable="true" title="Drag to Center Console">ULTRON</button>
+              <button type="button" class="avatar-pill" data-avatar="optimus" draggable="true" title="Drag to Center Console">PRIME</button>
+              <button type="button" class="avatar-pill" data-avatar="bumblebee" draggable="true" title="Drag to Center Console">BEE</button>
+              <button type="button" class="avatar-pill" data-avatar="spiderman" draggable="true" title="Drag to Center Console">SPIDER</button>
+              <button type="button" class="avatar-pill" data-avatar="mecha" draggable="true" title="Drag to Center Console">MECHA</button>
             </div>
             <button type="button" class="human-mode-btn active" id="human-power-toggle-btn" title="Toggle nAvI Labs Humanoid Projection">
               <span class="toggle-dot" id="human-toggle-dot"></span>
@@ -109,8 +148,11 @@
         </div>
 
         <!-- 3D Holographic Particle Human Canvas Container -->
-        <div class="human-canvas-container" id="human-canvas-container">
+        <div class="human-canvas-container" id="human-canvas-container" draggable="true" title="Drag to Deploy Hologram to Center Console">
           <canvas id="human-particle-canvas" class="human-particle-canvas"></canvas>
+          <div class="human-drag-hint" id="human-drag-hint" title="Drag character to deploy to dashboard center">
+            <span class="drag-hand-icon">⋮⋮</span> DRAG TO DEPLOY
+          </div>
 
           <!-- Holographic HUD Telemetry Chips -->
           <div class="human-hud-overlay">

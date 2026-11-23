@@ -1122,6 +1122,689 @@ const StarkBiometricHologram = (() => {
 const StarkVisionSensor = StarkBiometricHologram;
 
 // =============================================================
+// CENTER HOLOGRAPHIC PROJECTION ENGINE (DEPLOYED NAVI LABS AVATARS)
+// (32,000 Particle High-Definition Transparent Stage Projection)
+// =============================================================
+const StarkCenterHologramEngine = (() => {
+  let displayEl = null;
+  let canvasEl = null;
+  let ctx = null;
+  let animId = null;
+  let ironmanImgEl = null;
+  let arcReactorEl = null;
+  let restoreBtn = null;
+  let holoNameEl = null;
+  let holoTagEl = null;
+  let fpsValEl = null;
+  let ptsValEl = null;
+  let stateValEl = null;
+
+  let isDeployed = false;
+  let activeAvatarKey = "ultron";
+  let time = 0;
+  let lastFrameTime = performance.now();
+  let frameCount = 0;
+  let fpsTimer = 0;
+  let currentFps = 60;
+
+  let isMaterializing = false;
+  let materializeProgress = 0.0;
+  const MATERIALIZE_DURATION = 1.6;
+
+  // Particle Buffers for Center Stage
+  let homeX = null;
+  let homeY = null;
+  let colorsR = null;
+  let colorsG = null;
+  let colorsB = null;
+  let phases = null;
+  let totalParticles = 0;
+
+  // Scatter buffers for simultaneous convergence
+  let scatterOffsetX = null;
+  let scatterOffsetY = null;
+  let scatterSwirl = null;
+  let scatterDelay = null;
+
+  function initScatter(w, h) {
+    if (!homeX || totalParticles === 0) return;
+    const width = w || (canvasEl ? canvasEl.width : 900);
+    const height = h || (canvasEl ? canvasEl.height : 700);
+    const cx = width * 0.5;
+    const cy = height * 0.48;
+    const maxDim = Math.max(width, height);
+
+    for (let i = 0; i < totalParticles; i++) {
+      const hx = homeX[i];
+      const hy = homeY[i];
+
+      const dx = hx - cx;
+      const dy = hy - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1.0;
+      const ndx = dx / dist;
+      const ndy = dy / dist;
+
+      const angle = Math.random() * Math.PI * 2;
+      const spread = (0.2 + 0.8 * Math.pow(Math.random(), 1.4)) * (maxDim * 0.6);
+
+      const expX = ndx * (maxDim * (0.35 + 0.3 * Math.random()));
+      const expY = ndy * (maxDim * (0.35 + 0.3 * Math.random()));
+      const cloudX = Math.cos(angle) * spread;
+      const cloudY = Math.sin(angle) * spread;
+
+      scatterOffsetX[i] = expX * 0.45 + cloudX * 0.55;
+      scatterOffsetY[i] = expY * 0.45 + cloudY * 0.55;
+      scatterSwirl[i] = (Math.random() - 0.5) * (maxDim * 0.32);
+      scatterDelay[i] = Math.pow(Math.random(), 1.2) * 0.35;
+    }
+  }
+
+  function loadAvatarModel(avatarKey, w, h) {
+    activeAvatarKey = avatarKey || activeAvatarKey || "ultron";
+    const models = window.STARK_HOLOGRAM_MODELS || {};
+    let preset = models[activeAvatarKey] || (activeAvatarKey === "ultron" ? models["navi"] : (activeAvatarKey === "navi" ? models["ultron"] : null)) || window.STARK_HUMAN_PARTICLE_DATA;
+
+    if (!preset || !preset.x || preset.x.length === 0) {
+      return;
+    }
+
+    const n = preset.x.length;
+    totalParticles = n;
+
+    if (!homeX || homeX.length !== n) {
+      homeX = new Float32Array(n);
+      homeY = new Float32Array(n);
+      colorsR = new Uint8Array(n);
+      colorsG = new Uint8Array(n);
+      colorsB = new Uint8Array(n);
+      phases = new Float32Array(n);
+      scatterOffsetX = new Float32Array(n);
+      scatterOffsetY = new Float32Array(n);
+      scatterSwirl = new Float32Array(n);
+      scatterDelay = new Float32Array(n);
+    }
+
+    // Prominent center sizing: fills ~84% of stage height, centered
+    const scaleY = h * 0.84;
+    const scaleX = scaleY;
+    const cx = w * 0.5;
+    const cy = h * 0.48;
+
+    for (let i = 0; i < n; i++) {
+      homeX[i] = cx + preset.x[i] * scaleX;
+      homeY[i] = cy + preset.y[i] * scaleY;
+      colorsR[i] = preset.r[i];
+      colorsG[i] = preset.g[i];
+      colorsB[i] = preset.b[i];
+      phases[i] = Math.random() * Math.PI * 2;
+    }
+
+    initScatter(w, h);
+
+    if (ptsValEl) ptsValEl.textContent = `${totalParticles.toLocaleString()} PTS`;
+    if (holoNameEl) {
+      const name = preset.name || activeAvatarKey.toUpperCase();
+      holoNameEl.textContent = name.toUpperCase();
+    }
+    if (holoTagEl) {
+      holoTagEl.textContent = preset.tag || "TACTICAL MATRIX // CENTER CONSOLE";
+    }
+  }
+
+  function resizeCanvas() {
+    if (!canvasEl) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const w = Math.round((rect.width || 900) * dpr);
+    const h = Math.round((rect.height || 700) * dpr);
+    if (canvasEl.width !== w || canvasEl.height !== h) {
+      canvasEl.width = w;
+      canvasEl.height = h;
+    }
+  }
+
+  function deployAvatar(avatarKey) {
+    if (!avatarKey) avatarKey = "ultron";
+    activeAvatarKey = avatarKey;
+    isDeployed = true;
+
+    // 1. Hide Iron Man and Arc Reactor with smooth transition
+    if (!ironmanImgEl) ironmanImgEl = document.getElementById("ironman-master-img") || document.querySelector(".ironman-master-img");
+    if (!arcReactorEl) arcReactorEl = document.getElementById("stark-arc-reactor");
+    if (ironmanImgEl) ironmanImgEl.classList.add("stage-hidden");
+    if (arcReactorEl) arcReactorEl.classList.add("stage-hidden");
+
+    // 2. Prepare Center Canvas
+    if (!displayEl) displayEl = document.getElementById("center-hologram-display");
+    if (!canvasEl) canvasEl = document.getElementById("center-particle-canvas");
+    if (canvasEl && !ctx) {
+      ctx = canvasEl.getContext("2d", { alpha: true });
+    }
+
+    resizeCanvas();
+    if (canvasEl) {
+      loadAvatarModel(activeAvatarKey, canvasEl.width, canvasEl.height);
+    }
+
+    // 3. Display Center Hologram Container
+    if (displayEl) {
+      displayEl.classList.add("active");
+    }
+
+    // 4. Trigger Shockwave Flash on Center Stage
+    triggerShockwaveFlash();
+
+    // 5. Soundscape and Feedback
+    JarvisSoundscape.play("wake");
+    const models = window.STARK_HOLOGRAM_MODELS || {};
+    const model = models[activeAvatarKey] || { name: activeAvatarKey.toUpperCase() };
+    showJarvisFeedback(`Center Console: ${model.name || activeAvatarKey} deployed.`, "avatar_switch");
+
+    // 6. Trigger Materialization
+    isMaterializing = true;
+    materializeProgress = 0.0;
+    if (canvasEl) {
+      initScatter(canvasEl.width, canvasEl.height);
+    }
+
+    // 7. Start Render Loop if not running
+    if (!animId) {
+      lastFrameTime = performance.now();
+      animId = requestAnimationFrame(renderLoop);
+    }
+  }
+
+  function restoreIronMan() {
+    isDeployed = false;
+
+    // 1. Fade out Center Hologram
+    if (displayEl) {
+      displayEl.classList.remove("active");
+    }
+
+    // 2. Restore Iron Man and Arc Reactor
+    if (!ironmanImgEl) ironmanImgEl = document.getElementById("ironman-master-img") || document.querySelector(".ironman-master-img");
+    if (!arcReactorEl) arcReactorEl = document.getElementById("stark-arc-reactor");
+    if (ironmanImgEl) ironmanImgEl.classList.remove("stage-hidden");
+    if (arcReactorEl) arcReactorEl.classList.remove("stage-hidden");
+
+    // 3. Shockwave Flash & Audio Feedback
+    triggerShockwaveFlash();
+    JarvisSoundscape.play("wake");
+    showJarvisFeedback("Primary Stark Console restored.", "stark_restore");
+  }
+
+  function triggerShockwaveFlash() {
+    const stage = document.getElementById("ironman-stage-container") || document.querySelector(".ironman-stage-container");
+    if (!stage) return;
+    const wave = document.createElement("div");
+    wave.className = "center-shockwave-flash";
+    stage.appendChild(wave);
+    setTimeout(() => {
+      wave.remove();
+    }, 850);
+  }
+
+  function renderLoop(now) {
+    animId = requestAnimationFrame(renderLoop);
+
+    if (!isDeployed) {
+      if (ctx && canvasEl) {
+        ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      }
+      return;
+    }
+
+    if (!canvasEl || !ctx) return;
+    const w = canvasEl.width;
+    const h = canvasEl.height;
+    if (w === 0 || h === 0) return;
+
+    const dt = Math.min(0.033, (now - lastFrameTime) / 1000.0);
+    lastFrameTime = now;
+    time += dt;
+
+    frameCount++;
+    fpsTimer += dt;
+    if (fpsTimer >= 0.8) {
+      currentFps = Math.round(frameCount / fpsTimer);
+      frameCount = 0;
+      fpsTimer = 0;
+      if (fpsValEl) fpsValEl.textContent = `${currentFps}`;
+    }
+
+    if (isMaterializing) {
+      materializeProgress += dt / MATERIALIZE_DURATION;
+      if (materializeProgress >= 1.0) {
+        materializeProgress = 1.0;
+        isMaterializing = false;
+      }
+    }
+
+    const imgData = ctx.createImageData(w, h);
+    const buf = new Uint32Array(imgData.data.buffer);
+    buf.fill(0);
+
+    const cx = w * 0.5;
+    const cy = h * 0.48;
+    const scaleY = h * 0.84;
+    const emitterX = cx;
+    const emitterY = Math.round(cy + scaleY * 0.46);
+
+    const speechAmp = parseFloat(arcReactorEl?.style?.getPropertyValue("--speech-amp") || "0") || 0;
+    const audioReactive = speechAmp * 2.2;
+    const scanY = ((time * 0.4) % 1.3) - 0.15;
+
+    for (let i = 0; i < totalParticles; i++) {
+      const hx = homeX[i];
+      const hy = homeY[i];
+      const phase = phases[i];
+
+      const vibX = Math.sin(time * 3.4 + phase) * (0.65 + audioReactive * 1.5);
+      const vibY = Math.cos(time * 2.8 + phase * 1.3) * (0.65 + audioReactive * 1.5);
+
+      let px, py;
+      let r = colorsR[i];
+      let g = colorsG[i];
+      let b = colorsB[i];
+
+      if (isMaterializing && materializeProgress < 1.0) {
+        const delay = scatterDelay ? scatterDelay[i] : 0.0;
+        const targetEnd = 1.0 - delay * 0.55;
+        const localT = Math.min(1.0, materializeProgress / targetEnd);
+        const ease = 1.0 - Math.pow(1.0 - localT, 3.2);
+
+        const midFlight = Math.sin(localT * Math.PI) * (1.0 - ease);
+        const curlX = Math.cos(phase + localT * 3.5) * (scatterSwirl ? scatterSwirl[i] : 0) * midFlight;
+        const curlY = Math.sin(phase + localT * 3.5) * (scatterSwirl ? scatterSwirl[i] : 0) * midFlight;
+
+        const curX = hx + (scatterOffsetX ? scatterOffsetX[i] : 0) * (1.0 - ease) + curlX;
+        const curY = hy + (scatterOffsetY ? scatterOffsetY[i] : 0) * (1.0 - ease) + curlY;
+
+        if (localT < 1.0) {
+          px = Math.round(curX);
+          py = Math.round(curY);
+          const energy = 1.0 - ease;
+          const blend = ease;
+          r = Math.min(255, (((1.0 - blend) * 130 + blend * r) * (1.0 + energy * 0.35)) | 0);
+          g = Math.min(255, (((1.0 - blend) * 230 + blend * g) * (1.0 + energy * 0.35)) | 0);
+          b = Math.min(255, (((1.0 - blend) * 255 + blend * b) * (1.0 + energy * 0.35)) | 0);
+        } else {
+          const settleFrac = Math.min(1.0, (materializeProgress - targetEnd) / (1.0 - targetEnd + 0.001));
+          const settleDamp = 1.0 - settleFrac;
+          px = Math.round(hx + vibX * (1.0 + settleDamp * 1.5));
+          py = Math.round(hy + vibY * (1.0 + settleDamp * 1.5));
+          if (settleFrac < 0.6) {
+            const glow = 1.0 + (1.0 - settleFrac / 0.6) * 0.45;
+            r = Math.min(255, (r * glow) | 0);
+            g = Math.min(255, (g * glow) | 0);
+            b = Math.min(255, (b * glow) | 0);
+          }
+        }
+      } else {
+        px = Math.round(hx + vibX);
+        py = Math.round(hy + vibY);
+
+        const shimmer = 0.85 + 0.15 * Math.sin(time * 4.2 + phase) + audioReactive * 0.3;
+        const normY = py / h;
+        const distToScan = Math.abs(normY - scanY);
+        const scanBoost = distToScan < 0.07 ? (1.0 - distToScan / 0.07) * 0.5 : 0;
+        const factor = shimmer + scanBoost;
+
+        r = Math.min(255, (r * factor) | 0);
+        g = Math.min(255, (g * factor) | 0);
+        b = Math.min(255, (b * factor) | 0);
+      }
+
+      if (px >= 0 && px < w && py >= 0 && py < h) {
+        const idx = py * w + px;
+        const pColor = (0xff000000 | (b << 16) | (g << 8) | r);
+        buf[idx] = pColor;
+        if (px < w - 1) buf[idx + 1] = pColor;
+        if (py < h - 1) buf[idx + w] = pColor;
+
+        if ((r + g + b > 230) || ((i & 7) === 0)) {
+          const hr = (r * 0.32) | 0;
+          const hg = (g * 0.32) | 0;
+          const hb = (b * 0.32) | 0;
+
+          if (py > 0) {
+            const up = idx - w;
+            const c = buf[up];
+            buf[up] = 0xff000000 | (Math.min(255, ((c >> 16) & 0xff) + hb) << 16) | (Math.min(255, ((c >> 8) & 0xff) + hg) << 8) | Math.min(255, (c & 0xff) + hr);
+          }
+          if (py < h - 1) {
+            const dn = idx + w;
+            const c = buf[dn];
+            buf[dn] = 0xff000000 | (Math.min(255, ((c >> 16) & 0xff) + hb) << 16) | (Math.min(255, ((c >> 8) & 0xff) + hg) << 8) | Math.min(255, (c & 0xff) + hr);
+          }
+          if (px > 0) {
+            const lt = idx - 1;
+            const c = buf[lt];
+            buf[lt] = 0xff000000 | (Math.min(255, ((c >> 16) & 0xff) + hb) << 16) | (Math.min(255, ((c >> 8) & 0xff) + hg) << 8) | Math.min(255, (c & 0xff) + hr);
+          }
+          if (px < w - 1) {
+            const rt = idx + 1;
+            const c = buf[rt];
+            buf[rt] = 0xff000000 | (Math.min(255, ((c >> 16) & 0xff) + hb) << 16) | (Math.min(255, ((c >> 8) & 0xff) + hg) << 8) | Math.min(255, (c & 0xff) + hr);
+          }
+        }
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+
+    // Floor Projector Ellipse Rings
+    const floorAlpha = 0.45 + 0.15 * Math.sin(time * 3.0) + audioReactive * 0.25;
+    ctx.strokeStyle = `rgba(0, 255, 255, ${floorAlpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(emitterX, emitterY, w * 0.22, 6.0, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(56, 189, 248, ${floorAlpha * 0.45})`;
+    ctx.lineWidth = 1.0;
+    ctx.beginPath();
+    ctx.ellipse(emitterX, emitterY, w * 0.32, 8.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Convergence Target Overlay
+    if (isMaterializing && materializeProgress < 0.98) {
+      const alpha = 0.85 * (1.0 - materializeProgress);
+      const ringRadius = Math.max(w, h) * 0.42 * (1.25 - 0.45 * materializeProgress);
+      ctx.save();
+      ctx.strokeStyle = `rgba(0, 255, 255, ${alpha * 0.4})`;
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([6, 8]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function init() {
+    displayEl = document.getElementById("center-hologram-display");
+    canvasEl = document.getElementById("center-particle-canvas");
+    ironmanImgEl = document.getElementById("ironman-master-img") || document.querySelector(".ironman-master-img");
+    arcReactorEl = document.getElementById("stark-arc-reactor");
+    restoreBtn = document.getElementById("center-holo-restore-btn");
+    holoNameEl = document.getElementById("center-holo-name");
+    holoTagEl = document.getElementById("center-holo-tag");
+    fpsValEl = document.getElementById("center-fps-val");
+    ptsValEl = document.getElementById("center-pts-val");
+    stateValEl = document.getElementById("center-state-val");
+
+    if (canvasEl) {
+      ctx = canvasEl.getContext("2d", { alpha: true });
+      resizeCanvas();
+      window.addEventListener("resize", () => {
+        resizeCanvas();
+        if (isDeployed && canvasEl) {
+          loadAvatarModel(activeAvatarKey, canvasEl.width, canvasEl.height);
+        }
+      });
+    }
+
+    restoreBtn?.addEventListener("click", (e) => {
+      e.preventDefault();
+      restoreIronMan();
+    });
+  }
+
+  return {
+    init,
+    deployAvatar,
+    restoreIronMan,
+    isDeployed: () => isDeployed,
+    getActiveAvatarKey: () => activeAvatarKey
+  };
+})();
+
+// =============================================================
+// NAVI LABS DRAG & DROP CONTROLLER
+// (Seamless drag from NAVI Labs to Center Stage with HTML5 + Pointer Fallback)
+// =============================================================
+const StarkAvatarDragDropController = (() => {
+  let dropTargetEl = null;
+  let ghostEl = null;
+  let isDragging = false;
+  let draggedAvatarKey = null;
+
+  function init() {
+    dropTargetEl = document.getElementById("center-drop-target");
+    setupAvatarPills();
+    setupCanvasContainer();
+    setupDropZone();
+  }
+
+  function getAvatarDisplayName(key) {
+    const models = window.STARK_HOLOGRAM_MODELS || {};
+    const model = models[key] || {};
+    return model.name || key.toUpperCase();
+  }
+
+  function setupAvatarPills() {
+    const selector = document.getElementById("human-avatar-selector");
+    if (!selector) return;
+
+    const pills = selector.querySelectorAll(".avatar-pill");
+    pills.forEach((pill) => {
+      const avatarKey = pill.dataset.avatar;
+
+      // Native HTML5 Drag Start
+      pill.addEventListener("dragstart", (e) => {
+        draggedAvatarKey = avatarKey;
+        isDragging = true;
+        document.body.classList.add("is-avatar-dragging");
+        e.dataTransfer.setData("text/plain", avatarKey);
+        e.dataTransfer.setData("application/x-jarvis-avatar", avatarKey);
+        e.dataTransfer.effectAllowed = "copyMove";
+
+        createDragGhost(e.clientX, e.clientY, avatarKey);
+      });
+
+      pill.addEventListener("dragend", () => {
+        endDrag();
+      });
+
+      // Pointer / Mouse Drag Fallback
+      pill.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        startPointerDrag(e, avatarKey);
+      });
+    });
+  }
+
+  function setupCanvasContainer() {
+    const canvasContainer = document.getElementById("human-canvas-container");
+    if (!canvasContainer) return;
+
+    canvasContainer.addEventListener("dragstart", (e) => {
+      const activeKey = getActiveNaviKey();
+      draggedAvatarKey = activeKey;
+      isDragging = true;
+      document.body.classList.add("is-avatar-dragging");
+      e.dataTransfer.setData("text/plain", activeKey);
+      e.dataTransfer.setData("application/x-jarvis-avatar", activeKey);
+      e.dataTransfer.effectAllowed = "copyMove";
+
+      createDragGhost(e.clientX, e.clientY, activeKey);
+    });
+
+    canvasContainer.addEventListener("dragend", () => {
+      endDrag();
+    });
+
+    canvasContainer.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const activeKey = getActiveNaviKey();
+      startPointerDrag(e, activeKey);
+    });
+  }
+
+  function getActiveNaviKey() {
+    const activePill = document.querySelector("#human-avatar-selector .avatar-pill.active");
+    return activePill?.dataset?.avatar || "ultron";
+  }
+
+  function createDragGhost(x, y, key) {
+    removeDragGhost();
+    ghostEl = document.createElement("div");
+    ghostEl.className = "hologram-drag-ghost";
+    ghostEl.innerHTML = `
+      <div class="ghost-reticle"></div>
+      <div class="ghost-text-group">
+        <span class="ghost-title">${getAvatarDisplayName(key)}</span>
+        <span class="ghost-sub">DEPLOY TO CENTER STAGE</span>
+      </div>
+    `;
+    document.body.appendChild(ghostEl);
+    updateGhostPos(x, y);
+  }
+
+  function updateGhostPos(x, y) {
+    if (ghostEl) {
+      ghostEl.style.left = `${x + 18}px`;
+      ghostEl.style.top = `${y + 18}px`;
+    }
+  }
+
+  function removeDragGhost() {
+    if (ghostEl) {
+      ghostEl.remove();
+      ghostEl = null;
+    }
+  }
+
+  function endDrag() {
+    isDragging = false;
+    document.body.classList.remove("is-avatar-dragging");
+    dropTargetEl?.classList.remove("drag-hover");
+    removeDragGhost();
+  }
+
+  function setupDropZone() {
+    if (!dropTargetEl) return;
+
+    dropTargetEl.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      dropTargetEl.classList.add("drag-hover");
+      updateGhostPos(e.clientX, e.clientY);
+    });
+
+    dropTargetEl.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      dropTargetEl.classList.add("drag-hover");
+    });
+
+    dropTargetEl.addEventListener("dragleave", (e) => {
+      if (!dropTargetEl.contains(e.relatedTarget)) {
+        dropTargetEl.classList.remove("drag-hover");
+      }
+    });
+
+    dropTargetEl.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const avatarKey = e.dataTransfer.getData("application/x-jarvis-avatar") || e.dataTransfer.getData("text/plain") || draggedAvatarKey;
+      executeDrop(avatarKey);
+    });
+
+    window.addEventListener("dragover", (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+      updateGhostPos(e.clientX, e.clientY);
+      const isCenter = isCursorInCenterZone(e.clientX, e.clientY);
+      if (isCenter) {
+        dropTargetEl.classList.add("drag-hover");
+      } else {
+        dropTargetEl.classList.remove("drag-hover");
+      }
+    });
+
+    window.addEventListener("drop", (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+      const isCenter = isCursorInCenterZone(e.clientX, e.clientY);
+      if (isCenter && draggedAvatarKey) {
+        executeDrop(draggedAvatarKey);
+      } else {
+        endDrag();
+      }
+    });
+  }
+
+  function isCursorInCenterZone(x, y) {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const minX = w * 0.22;
+    const maxX = w * 0.78;
+    const minY = h * 0.08;
+    const maxY = h * 0.92;
+    return x >= minX && x <= maxX && y >= minY && y <= maxY;
+  }
+
+  function startPointerDrag(e, avatarKey) {
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let dragInitiated = false;
+
+    function onPointerMove(moveEvent) {
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (!dragInitiated && dist > 6) {
+        dragInitiated = true;
+        isDragging = true;
+        draggedAvatarKey = avatarKey;
+        document.body.classList.add("is-avatar-dragging");
+        createDragGhost(moveEvent.clientX, moveEvent.clientY, avatarKey);
+      }
+
+      if (dragInitiated) {
+        updateGhostPos(moveEvent.clientX, moveEvent.clientY);
+        if (isCursorInCenterZone(moveEvent.clientX, moveEvent.clientY)) {
+          dropTargetEl?.classList.add("drag-hover");
+        } else {
+          dropTargetEl?.classList.remove("drag-hover");
+        }
+      }
+    }
+
+    function onPointerUp(upEvent) {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+
+      if (dragInitiated) {
+        const droppedInCenter = isCursorInCenterZone(upEvent.clientX, upEvent.clientY);
+        if (droppedInCenter && draggedAvatarKey) {
+          executeDrop(draggedAvatarKey);
+        } else {
+          endDrag();
+        }
+      }
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  }
+
+  function executeDrop(avatarKey) {
+    endDrag();
+    if (!avatarKey) avatarKey = "ultron";
+    StarkCenterHologramEngine.deployAvatar(avatarKey);
+  }
+
+  return {
+    init,
+    deploy: (key) => executeDrop(key)
+  };
+})();
+
+
+// =============================================================
 // PHASE 3: SEMANTIC LOCAL FILE SEARCH CONTROLLER
 // =============================================================
 const StarkFileSearch = (() => {
@@ -2916,6 +3599,15 @@ function setSystemState(state) {
     else if (state === "speaking") islandStatus.textContent = "TRANSMITTING...";
     else islandStatus.textContent = "STANDBY // MK-VII";
   }
+
+  // Center Hologram Stage State Synchronization
+  const centerStateVal = document.getElementById("center-state-val");
+  if (centerStateVal) {
+    if (state === "listening") centerStateVal.textContent = "LISTENING";
+    else if (state === "thinking") centerStateVal.textContent = "PROCESSING";
+    else if (state === "speaking") centerStateVal.textContent = "TRANSMITTING";
+    else centerStateVal.textContent = "DEPLOYED";
+  }
 }
 
 // -------------------------------------------------------------
@@ -4537,5 +5229,11 @@ StarkVisionSensor.init();
 StarkFileSearch.init();
 StarkAirDrop.init();
 StarkVoiceprintAuth.init();
+StarkCenterHologramEngine.init();
+StarkAvatarDragDropController.init();
+
+// Expose center hologram controls
+window.StarkCenterHologram = StarkCenterHologramEngine;
+window.StarkAvatarDragDrop = StarkAvatarDragDropController;
 
 console.log("J.A.R.V.I.S. Real Dynamic System Initialized.");
