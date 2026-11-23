@@ -1291,23 +1291,20 @@ const StarkCenterHologramEngine = (() => {
       displayEl.classList.add("active");
     }
 
-    // 4. Trigger Shockwave Flash on Center Stage
-    triggerShockwaveFlash();
-
-    // 5. Soundscape and Feedback
+    // 4. Soundscape and Feedback
     JarvisSoundscape.play("wake");
     const models = window.STARK_HOLOGRAM_MODELS || {};
     const model = models[activeAvatarKey] || { name: activeAvatarKey.toUpperCase() };
     showJarvisFeedback(`Center Console: ${model.name || activeAvatarKey} deployed.`, "avatar_switch");
 
-    // 6. Trigger Materialization
+    // 5. Trigger Materialization
     isMaterializing = true;
     materializeProgress = 0.0;
     if (canvasEl) {
       initScatter(canvasEl.width, canvasEl.height);
     }
 
-    // 7. Start Render Loop if not running
+    // 6. Start Render Loop if not running
     if (!animId) {
       lastFrameTime = performance.now();
       animId = requestAnimationFrame(renderLoop);
@@ -1328,21 +1325,9 @@ const StarkCenterHologramEngine = (() => {
     if (ironmanImgEl) ironmanImgEl.classList.remove("stage-hidden");
     if (arcReactorEl) arcReactorEl.classList.remove("stage-hidden");
 
-    // 3. Shockwave Flash & Audio Feedback
-    triggerShockwaveFlash();
+    // 3. Audio Feedback
     JarvisSoundscape.play("wake");
     showJarvisFeedback("Primary Stark Console restored.", "stark_restore");
-  }
-
-  function triggerShockwaveFlash() {
-    const stage = document.getElementById("ironman-stage-container") || document.querySelector(".ironman-stage-container");
-    if (!stage) return;
-    const wave = document.createElement("div");
-    wave.className = "center-shockwave-flash";
-    stage.appendChild(wave);
-    setTimeout(() => {
-      wave.remove();
-    }, 850);
   }
 
   function renderLoop(now) {
@@ -1493,34 +1478,6 @@ const StarkCenterHologramEngine = (() => {
     }
 
     ctx.putImageData(imgData, 0, 0);
-
-    // Floor Projector Ellipse Rings
-    const floorAlpha = 0.45 + 0.15 * Math.sin(time * 3.0) + audioReactive * 0.25;
-    ctx.strokeStyle = `rgba(0, 255, 255, ${floorAlpha})`;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.ellipse(emitterX, emitterY, w * 0.22, 6.0, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.strokeStyle = `rgba(56, 189, 248, ${floorAlpha * 0.45})`;
-    ctx.lineWidth = 1.0;
-    ctx.beginPath();
-    ctx.ellipse(emitterX, emitterY, w * 0.32, 8.5, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Convergence Target Overlay
-    if (isMaterializing && materializeProgress < 0.98) {
-      const alpha = 0.85 * (1.0 - materializeProgress);
-      const ringRadius = Math.max(w, h) * 0.42 * (1.25 - 0.45 * materializeProgress);
-      ctx.save();
-      ctx.strokeStyle = `rgba(0, 255, 255, ${alpha * 0.4})`;
-      ctx.lineWidth = 1.2;
-      ctx.setLineDash([6, 8]);
-      ctx.beginPath();
-      ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
   }
 
   function init() {
@@ -1529,11 +1486,6 @@ const StarkCenterHologramEngine = (() => {
     ironmanImgEl = document.getElementById("ironman-master-img") || document.querySelector(".ironman-master-img");
     arcReactorEl = document.getElementById("stark-arc-reactor");
     restoreBtn = document.getElementById("center-holo-restore-btn");
-    holoNameEl = document.getElementById("center-holo-name");
-    holoTagEl = document.getElementById("center-holo-tag");
-    fpsValEl = document.getElementById("center-fps-val");
-    ptsValEl = document.getElementById("center-pts-val");
-    stateValEl = document.getElementById("center-state-val");
 
     if (canvasEl) {
       ctx = canvasEl.getContext("2d", { alpha: true });
@@ -1563,11 +1515,10 @@ const StarkCenterHologramEngine = (() => {
 
 // =============================================================
 // NAVI LABS DRAG & DROP CONTROLLER
-// (Seamless drag from NAVI Labs to Center Stage with HTML5 + Pointer Fallback)
+// (Clean drag from NAVI Labs to Center Stage without intrusive UI overlays)
 // =============================================================
 const StarkAvatarDragDropController = (() => {
   let dropTargetEl = null;
-  let ghostEl = null;
   let isDragging = false;
   let draggedAvatarKey = null;
 
@@ -1576,12 +1527,6 @@ const StarkAvatarDragDropController = (() => {
     setupAvatarPills();
     setupCanvasContainer();
     setupDropZone();
-  }
-
-  function getAvatarDisplayName(key) {
-    const models = window.STARK_HOLOGRAM_MODELS || {};
-    const model = models[key] || {};
-    return model.name || key.toUpperCase();
   }
 
   function setupAvatarPills() {
@@ -1600,8 +1545,6 @@ const StarkAvatarDragDropController = (() => {
         e.dataTransfer.setData("text/plain", avatarKey);
         e.dataTransfer.setData("application/x-jarvis-avatar", avatarKey);
         e.dataTransfer.effectAllowed = "copyMove";
-
-        createDragGhost(e.clientX, e.clientY, avatarKey);
       });
 
       pill.addEventListener("dragend", () => {
@@ -1628,8 +1571,6 @@ const StarkAvatarDragDropController = (() => {
       e.dataTransfer.setData("text/plain", activeKey);
       e.dataTransfer.setData("application/x-jarvis-avatar", activeKey);
       e.dataTransfer.effectAllowed = "copyMove";
-
-      createDragGhost(e.clientX, e.clientY, activeKey);
     });
 
     canvasContainer.addEventListener("dragend", () => {
@@ -1648,40 +1589,9 @@ const StarkAvatarDragDropController = (() => {
     return activePill?.dataset?.avatar || "ultron";
   }
 
-  function createDragGhost(x, y, key) {
-    removeDragGhost();
-    ghostEl = document.createElement("div");
-    ghostEl.className = "hologram-drag-ghost";
-    ghostEl.innerHTML = `
-      <div class="ghost-reticle"></div>
-      <div class="ghost-text-group">
-        <span class="ghost-title">${getAvatarDisplayName(key)}</span>
-        <span class="ghost-sub">DEPLOY TO CENTER STAGE</span>
-      </div>
-    `;
-    document.body.appendChild(ghostEl);
-    updateGhostPos(x, y);
-  }
-
-  function updateGhostPos(x, y) {
-    if (ghostEl) {
-      ghostEl.style.left = `${x + 18}px`;
-      ghostEl.style.top = `${y + 18}px`;
-    }
-  }
-
-  function removeDragGhost() {
-    if (ghostEl) {
-      ghostEl.remove();
-      ghostEl = null;
-    }
-  }
-
   function endDrag() {
     isDragging = false;
     document.body.classList.remove("is-avatar-dragging");
-    dropTargetEl?.classList.remove("drag-hover");
-    removeDragGhost();
   }
 
   function setupDropZone() {
@@ -1690,19 +1600,6 @@ const StarkAvatarDragDropController = (() => {
     dropTargetEl.addEventListener("dragover", (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
-      dropTargetEl.classList.add("drag-hover");
-      updateGhostPos(e.clientX, e.clientY);
-    });
-
-    dropTargetEl.addEventListener("dragenter", (e) => {
-      e.preventDefault();
-      dropTargetEl.classList.add("drag-hover");
-    });
-
-    dropTargetEl.addEventListener("dragleave", (e) => {
-      if (!dropTargetEl.contains(e.relatedTarget)) {
-        dropTargetEl.classList.remove("drag-hover");
-      }
     });
 
     dropTargetEl.addEventListener("drop", (e) => {
@@ -1714,13 +1611,6 @@ const StarkAvatarDragDropController = (() => {
     window.addEventListener("dragover", (e) => {
       if (!isDragging) return;
       e.preventDefault();
-      updateGhostPos(e.clientX, e.clientY);
-      const isCenter = isCursorInCenterZone(e.clientX, e.clientY);
-      if (isCenter) {
-        dropTargetEl.classList.add("drag-hover");
-      } else {
-        dropTargetEl.classList.remove("drag-hover");
-      }
     });
 
     window.addEventListener("drop", (e) => {
@@ -1755,21 +1645,11 @@ const StarkAvatarDragDropController = (() => {
       const dy = moveEvent.clientY - startY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (!dragInitiated && dist > 6) {
+      if (!dragInitiated && dist > 8) {
         dragInitiated = true;
         isDragging = true;
         draggedAvatarKey = avatarKey;
         document.body.classList.add("is-avatar-dragging");
-        createDragGhost(moveEvent.clientX, moveEvent.clientY, avatarKey);
-      }
-
-      if (dragInitiated) {
-        updateGhostPos(moveEvent.clientX, moveEvent.clientY);
-        if (isCursorInCenterZone(moveEvent.clientX, moveEvent.clientY)) {
-          dropTargetEl?.classList.add("drag-hover");
-        } else {
-          dropTargetEl?.classList.remove("drag-hover");
-        }
       }
     }
 

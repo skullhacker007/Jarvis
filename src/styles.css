@@ -4149,7 +4149,7 @@ body:not(.island-mode-active) .dynamic-island-pill {
   pointer-events: none;
 }
 
-/* Center Holographic HUD Telemetry & Identity Overlay */
+/* Center Holographic HUD Overlay (Clean Minimalist Restore Trigger) */
 .center-hologram-hud-overlay {
   position: absolute;
   top: 0;
@@ -4158,69 +4158,18 @@ body:not(.island-mode-active) .dynamic-island-pill {
   height: 100%;
   pointer-events: none;
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 30px 40px;
+  justify-content: flex-end;
+  padding: 24px 30px;
   box-sizing: border-box;
   z-index: 6;
-}
-
-.center-hologram-identity {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  pointer-events: auto;
-  width: 100%;
-}
-
-.center-hologram-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(3, 10, 26, 0.82);
-  border: 1px solid rgba(56, 189, 248, 0.4);
-  border-radius: 4px;
-  padding: 6px 14px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 0 20px rgba(56, 189, 248, 0.2), inset 0 0 10px rgba(0, 210, 255, 0.08);
-}
-
-.center-holo-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #00ffff;
-  box-shadow: 0 0 8px #00ffff;
-  animation: pulse 1.6s infinite;
-}
-
-.center-holo-name {
-  font-family: 'Orbitron', var(--font-mono);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 1.6px;
-  color: #38bdf8;
-  text-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
-  text-transform: uppercase;
-}
-
-.center-holo-tag {
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  font-weight: 600;
-  letter-spacing: 1.2px;
-  color: rgba(148, 163, 184, 0.75);
-  padding-left: 10px;
-  border-left: 1px solid rgba(56, 189, 248, 0.3);
-  text-transform: uppercase;
 }
 
 .center-holo-restore-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(56, 189, 248, 0.35);
   border-radius: 4px;
   color: #94a3b8;
   font-family: var(--font-mono);
@@ -4232,13 +4181,14 @@ body:not(.island-mode-active) .dynamic-island-pill {
   pointer-events: auto;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
 }
 
 .center-holo-restore-btn:hover {
-  color: #00ffff;
-  border-color: #00ffff;
-  background: rgba(14, 165, 233, 0.25);
-  box-shadow: 0 0 14px rgba(0, 255, 255, 0.4);
+  color: #38bdf8;
+  border-color: #38bdf8;
+  background: rgba(14, 165, 233, 0.2);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
   transform: translateY(-1px);
 }
 
@@ -4248,48 +4198,11 @@ body:not(.island-mode-active) .dynamic-island-pill {
 
 .restore-icon {
   font-size: 11px;
-  color: #00ffff;
-}
-
-.center-hologram-telemetry {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: flex-end;
-  pointer-events: none;
-  width: 100%;
-}
-
-.center-tel-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(3, 10, 26, 0.8);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  border-radius: 3px;
-  padding: 3px 8px;
-  font-family: var(--font-mono);
-  font-size: 8px;
-  backdrop-filter: blur(4px);
-}
-
-.center-tel-pill .tel-lbl {
-  color: rgba(148, 163, 184, 0.6);
-  font-weight: 600;
-}
-
-.center-tel-pill .tel-val {
   color: #38bdf8;
-  font-weight: 700;
-}
-
-.center-tel-pill .tel-val.cyan {
-  color: #00ffff;
-  text-shadow: 0 0 6px rgba(0, 255, 255, 0.5);
 }
 
 /* ========================================================= */
-/* CENTER DROP TARGET OVERLAY (STARK HUD RETICLE)            */
+/* INVISIBLE CENTER DROP TARGET (NO VISIBLE EXTRA UI)        */
 /* ========================================================= */
 
 .center-drop-target {
@@ -4299,294 +4212,19 @@ body:not(.island-mode-active) .dynamic-island-pill {
   transform: translate(-50%, -50%);
   width: 58%;
   height: 74%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s ease, visibility 0.3s;
+  border: none;
+  background: transparent;
+  box-shadow: none;
   z-index: 8;
 }
 
 body.is-avatar-dragging .center-drop-target {
-  opacity: 1;
   visibility: visible;
   pointer-events: auto;
-}
-
-.drop-target-inner {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px dashed rgba(56, 189, 248, 0.45);
-  border-radius: 12px;
-  background: radial-gradient(ellipse at center, rgba(14, 165, 233, 0.08) 0%, rgba(2, 6, 20, 0.75) 100%);
-  backdrop-filter: blur(6px);
-  box-shadow: inset 0 0 35px rgba(56, 189, 248, 0.12), 0 0 25px rgba(0, 0, 0, 0.5);
-  transition: all 0.25s ease;
-  overflow: hidden;
-}
-
-.center-drop-target.drag-hover .drop-target-inner {
-  border: 1.5px solid #00ffff;
-  background: radial-gradient(ellipse at center, rgba(0, 255, 255, 0.18) 0%, rgba(3, 14, 36, 0.88) 100%);
-  box-shadow: 0 0 40px rgba(0, 255, 255, 0.35), inset 0 0 45px rgba(0, 255, 255, 0.2);
-  transform: scale(1.02);
-}
-
-.drop-corner-bracket {
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  border-color: #00ffff;
-  border-style: solid;
-  pointer-events: none;
-  opacity: 0.8;
-}
-
-.drop-corner-bracket.top-left {
-  top: 10px;
-  left: 10px;
-  border-width: 2px 0 0 2px;
-}
-
-.drop-corner-bracket.top-right {
-  top: 10px;
-  right: 10px;
-  border-width: 2px 2px 0 0;
-}
-
-.drop-corner-bracket.bottom-left {
-  bottom: 10px;
-  left: 10px;
-  border-width: 0 0 2px 2px;
-}
-
-.drop-corner-bracket.bottom-right {
-  bottom: 10px;
-  right: 10px;
-  border-width: 0 2px 2px 0;
-}
-
-.drop-reticle-circle {
-  position: absolute;
-  width: 220px;
-  height: 220px;
-  border: 1px dashed rgba(56, 189, 248, 0.35);
-  border-radius: 50%;
-  animation: spin 16s linear infinite;
-  pointer-events: none;
-}
-
-.center-drop-target.drag-hover .drop-reticle-circle {
-  border-color: rgba(0, 255, 255, 0.7);
-  animation-duration: 6s;
-}
-
-.drop-reticle-scan {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #00ffff, transparent);
-  box-shadow: 0 0 10px #00ffff;
-  animation: scanDropLine 2.5s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes scanDropLine {
-  0% {
-    top: 0%;
-    opacity: 0;
-  }
-  15% {
-    opacity: 1;
-  }
-  85% {
-    opacity: 1;
-  }
-  100% {
-    top: 100%;
-    opacity: 0;
-  }
-}
-
-.drop-info-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  text-align: center;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.drop-icon-symbol {
-  font-size: 26px;
-  color: #00ffff;
-  text-shadow: 0 0 12px #00ffff;
-  animation: bounceDropIcon 1.2s ease-in-out infinite alternate;
-}
-
-@keyframes bounceDropIcon {
-  0% {
-    transform: translateY(-4px);
-  }
-  100% {
-    transform: translateY(4px);
-  }
-}
-
-.drop-title-text {
-  font-family: 'Orbitron', var(--font-mono);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  color: #38bdf8;
-  text-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
-}
-
-.center-drop-target.drag-hover .drop-title-text {
-  color: #00ffff;
-  text-shadow: 0 0 14px rgba(0, 255, 255, 0.85);
-}
-
-.drop-sub-text {
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  color: rgba(148, 163, 184, 0.8);
-  text-transform: uppercase;
-}
-
-/* ========================================================= */
-/* HOLOGRAPHIC DRAG GHOST & UI ENHANCEMENTS                  */
-/* ========================================================= */
-
-.hologram-drag-ghost {
-  position: fixed;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  z-index: 999999;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(3, 12, 32, 0.92);
-  border: 1px solid #00ffff;
-  border-radius: 6px;
-  padding: 8px 14px;
-  box-shadow: 0 0 25px rgba(0, 255, 255, 0.6), 0 10px 30px rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(12px);
-  transform: translate(-50%, -50%) scale(1.05);
-  will-change: transform, left, top;
-}
-
-.ghost-reticle {
-  width: 12px;
-  height: 12px;
-  border: 2px solid #00ffff;
-  border-radius: 50%;
-  animation: spin 2s linear infinite;
-}
-
-.ghost-text-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ghost-title {
-  font-family: 'Orbitron', var(--font-mono);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 1.2px;
-  color: #00ffff;
-  text-shadow: 0 0 8px rgba(0, 255, 255, 0.8);
-}
-
-.ghost-sub {
-  font-family: var(--font-mono);
-  font-size: 7.5px;
-  color: rgba(148, 163, 184, 0.85);
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-}
-
-/* Center Holographic Deployment Shockwave Flash */
-.center-shockwave-flash {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2.5px solid #00ffff;
-  box-shadow: 0 0 50px #00ffff, inset 0 0 25px #00ffff;
-  opacity: 1;
-  pointer-events: none;
-  animation: centerShockwaveExpand 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  z-index: 10;
-}
-
-@keyframes centerShockwaveExpand {
-  0% {
-    width: 20px;
-    height: 20px;
-    opacity: 1;
-    border-width: 3px;
-  }
-  100% {
-    width: 950px;
-    height: 950px;
-    opacity: 0;
-    border-width: 1px;
-  }
-}
-
-/* NAVI Labs Canvas Drag Hint */
-.human-drag-hint {
-  position: absolute;
-  bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  background: rgba(3, 10, 26, 0.85);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  border-radius: 10px;
-  font-family: var(--font-mono);
-  font-size: 7.5px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  color: #38bdf8;
-  pointer-events: none;
-  opacity: 0.65;
-  transition: opacity 0.25s ease, border-color 0.25s ease, background 0.25s ease;
-  user-select: none;
-  z-index: 5;
-}
-
-.human-canvas-container:hover .human-drag-hint {
-  opacity: 1;
-  border-color: #00ffff;
-  background: rgba(4, 20, 48, 0.95);
-  box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
-}
-
-.drag-hand-icon {
-  font-size: 8px;
-  color: #00ffff;
 }
 
 .avatar-pill {
@@ -4596,5 +4234,6 @@ body.is-avatar-dragging .center-drop-target {
 .avatar-pill:active {
   cursor: grabbing;
 }
+
 
 

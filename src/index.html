@@ -54,40 +54,14 @@
         <div class="center-hologram-display" id="center-hologram-display">
           <canvas id="center-particle-canvas" class="center-particle-canvas"></canvas>
           <div class="center-hologram-hud-overlay">
-            <div class="center-hologram-identity">
-              <div class="center-hologram-badge">
-                <span class="center-holo-dot"></span>
-                <span class="center-holo-name" id="center-holo-name">ULTRON</span>
-                <span class="center-holo-tag" id="center-holo-tag">TACTICAL MATRIX // CENTER CONSOLE</span>
-              </div>
-              <button type="button" class="center-holo-restore-btn" id="center-holo-restore-btn" title="Restore Iron Man & Arc Reactor HUD">
-                <span class="restore-icon">↺</span> RESTORE STARK HUD
-              </button>
-            </div>
-            <div class="center-hologram-telemetry">
-              <div class="center-tel-pill"><span class="tel-lbl">FPS</span><span class="tel-val" id="center-fps-val">60</span></div>
-              <div class="center-tel-pill"><span class="tel-lbl">PTS</span><span class="tel-val" id="center-pts-val">32,000</span></div>
-              <div class="center-tel-pill"><span class="tel-lbl">STATE</span><span class="tel-val cyan" id="center-state-val">DEPLOYED</span></div>
-            </div>
+            <button type="button" class="center-holo-restore-btn" id="center-holo-restore-btn" title="Restore Iron Man & Arc Reactor HUD">
+              <span class="restore-icon">↺</span> RESTORE STARK HUD
+            </button>
           </div>
         </div>
 
-        <!-- HOLOGRAPHIC DROP ZONE RETICLE OVERLAY -->
-        <div class="center-drop-target" id="center-drop-target">
-          <div class="drop-target-inner">
-            <div class="drop-reticle-circle"></div>
-            <div class="drop-reticle-scan"></div>
-            <div class="drop-corner-bracket top-left"></div>
-            <div class="drop-corner-bracket top-right"></div>
-            <div class="drop-corner-bracket bottom-left"></div>
-            <div class="drop-corner-bracket bottom-right"></div>
-            <div class="drop-info-group">
-              <div class="drop-icon-symbol">⤓</div>
-              <div class="drop-title-text">DEPLOY TO CENTER STAGE</div>
-              <div class="drop-sub-text">DROP AVATAR TO REPLACE IRON MAN & ARC REACTOR</div>
-            </div>
-          </div>
-        </div>
+        <!-- INVISIBLE CENTER DROP ZONE (NO VISIBLE EXTRA UI WHILE DRAGGING) -->
+        <div class="center-drop-target" id="center-drop-target"></div>
       </div>
 
       <!-- ========================================================= -->
@@ -150,9 +124,6 @@
         <!-- 3D Holographic Particle Human Canvas Container -->
         <div class="human-canvas-container" id="human-canvas-container" draggable="true" title="Drag to Deploy Hologram to Center Console">
           <canvas id="human-particle-canvas" class="human-particle-canvas"></canvas>
-          <div class="human-drag-hint" id="human-drag-hint" title="Drag character to deploy to dashboard center">
-            <span class="drag-hand-icon">⋮⋮</span> DRAG TO DEPLOY
-          </div>
 
           <!-- Holographic HUD Telemetry Chips -->
           <div class="human-hud-overlay">
