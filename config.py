@@ -1,11 +1,26 @@
 import os
 from pathlib import Path
-from dotenv import load_dotenv
 
 # Load .env / .env.local file
 BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env.local")
-load_dotenv(BASE_DIR / ".env")
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env.local")
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    # Native lightweight fallback loader when python-dotenv is not installed
+    for env_file in [BASE_DIR / ".env.local", BASE_DIR / ".env"]:
+        if env_file.exists():
+            try:
+                with open(env_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+            except Exception:
+                pass
 
 class Config:
     # LiveKit

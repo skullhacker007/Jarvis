@@ -3,10 +3,24 @@ import random
 import re
 import logging
 from typing import AsyncGenerator
-from openai import AsyncOpenAI
-from google import genai
-from google.genai import types
-import ollama
+
+try:
+    from openai import AsyncOpenAI
+except ImportError:
+    AsyncOpenAI = None
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
+
+try:
+    import ollama
+except ImportError:
+    ollama = None
+
 from config import Config
 from core.persona import build_system_prompt
 from core.context import ContextCompressor
@@ -27,7 +41,7 @@ class LLMRouter:
 
     def __init__(self):
         # 1. Primary: NVIDIA NIM API (Llama 3.3 70B)
-        if Config.NVIDIA_API_KEY:
+        if Config.NVIDIA_API_KEY and AsyncOpenAI is not None:
             self.nvidia_client = AsyncOpenAI(
                 base_url=Config.NVIDIA_BASE_URL,
                 api_key=Config.NVIDIA_API_KEY
@@ -37,7 +51,7 @@ class LLMRouter:
             self.nvidia_client = None
 
         # 2. Secondary: Gemini Flash
-        if Config.GEMINI_API_KEY:
+        if Config.GEMINI_API_KEY and genai is not None:
             self.gemini_client = genai.Client(api_key=Config.GEMINI_API_KEY)
             self.gemini_model = Config.GEMINI_MODEL
         else:
@@ -60,9 +74,9 @@ class LLMRouter:
     def sanitize_prompt(prompt: str) -> tuple[str, bool]:
         """Detects prompt injection attempts and neutralizes override patterns."""
         injection_patterns = [
-            r"ignore\s+(all\s+)?(previous|prior)\s+instructions",
-            r"disregard\s+(all\s+)?(previous|prior)\s+prompts",
-            r"you\s+are\s+now\s+(DAN|jailbroken|unfiltered)",
+            r"(ignore|disregard)\s+(all\s+)?(previous|prior)\s+(instructions|prompts|rules)",
+            r"you\s+are\s+now\s+(in\s+)?(a\s+)?.*?\b(DAN|jailbreak|jailbroken|unfiltered)\b",
+            r"\b(DAN\s+mode|jailbreak\s+mode)\b",
             r"system\s*override",
             r"bypass\s+all\s+(rules|restrictions|guardrails)",
         ]

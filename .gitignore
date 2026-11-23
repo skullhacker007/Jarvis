@@ -1,5 +1,5 @@
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -35,6 +35,16 @@ venv/
 __pycache__/
 *.py[cod]
 *$py.class
-data/cache/
+
+# Runtime Data, Logs & Offline Queues
+data/cache/*
+!data/cache/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
+data/documents/*
+!data/documents/.gitkeep
 data/uploads/
 *.jsonl
+
+# Lockfile deduplication (npm is primary)
+pnpm-lock.yaml
