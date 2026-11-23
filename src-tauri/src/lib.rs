@@ -1847,23 +1847,22 @@ fn get_bluetooth_watch_status() -> Result<WatchStatusResult, String> {
     let mut status = query_windows_bluetooth_devices();
     if !status.has_connected_phone {
         let adb_path = get_adb_path();
-        let endpoint = get_phone_adb_endpoint();
         if let Ok(out) = silent_command(&adb_path).args(["devices", "-l"]).output() {
             let str_out = String::from_utf8_lossy(&out.stdout);
-            if str_out.contains(&endpoint) && str_out.contains("device") {
-                status.has_connected_phone = true;
-                if status.connected_phone_name.is_none() {
+            for line in str_out.lines() {
+                let trimmed = line.trim();
+                if trimmed.contains("device") && !trimmed.starts_with("List of") {
+                    status.has_connected_phone = true;
                     let mut model_found = get_phone_model_name();
-                    for line in str_out.lines() {
-                        if line.contains(&endpoint) && line.contains("model:") {
-                            for part in line.split_whitespace() {
-                                if part.starts_with("model:") {
-                                    model_found = part.replace("model:", "").replace('_', " ");
-                                }
-                            }
+                    for part in trimmed.split_whitespace() {
+                        if part.starts_with("model:") {
+                            model_found = part.replace("model:", "").replace('_', " ");
                         }
                     }
-                    status.connected_phone_name = Some(model_found);
+                    if status.connected_phone_name.is_none() || status.connected_phone_name.as_deref() == Some("DISCONNECTED") {
+                        status.connected_phone_name = Some(model_found);
+                    }
+                    break;
                 }
             }
         }
@@ -2501,11 +2500,11 @@ fn sync_paired_device(ep: &str) -> PhoneSyncStatus {
 
     std::thread::sleep(Duration::from_millis(800));
 
-    // Query adb mdns services to discover the wireless debugging port
+    // Query adb mdns services to discover the wireless debugging port (_adb._tcp and _adb-tls-connect._tcp)
     if let Ok(mdns_out) = silent_command(&adb_path).args(["mdns", "services"]).output() {
         let mdns_text = String::from_utf8_lossy(&mdns_out.stdout);
         for line in mdns_text.lines() {
-            if line.contains("_adb._tcp") {
+            if line.contains("_adb") {
                 if let Some(service_ep) = line.split_whitespace().last() {
                     if service_ep.contains(':') {
                         let _ = silent_command(&adb_path).args(["connect", service_ep]).output();
@@ -2579,9 +2578,16 @@ fn generate_pairing_qr() -> Result<Vec<String>, String> {
                 if clean_line.contains('█') || clean_line.contains('▄') || clean_line.contains('▀') {
                     reading_qr = true;
                     qr_lines.push(clean_line.clone());
-                } else if reading_qr && clean_line.contains("Waiting for device to scan QR code") {
-                    if let Ok(mut cache) = QR_CODE_CACHE.lock() {
-                        *cache = Some(qr_lines.clone());
+                    if qr_lines.len() >= 19 {
+                        if let Ok(mut cache) = QR_CODE_CACHE.lock() {
+                            *cache = Some(qr_lines.clone());
+                        }
+                    }
+                } else if reading_qr && (clean_line.contains("Waiting for device to scan QR code") || clean_line.is_empty()) {
+                    if qr_lines.len() >= 18 {
+                        if let Ok(mut cache) = QR_CODE_CACHE.lock() {
+                            *cache = Some(qr_lines.clone());
+                        }
                     }
                 }
 
@@ -2610,7 +2616,7 @@ fn generate_pairing_qr() -> Result<Vec<String>, String> {
     });
 
     let start = Instant::now();
-    while start.elapsed() < Duration::from_millis(3000) {
+    while start.elapsed() < Duration::from_millis(8000) {
         if let Ok(cache) = QR_CODE_CACHE.lock() {
             if let Some(ref lines) = *cache {
                 if !lines.is_empty() {
@@ -2644,12 +2650,7 @@ fn auto_sync_phone() -> Result<PhoneSyncStatus, String> {
     let adb_path = get_adb_path();
     let current_ep = get_phone_adb_endpoint();
 
-    // 1. Try connecting to stored endpoint first only if valid
-    if !current_ep.is_empty() && current_ep.contains(':') && current_ep != "127.0.0.1:5555" {
-        let _ = silent_command(&adb_path).args(["connect", &current_ep]).output();
-    }
-
-    // 2. Query adb devices
+    // 1. First, check if any device is already active in adb devices (USB or Wi-Fi)
     if let Ok(out) = silent_command(&adb_path).args(["devices", "-l"]).output() {
         let text = String::from_utf8_lossy(&out.stdout);
         for line in text.lines() {
@@ -2664,9 +2665,10 @@ fn auto_sync_phone() -> Result<PhoneSyncStatus, String> {
                         }
                     }
 
-                    // If connected via USB or temporary port, switch to Wi-Fi TCP mode 5555
-                    if !id.contains(":5555") {
+                    // If connected via USB, enable tcpip 5555 for wireless linkage
+                    if !id.contains(':') {
                         let _ = silent_command(&adb_path).args(["-s", id, "tcpip", "5555"]).output();
+                        std::thread::sleep(Duration::from_millis(400));
                         if let Ok(ip_out) = silent_command(&adb_path)
                             .args(["-s", id, "shell", "ip -f inet addr show wlan0"])
                             .output()
@@ -2706,11 +2708,56 @@ fn auto_sync_phone() -> Result<PhoneSyncStatus, String> {
         }
     }
 
+    // 2. Discover wireless debugging services on the local subnet via mDNS
+    if let Ok(mdns_out) = silent_command(&adb_path).args(["mdns", "services"]).output() {
+        let mdns_text = String::from_utf8_lossy(&mdns_out.stdout);
+        for line in mdns_text.lines() {
+            if line.contains("_adb") {
+                if let Some(service_ep) = line.split_whitespace().last() {
+                    if service_ep.contains(':') {
+                        let _ = silent_command(&adb_path).args(["connect", service_ep]).output();
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Try stored endpoint if available
+    if !current_ep.is_empty() && current_ep.contains(':') && current_ep != "127.0.0.1:5555" {
+        let _ = silent_command(&adb_path).args(["connect", &current_ep]).output();
+    }
+
+    // 4. Final verification pass after connection attempts
+    if let Ok(out) = silent_command(&adb_path).args(["devices", "-l"]).output() {
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.contains("device") && !trimmed.starts_with("List of") {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if let Some(id) = parts.first() {
+                    let mut model_name = "ANDROID PHONE".to_string();
+                    for part in &parts {
+                        if part.starts_with("model:") {
+                            model_name = part.replace("model:", "").replace('_', " ");
+                        }
+                    }
+                    save_phone_endpoint(id, &model_name);
+                    return Ok(PhoneSyncStatus {
+                        is_connected: true,
+                        model: model_name,
+                        endpoint: id.to_string(),
+                        message: "Direct phone connection established".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
     Ok(PhoneSyncStatus {
         is_connected: false,
         model: "DISCONNECTED".to_string(),
         endpoint: current_ep,
-        message: "No device detected. Click Generate Pairing QR or connect USB.".to_string(),
+        message: "No device detected. Plug phone in via USB for 2 seconds or click Generate Pairing QR.".to_string(),
     })
 }
 

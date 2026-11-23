@@ -9,11 +9,11 @@ This document outlines the cognitive architecture of J.A.R.V.I.S., the rules gov
 | Component | Primary (Online) | Fallback (Offline / Failover) | Technical Role |
 | :--- | :--- | :--- | :--- |
 | **Real-Time Engine** | **LiveKit Agents** | Local Audio Loop | Manages WebRTC audio streams, VAD, and bidirectional interruption handling. |
-| **Speech-to-Text (STT)** | **Deepgram Flux** | **Faster-Whisper** (Local) | Real-time streaming transcription with conversational boundary awareness. |
+| **Speech-to-Text (STT)** | **Deepgram Flux** | **Faster-Whisper / Win32 SAPI** (Local) | Real-time streaming transcription with conversational boundary awareness. |
 | **Turn Detection** | **Deepgram Flux Endpointing** *(Single Authority)* | Local VAD | Single master turn detector to avoid conflicting signals or false cutoffs. |
-| **Text-to-Speech (TTS)** | **Cartesia Sonic** | **Piper TTS** (Local ONNX) | Primary: ~90ms natural conversational audio. Fallback: lightweight local synthesis. |
+| **Text-to-Speech (TTS)** | **Cartesia Sonic** | **Kokoro-82M ONNX + Piper TTS** | Primary: ~90ms conversational audio. Fallback: studio-quality local neural synthesis. |
 | **Core LLM** | **NVIDIA LLM API** (`llama-3.3-70b-instruct`) | **Ollama** (`llama3.2:3b` / `8b`) | Primary: high-speed 70B reasoning & debate. Fallback: local task execution. |
-| **Database & Vectors** | **PostgreSQL + pgvector** *(OCI Hyderabad)* | Local Offline Buffer + Sync Queue | Enterprise hybrid search (Full-Text + Vector), relational memory, and citations. |
+| **Database & Vectors** | **PostgreSQL + pgvector** *(OCI Hyderabad)* | Local Buffer + Dead-Letter Sync Queue | Enterprise hybrid search (Full-Text + Vector), relational memory, and citations. |
 | **Long-Term Memory** | **Mem0** *(PostgreSQL Backend)* | Local JSONL Write-Ahead Log | Extracts facts, preferences, and user profile data across sessions with sync. |
 | **RAG & Citations** | **LlamaIndex** *(Hybrid Engine)* | Local Document Cache | Vector similarity + SQL full-text search with strict page/document citations. |
 | **Live Web Research** | **Tavily Search API** | DuckDuckGo | Real-time news and factual validation with cited URLs. |
@@ -41,7 +41,7 @@ flowchart TD
 
     Dispatcher --> FastPath[Win32 Fast-Path Execution]
     Dispatcher --> Subagents[Specialized Subagents]
-    Dispatcher --> AudioStream[Cartesia Sonic / Piper TTS]
+    Dispatcher --> AudioStream[Cartesia Sonic / Kokoro-82M / Piper]
 ```
 
 ### 1. Tier 1 (Primary Online): NVIDIA NIM API (`meta/llama-3.3-70b-instruct`)
@@ -63,19 +63,24 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Dispatcher[J.A.R.V.I.S. Dispatcher] --> Agent1[Sentinel Agent\nHardware & Latency Profiler]
-    Dispatcher --> Agent2[Voice Agent\nLiveKit + Deepgram + Cartesia]
-    Dispatcher --> Agent3[Memory & RAG Agent\nOCI PostgreSQL + Mem0 + LlamaIndex]
+    Dispatcher[J.A.R.V.I.S. Dispatcher] --> Agent1[Voice Agent\nLiveKit + Anti-Collision Matrix]
+    Dispatcher --> Agent2[Speculative Turn Agent\nDraft & Discard Engine]
+    Dispatcher --> Agent3[Memory & RAG Agent\nOCI PostgreSQL + Mem0 + Sync Queue]
     Dispatcher --> Agent4[Web Research Agent\nTavily Live Search & Citations]
     Dispatcher --> Agent5[UIA Agent\nZero-Coord Win32 Accessibility]
-    Dispatcher --> Agent6[Phone Sync Agent\nADB Mirroring & HUD Toasts]
+    Dispatcher --> Agent6[Phone Sync Radar Agent\nADB QR & mDNS Auto-Detect]
+    Dispatcher --> Agent7[Sentinel Agent\nHardware & Latency Profiler]
 ```
 
-### Agent 1: LiveKit Voice Agent Worker
-* **Location:** [`voice/livekit_worker.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/livekit_worker.py)
+### Agent 1: LiveKit Voice Agent & Anti-Collision Arbiter
+* **Locations:** [`voice/livekit_worker.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/livekit_worker.py), [`voice/audio_device_binding.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/audio_device_binding.py), [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js)
 * **Responsibility:** Real-time WebRTC audio pipeline, streaming STT, and streaming TTS.
-* **Unified Turn Authority:** Uses **Deepgram Flux** conversational endpointing as the single master turn detector to prevent VAD conflicts.
-* **Instant Barge-In:** Cancels audio playback the millisecond user speech is detected.
+* **Single Turn Authority & Barge-In:** Deepgram Flux conversational endpointing acts as the master detector. Interruption halts ongoing audio within 10ms.
+* **Anti-Collision Vocal Shield:**
+  * Promise-wrapped turn execution (`processDirective`) prevents multiple parallel threads from speaking simultaneously.
+  * `stopAllSpokenAudio()` immediately cancels active Web Audio buffers, aborts TTS fetches, and clears synth queues.
+  * Silences microphone input (`set_voice_listening(false)`) during playback with a 600ms acoustic calming window post-speech to prevent echo loopback.
+  * 3.5-second mutual exclusion debounce across parallel speech recognition providers.
 
 ### Agent 2: Speculative Preemptive Generation Agent
 * **Responsibility:** Begins speculative draft generation during conversational pauses before the user's turn is 100% closed.
@@ -83,7 +88,7 @@ flowchart LR
 
 ### Agent 3: Memory Persistence & RAG Agent
 * **Locations:** [`memory/mem0_store.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/mem0_store.py), [`memory/rag_engine.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/rag_engine.py), [`memory/sync_queue.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/sync_queue.py)
-* **Responsibility:** Manages Mem0 user profile extraction, LlamaIndex hybrid RAG citations, and OCI PostgreSQL synchronization with local write-ahead buffering.
+* **Responsibility:** Manages Mem0 user profile extraction, LlamaIndex hybrid RAG citations, and OCI PostgreSQL synchronization with local write-ahead buffering and dead-letter queue resilience.
 
 ### Agent 4: Web Research Agent
 * **Location:** [`tools/web_search.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/tools/web_search.py)
@@ -92,5 +97,13 @@ flowchart LR
 ### Agent 5: UIA & Desktop Automation Agent
 * **Responsibility:** Inspects foreground windows via Win32 `EnumChildWindows`, computing bounding rectangles to target controls by name without pixel coordinates.
 
-### Agent 6: Sentinel Hardware & Telemetry Agent
-* **Responsibility:** Polls CPU, RAM, GPU, and network I/O, as well as tracking live Time-to-First-Audio (TTFA) telemetry.
+### Agent 6: Phone Sync & Device Radar Agent
+* **Locations:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs), [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js)
+* **Responsibility:** 
+  * Generates high-contrast 37x37 QR pairing codes with quiet-zone padding for immediate smartphone camera detection.
+  * Actively polls active ADB connections, discovers wireless targets via mDNS (`_adb._tcp` and `_adb-tls-connect._tcp`), and auto-configures connected USB devices to TCP port 5555.
+  * Mirrors notifications and phone status directly to the holographic Visor.
+
+### Agent 7: Sentinel Hardware & Telemetry Agent
+* **Locations:** [`core/telemetry.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/telemetry.py), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Responsibility:** Continuously samples CPU kernel utilization, RAM allocation, GPU counters, and network bandwidth, while measuring millisecond TTFA (STT -> LLM TTFT -> TTS TTFA).

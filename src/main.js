@@ -3244,9 +3244,10 @@ function renderQrCanvas(lines) {
     grid.push(botRow);
   }
 
-  const cols = grid[0]?.length || 37;
-  const rows = cols; // A standard QR code is always an exact 1:1 square
-  const scale = 4;
+  const cols = lines[0]?.length || 37;
+  const rows = cols; // Standard square QR code matrix
+  const moduleSize = 6;
+  const padding = 16; // 16px pure white quiet zone for camera scanning
 
   let canvas = document.getElementById("sync-qr-canvas");
   if (!canvas) {
@@ -3254,8 +3255,8 @@ function renderQrCanvas(lines) {
     canvas.id = "sync-qr-canvas";
     canvas.className = "sync-qr-canvas";
   }
-  canvas.width = cols * scale;
-  canvas.height = rows * scale;
+  canvas.width = cols * moduleSize + padding * 2;
+  canvas.height = rows * moduleSize + padding * 2;
   const ctx = canvas.getContext("2d");
 
   // Pure white quiet zone & background
@@ -3267,7 +3268,7 @@ function renderQrCanvas(lines) {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       if (grid[r] && grid[r][c] === 0) {
-        ctx.fillRect(c * scale, r * scale, scale, scale);
+        ctx.fillRect(padding + c * moduleSize, padding + r * moduleSize, moduleSize, moduleSize);
       }
     }
   }
