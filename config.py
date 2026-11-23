@@ -12,19 +12,24 @@ class Config:
     LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "")
     LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
 
-    # LLM
+    # Core LLM - NVIDIA NIM API (Primary)
+    NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
+    NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
+
+    # Secondary Cloud LLM Backup (Gemini Flash)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     # Deepgram & Cartesia
     DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
     CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY", "")
-    CARTESIA_VOICE_ID = os.getenv("CARTESIA_VOICE_ID", "a0e99841-438c-4a64-b679-ae501e7d6091")  # Conversational Man/Woman
+    CARTESIA_VOICE_ID = os.getenv("CARTESIA_VOICE_ID", "a0e99841-438c-4a64-b679-ae501e7d6091")
 
     # Tavily Search
     TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
-    # PostgreSQL (OCI)
+    # PostgreSQL on OCI (Hyderabad)
     PG_HOST = os.getenv("PG_HOST", "localhost")
     PG_PORT = int(os.getenv("PG_PORT", 5432))
     PG_DATABASE = os.getenv("PG_DATABASE", "navi_db")

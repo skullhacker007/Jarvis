@@ -2,55 +2,66 @@
 
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2.0-blue.svg)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg)](https://www.rust-lang.org/)
-[![Gemini](https://img.shields.io/badge/Gemini-Flash%20Primary-4285F4.svg)](https://ai.google.dev/)
-[![Ollama](https://img.shields.io/badge/Ollama-Local%20Brain-black.svg)](https://ollama.ai/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector%20(OCI)-336791.svg)](https://cloud.oracle.com/)
+[![NVIDIA NIM](https://img.shields.io/badge/NVIDIA-Llama%203.3%2070B%20Primary-76B900.svg)](https://build.nvidia.com/)
+[![Gemini](https://img.shields.io/badge/Gemini-Flash%20Cloud%20Backup-4285F4.svg)](https://ai.google.dev/)
+[![Ollama](https://img.shields.io/badge/Ollama-Offline%20Fallback-black.svg)](https://ollama.ai/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector%20(OCI%20Hyderabad)-336791.svg)](https://cloud.oracle.com/)
 [![Windows](https://img.shields.io/badge/OS-Windows%2011%20%2F%2010-0078D6.svg)](https://microsoft.com/windows)
 
-**J.A.R.V.I.S.** (Just A Rather Very Intelligent System) is an autonomous, real-time AI desktop assistant for Windows. Engineered with a **Tauri v2 + Rust backend**, powered by a **Zero-Compromise Dual Brain (Google Gemini Flash Primary + Local Ollama Fallback)**, persistent **OCI PostgreSQL + `pgvector`** memory, **LiveKit + Deepgram Flux + Cartesia Sonic** real-time voice streaming, a holographic HUD Visor, and comprehensive multi-agent automation.
+**J.A.R.V.I.S.** (Just A Rather Very Intelligent System) is an autonomous, real-time AI desktop assistant for Windows. Engineered with a **Tauri v2 + Rust backend**, powered by a **Zero-Compromise 3-Tier Brain (NVIDIA Llama 3.3 70B Primary + Gemini Flash Cloud Backup + Local Ollama Fallback)**, persistent **OCI PostgreSQL + `pgvector`** memory, **LiveKit + Deepgram Flux + Cartesia Sonic** real-time voice streaming, a holographic HUD Visor, and comprehensive multi-agent automation.
 
 ---
 
-## ⚡ Core Architectural Pillars
+## ⚡ 1. Finalized Component Matrix
 
-### 1. Dual Intelligence Brain & Socratic Debate Engine
-* **Primary Cloud Brain (Gemini Flash via `google.genai`)**: Blistering Time-to-First-Token (~150–250ms) and 100+ tokens/sec streaming throughput.
-* **Offline Local Brain (Ollama Qwen / Llama 3.2)**: 100% private, local fallback when offline. Zero crash guarantee.
-* **Socratic Debate Mode**: Critical thinking engine that identifies logical flaws, formulates robust counter-arguments, and engages in natural back-and-forth debate without generic disclaimers.
-* **Temporal Context Injector**: Dynamically injects live calendar date, day of week, millisecond local clock, timezone, and system metrics on every turn so J.A.R.V.I.S. always knows "now."
+| Component | Primary (Online) | Fallback (Offline / Failover) | Technical Role |
+| :--- | :--- | :--- | :--- |
+| **Real-Time Engine** | **LiveKit Agents** | Local Audio Loop | Manages WebRTC audio streams, VAD, and bidirectional interruption handling. |
+| **Speech-to-Text (STT)** | **Deepgram Flux** | **Faster-Whisper** (Local) | Real-time streaming transcription with conversational boundary awareness. |
+| **Turn Detection** | **Deepgram Flux Endpointing** *(Single Authority)* | Local VAD | Single master turn detector to avoid conflicting signals or false cutoffs. |
+| **Text-to-Speech (TTS)** | **Cartesia Sonic** | **Piper TTS** (Local ONNX) | Primary: ~90ms natural conversational audio. Fallback: lightweight local synthesis. |
+| **Core LLM** | **NVIDIA LLM API** (`llama-3.3-70b-instruct`) | **Ollama** (`llama3.2:3b` / `8b`) | Primary: high-speed 70B reasoning & debate. Fallback: local task execution. |
+| **Database & Vectors** | **PostgreSQL + pgvector** *(OCI Hyderabad)* | Local Offline Buffer + Sync Queue | Enterprise hybrid search (Full-Text + Vector), relational memory, and citations. |
+| **Long-Term Memory** | **Mem0** *(PostgreSQL Backend)* | Local JSONL Write-Ahead Log | Extracts facts, preferences, and user profile data across sessions with sync. |
+| **RAG & Citations** | **LlamaIndex** *(Hybrid Engine)* | Local Document Cache | Vector similarity + SQL full-text search with strict page/document citations. |
+| **Live Web Research** | **Tavily Search API** | DuckDuckGo | Real-time news and factual validation with cited URLs. |
+| **Telemetry & Metrics** | **Custom Pipeline Profiler** | Built-in | Tracks live Time-To-First-Audio (TTFA) across STT, LLM, and TTS. |
+
+---
+
+## 🧠 2. Core Architectural Pillars
+
+### 1. 3-Tier Cognitive Hierarchy & Socratic Debate Engine
+* **Tier 1 (Primary Online): NVIDIA NIM API (`meta/llama-3.3-70b-instruct`)**: Massive 70-billion-parameter open-weights reasoning. Uncensored, deeply intellectual, and configured for vigorous Socratic debate, counter-arguments, and logic analysis.
+* **Tier 2 (Cloud Backup): Google Gemini Flash**: High-speed, high-availability secondary cloud backup that automatically takes over if NVIDIA hits rate limits.
+* **Tier 3 (Local Fallback): Ollama (`llama3.2:3b` / `8b`)**: 100% private, offline fallback ensuring J.A.R.V.I.S. never fails during internet outages.
+* **Temporal Context Injector**: Dynamically injects live calendar date, day of week, local clock, timezone, and system metrics into every prompt so J.A.R.V.I.S. always knows "now."
 
 ### 2. Zero-Compromise Real-Time Voice Engine
-* **Voice Streaming Framework (LiveKit Agents)**: Sub-second WebRTC audio pipeline with dynamic turn detection and full barge-in interruption.
-* **Speech-to-Text (Deepgram Flux)**: Conversational endpointing acting as the single turn authority (eliminates competing VAD jitter).
-* **Text-to-Speech (Cartesia Sonic)**: Ultra-realistic conversational human voice (~90ms latency) with natural inflection and pacing.
-* **Offline TTS Fallback (Piper ONNX)**: Local neural voice synthesis ensuring J.A.R.V.I.S. is never muted if internet drops.
-* **Hardware Audio Binding**: Direct full-duplex Windows microphone and speaker stream integration via `sounddevice`.
+* **LiveKit WebRTC Agent Loop**: Sub-second bidirectional streaming with adaptive interruption.
+* **Unified Single Authority Turn Detection**: Deepgram Flux handles speech endpointing directly, eliminating competing VAD jitter or false audio cuts.
+* **Dual TTS Synthesis**: Cartesia Sonic provides studio-quality conversational speech (~90ms TTFA), while Piper TTS runs locally as an instant offline backup.
+* **Audio Hardware Binding**: Direct Windows microphone capture and speaker playback via `sounddevice` and numpy.
 
 ### 3. Long-Term Memory & Hybrid RAG (Oracle Cloud OCI)
-* **PostgreSQL + `pgvector` Cluster**: Hosted on your Oracle Cloud Infrastructure (OCI Hyderabad) instance. Unifies relational user memory, conversation logs, and document vector embeddings.
-* **Mem0 Personal Memory Layer**: Automatically extracts user facts, preferences, habits, and ongoing tasks across sessions.
-* **Offline Write-Ahead Buffer**: When disconnected from OCI, new memories append to a local queue (`data/cache/offline_sync_queue.jsonl`) and automatically flush to PostgreSQL upon reconnecting.
-* **Live Web Research (Tavily AI)**: Real-time web fact retrieval with verified source URL citations.
+* **OCI PostgreSQL + `pgvector` Cluster (Hyderabad)**: Unified relational storage for user profiles, ongoing tasks, conversation logs, and 1536-dim vector embeddings.
+* **Mem0 Personal Memory Store**: Automatically tracks facts, user preferences, and habits across reboots.
+* **LlamaIndex Hybrid RAG**: Vector similarity + full-text SQL search with strict citations (file, page, and excerpt quote).
+* **Offline Write-Ahead Buffer**: Writes are locally buffered to `data/cache/offline_sync_queue.jsonl` when disconnected and automatically synced to PostgreSQL on reconnect.
 
-### 4. 100% Dynamic Telemetry & Token Activity Matrix
-* **Hardware Telemetry (Sysinfo & Win32)**:
-  * **Processor (CPU)**: Live kernel utilization percentage, processor model name, and physical/logical core counts.
-  * **Memory (RAM)**: Live physical RAM allocation and percentage of total capacity.
-  * **Graphics (GPU)**: Dynamic Windows Performance Counter sampling for live engine utilization.
-  * **Network I/O**: Real-time adapter RX/TX transfer bandwidth with rolling sparklines.
-  * **Active Running Apps**: Live enumeration of taskbar windows via Win32 `EnumWindows`.
-  * **Pipeline Telemetry**: Active millisecond TTFA profiler tracking STT latency, LLM TTFT, and TTS TTFA.
+### 4. Hardware Telemetry & Token Activity Matrix
+* **Hardware Telemetry (Sysinfo & Win32)**: Live CPU kernel utilization, RAM allocation, GPU performance counter sampling, and network adapter RX/TX transfer bandwidth.
+* **Pipeline Telemetry Tracker**: Actively logs millisecond latencies from speech end to STT completion, LLM TTFT, and TTS TTFA.
 * **Token Activity Matrix**: 256-slot dynamic grid visualizing prompt tokens, generated tokens, and decoding speed.
 
-### 5. Holographic Notification Toasts & Android ADB Mirroring
-* **Notification Overlay**: Semi-transparent cyber glass notification toasts with slide-in animations.
-* **ADB Phone Mirroring**: Automatically polls Android notification buffer (`dumpsys notification`) to mirror WhatsApp, Telegram, Slack, Mail, and Phone calls directly to the HUD.
-* **Live Phone Telemetry**: Battery percentage, charging state, and temperature monitoring.
+### 5. Holographic Notification Toasts & Android Mirroring
+* **Semi-Transparent HUD Overlay**: Holographic notification toasts with slide-in animations.
+* **Android ADB Mirroring**: Polls notification buffer (`dumpsys notification`) to mirror WhatsApp, Telegram, Slack, Mail, and Phone calls directly to the HUD.
 
 ### 6. Windows UI Automation (UIA) & nAvI Labs Particle Matrix
-* **Zero-Coordinate Element Clicking**: Inspects visible controls in foreground windows via Win32 `EnumChildWindows`, computing bounding rectangles to target controls by name.
+* **Zero-Coordinate Element Clicking**: Inspects foreground windows via Win32 `EnumChildWindows`, computing bounding rectangles to target controls by name without pixel coordinates.
 * **32,000 True-Color Point Cloud**: Direct canvas pixel-buffer rendering at sustained 60 FPS with micro-quantum particle shimmer.
-* **5 High-Definition Holographic Avatars**: nAvI Labs (`navi`), Optimus Prime (`optimus`), Bumblebee (`bumblebee`), Spider-Man (`spiderman`), and Tactical Mecha Robo (`mecha`).
+* **5 Holographic Avatars**: nAvI Labs (`navi`), Optimus Prime (`optimus`), Bumblebee (`bumblebee`), Spider-Man (`spiderman`), and Tactical Mecha Robo (`mecha`).
 
 ---
 
@@ -70,7 +81,7 @@ Jarvis/
 ├── core/                           # Python Intelligence & Context Engines
 │   ├── context.py                  # Dynamic real-time date/time/hardware context
 │   ├── persona.py                  # Socratic debate & conversational persona
-│   ├── llm_client.py               # Gemini Flash streaming (google.genai) + Ollama fallback
+│   ├── llm_client.py               # 3-Tier Router (NVIDIA 70B -> Gemini -> Ollama)
 │   └── telemetry.py                # Millisecond TTFA & latency tracker
 │
 ├── voice/                          # LiveKit Real-Time Audio Pipeline
@@ -81,6 +92,8 @@ Jarvis/
 │
 ├── memory/                         # OCI Database & Memory Layer
 │   ├── db_postgres.py              # PostgreSQL + pgvector connection pool
+│   ├── mem0_store.py               # Mem0 long-term memory store (PostgreSQL)
+│   ├── rag_engine.py               # LlamaIndex hybrid retrieval with citations
 │   └── sync_queue.py               # Offline write-ahead queue & auto-sync engine
 │
 ├── tools/                          # External Integrations & Tooling
@@ -122,7 +135,8 @@ pip install -r requirements.txt
 
 ### 2. Configure Environment
 Copy `.env.example` to `.env.local` and add your keys:
-* `GEMINI_API_KEY`: Google Gemini API key
+* `NVIDIA_API_KEY`: NVIDIA NIM API key (`meta/llama-3.3-70b-instruct`)
+* `GEMINI_API_KEY`: Google Gemini API key (secondary cloud backup)
 * `DEEPGRAM_API_KEY`: Deepgram conversational speech API key
 * `CARTESIA_API_KEY`: Cartesia Sonic voice API key
 * `TAVILY_API_KEY`: Tavily web search API key
