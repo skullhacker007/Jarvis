@@ -681,6 +681,211 @@ fn get_local_gpu_name() -> String {
     "Hardware GPU Accelerator".to_string()
 }
 
+// =========================================================================
+// WINDOWS CREDENTIAL MANAGER & DPAPI DATA PROTECTION
+// =========================================================================
+#[cfg(windows)]
+mod dpapi {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct DataBlob {
+        cb_data: u32,
+        pb_data: *mut u8,
+    }
+
+    #[link(name = "crypt32")]
+    unsafe extern "system" {
+        fn CryptProtectData(
+            pDataIn: *const DataBlob,
+            szDataDescr: *const u16,
+            pOptionalEntropy: *const DataBlob,
+            pvReserved: *mut c_void,
+            pPromptStruct: *mut c_void,
+            dwFlags: u32,
+            pDataOut: *mut DataBlob,
+        ) -> i32;
+
+        fn CryptUnprotectData(
+            pDataIn: *const DataBlob,
+            ppszDataDescr: *mut *mut u16,
+            pOptionalEntropy: *const DataBlob,
+            pvReserved: *mut c_void,
+            pPromptStruct: *mut c_void,
+            dwFlags: u32,
+            pDataOut: *mut DataBlob,
+        ) -> i32;
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn LocalFree(hMem: *mut c_void) -> *mut c_void;
+    }
+
+    const CRYPTPROTECT_UI_FORBIDDEN: u32 = 0x1;
+
+    pub fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
+        let in_blob = DataBlob {
+            cb_data: data.len() as u32,
+            pb_data: data.as_ptr() as *mut u8,
+        };
+        let mut out_blob = DataBlob {
+            cb_data: 0,
+            pb_data: std::ptr::null_mut(),
+        };
+
+        unsafe {
+            let res = CryptProtectData(
+                &in_blob,
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut out_blob,
+            );
+            if res != 0 && !out_blob.pb_data.is_null() {
+                let slice = std::slice::from_raw_parts(out_blob.pb_data, out_blob.cb_data as usize);
+                let encrypted = slice.to_vec();
+                LocalFree(out_blob.pb_data as *mut c_void);
+                Ok(encrypted)
+            } else {
+                Err("CryptProtectData failed to encrypt buffer".to_string())
+            }
+        }
+    }
+
+    pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
+        let in_blob = DataBlob {
+            cb_data: data.len() as u32,
+            pb_data: data.as_ptr() as *mut u8,
+        };
+        let mut out_blob = DataBlob {
+            cb_data: 0,
+            pb_data: std::ptr::null_mut(),
+        };
+
+        unsafe {
+            let res = CryptUnprotectData(
+                &in_blob,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut out_blob,
+            );
+            if res != 0 && !out_blob.pb_data.is_null() {
+                let slice = std::slice::from_raw_parts(out_blob.pb_data, out_blob.cb_data as usize);
+                let decrypted = slice.to_vec();
+                LocalFree(out_blob.pb_data as *mut c_void);
+                Ok(decrypted)
+            } else {
+                Err("CryptUnprotectData failed to decrypt buffer".to_string())
+            }
+        }
+    }
+}
+
+fn get_vault_file_path() -> std::path::PathBuf {
+    let mut p = std::path::PathBuf::from("data");
+    p.push("vault.enc");
+    p
+}
+
+fn load_vault_map() -> std::collections::HashMap<String, String> {
+    let p = get_vault_file_path();
+    if !p.exists() {
+        return std::collections::HashMap::new();
+    }
+    if let Ok(encrypted_bytes) = std::fs::read(&p) {
+        #[cfg(windows)]
+        if let Ok(decrypted_bytes) = dpapi::unprotect(&encrypted_bytes) {
+            if let Ok(map) = serde_json::from_slice::<std::collections::HashMap<String, String>>(&decrypted_bytes) {
+                return map;
+            }
+        }
+        #[cfg(not(windows))]
+        if let Ok(map) = serde_json::from_slice::<std::collections::HashMap<String, String>>(&encrypted_bytes) {
+            return map;
+        }
+    }
+    std::collections::HashMap::new()
+}
+
+fn save_vault_map(map: &std::collections::HashMap<String, String>) -> Result<(), String> {
+    let json_bytes = serde_json::to_vec(map).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    let encrypted_bytes = dpapi::protect(&json_bytes).map_err(|e| e.to_string())?;
+    #[cfg(not(windows))]
+    let encrypted_bytes = json_bytes;
+
+    let p = get_vault_file_path();
+    if let Some(parent) = p.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&p, encrypted_bytes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn vault_store_secret(key: String, value: String) -> Result<bool, String> {
+    let mut map = load_vault_map();
+    map.insert(key, value);
+    save_vault_map(&map)?;
+    Ok(true)
+}
+
+#[tauri::command]
+fn vault_get_secret(key: String) -> Result<String, String> {
+    let map = load_vault_map();
+    map.get(&key).cloned().ok_or_else(|| "Secret not found in DPAPI vault".to_string())
+}
+
+#[tauri::command]
+fn vault_list_keys() -> Result<Vec<String>, String> {
+    let map = load_vault_map();
+    Ok(map.keys().cloned().collect())
+}
+
+fn sync_env_to_dpapi_vault() {
+    let env_paths = [
+        "C:\\Users\\Chowdary\\Desktop\\Project\\Jarvis\\.env",
+        "C:\\Users\\Chowdary\\Desktop\\Project\\Jarvis\\.env.local",
+        ".env",
+        ".env.local",
+    ];
+    let mut map = load_vault_map();
+    let mut modified = false;
+
+    for path in &env_paths {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('#') || !trimmed.contains('=') {
+                    continue;
+                }
+                let mut parts = trimmed.splitn(2, '=');
+                if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+                    let k = k.trim().to_string();
+                    let v = v.trim().trim_matches('"').trim_matches('\'').to_string();
+                    if !k.is_empty() && !v.is_empty() && !map.contains_key(&k) {
+                        map.insert(k, v);
+                        modified = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if modified {
+        if let Err(e) = save_vault_map(&map) {
+            eprintln!("[DPAPI Vault] Auto-sync notice: {}", e);
+        } else {
+            println!("[DPAPI Vault] Successfully synchronized API credentials into Windows DPAPI encrypted storage.");
+        }
+    }
+}
+
 fn get_phone_config_path() -> String {
     find_file_in_candidates("phone_config.json")
         .map(|p| p.to_string_lossy().to_string())
@@ -5796,6 +6001,15 @@ fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
                                 if evt == "speech" {
                                     if let Some(text) = val.get("text").and_then(|v| v.as_str()) {
                                         let clean_text = text.trim();
+                                        let is_wake = val.get("is_wake_word").and_then(|w| w.as_bool()).unwrap_or(false);
+
+                                        // 1. Wake word priority: emit unconditionally so hands-free wake word works anytime
+                                        if is_wake && !clean_text.is_empty() {
+                                            println!("[Wake Word Detected]: {}", clean_text);
+                                            let _ = app_handle.emit("jarvis://wake_word", clean_text.to_string());
+                                        }
+
+                                        // 2. Directive handling when listener is active
                                         if !clean_text.is_empty() && SPEECH_LISTENER_ACTIVE.load(Ordering::SeqCst) {
                                             println!("[Speech Engine Recognized]: {}", clean_text);
                                             if let Ok(mut cache) = LATEST_VOICE_TRANSCRIPTION.lock() {
@@ -5803,9 +6017,6 @@ fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
                                             }
                                             VOICE_NOTIFY.notify_waiters();
                                             let _ = app_handle.emit("jarvis://voice_directive", clean_text.to_string());
-                                            if val.get("is_wake_word").and_then(|w| w.as_bool()).unwrap_or(false) {
-                                                let _ = app_handle.emit("jarvis://wake_word", clean_text.to_string());
-                                            }
                                         }
                                     }
                                 }
@@ -5847,6 +6058,23 @@ async fn listen_mic() -> Result<String, String> {
 fn set_voice_listening(active: bool) -> Result<bool, String> {
     SPEECH_LISTENER_ACTIVE.store(active, Ordering::SeqCst);
     Ok(active)
+}
+
+static SYSTEM_MEDIA_DUCKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn set_system_ducking(duck: bool) -> Result<bool, String> {
+    let was_ducked = SYSTEM_MEDIA_DUCKED.load(Ordering::SeqCst);
+    if duck && !was_ducked {
+        SYSTEM_MEDIA_DUCKED.store(true, Ordering::SeqCst);
+        win32_system_agent::media_play_pause();
+        println!("[Audio Ducking] Background media paused for pure voice interaction.");
+    } else if !duck && was_ducked {
+        SYSTEM_MEDIA_DUCKED.store(false, Ordering::SeqCst);
+        win32_system_agent::media_play_pause();
+        println!("[Audio Ducking] Background media resumed.");
+    }
+    Ok(duck)
 }
 
 #[tauri::command]
@@ -6397,6 +6625,9 @@ pub fn run() {
                 start_neural_tts_worker();
             });
 
+            // Initialize Windows DPAPI Key Vault and sync existing credentials
+            sync_env_to_dpapi_vault();
+
             Ok(())
         })
         .manage(state)
@@ -6417,6 +6648,10 @@ pub fn run() {
             pair_phone_manual,
             listen_mic,
             set_voice_listening,
+            set_system_ducking,
+            vault_store_secret,
+            vault_get_secret,
+            vault_list_keys,
             transcribe_audio_groq,
             web_search_jarvis,
             inspect_screen_jarvis,
@@ -6439,6 +6674,20 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_dpapi_vault_encryption_roundtrip() {
+        let test_key = "TEST_API_KEY".to_string();
+        let test_val = "sk-ant-api03-secret123456789".to_string();
+        let store_res = vault_store_secret(test_key.clone(), test_val.clone());
+        assert!(store_res.is_ok(), "Failed to store secret in DPAPI vault: {:?}", store_res);
+
+        let retrieved = vault_get_secret(test_key.clone());
+        assert_eq!(retrieved.unwrap(), test_val, "Decrypted secret does not match original!");
+
+        let keys = vault_list_keys().unwrap();
+        assert!(keys.contains(&test_key), "Key list does not contain stored test key!");
+    }
 
     #[test]
     fn test_execute_open_and_close_notepad() {

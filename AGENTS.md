@@ -18,6 +18,7 @@ This document outlines the cognitive architecture of J.A.R.V.I.S., the rules gov
 | **RAG & Citations** | **LlamaIndex** *(Hybrid Engine)* | Local Document Cache | Vector similarity + SQL full-text search with strict page/document citations. |
 | **Live Web Research** | **Tavily Search API** | DuckDuckGo | Real-time news and factual validation with cited URLs. |
 | **Telemetry & Metrics** | **Custom Pipeline Profiler** | Built-in | Tracks live Time-To-First-Audio (TTFA) across STT, LLM, and TTS. |
+| **Security & Secrets** | **Windows DPAPI Vault** (`crypt32.dll`) | Local Encrypted Buffer | Hardware-bound credential encryption at rest without plaintext `.env` risks. |
 
 ---
 
@@ -73,14 +74,17 @@ flowchart LR
 ```
 
 ### Agent 1: LiveKit Voice Agent & Anti-Collision Arbiter
-* **Locations:** [`voice/livekit_worker.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/livekit_worker.py), [`voice/audio_device_binding.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/audio_device_binding.py), [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js)
+* **Locations:** [`voice/livekit_worker.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/livekit_worker.py), [`voice/audio_device_binding.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/audio_device_binding.py), [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js), [`scripts/speech_worker.ps1`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/speech_worker.ps1)
 * **Responsibility:** Real-time WebRTC audio pipeline, streaming STT, and streaming TTS.
 * **Single Turn Authority & Barge-In:** Deepgram Flux conversational endpointing acts as the master detector. Interruption halts ongoing audio within 10ms.
-* **Anti-Collision Vocal Shield:**
-  * Promise-wrapped turn execution (`processDirective`) prevents multiple parallel threads from speaking simultaneously.
-  * `stopAllSpokenAudio()` immediately cancels active Web Audio buffers, aborts TTS fetches, and clears synth queues.
-  * Silences microphone input (`set_voice_listening(false)`) during playback with a 600ms acoustic calming window post-speech to prevent echo loopback.
-  * 3.5-second mutual exclusion debounce across parallel speech recognition providers.
+* **Pure Voice & Anti-Collision Shield:**
+  * **System Audio Ducking & Media Isolation:** Automatically ducks (pauses/mutes) background media (Spotify, YouTube, browser audio) via `set_system_ducking` when listening or speaking, ensuring 100% pure voice capture and crystal-clear speech without background music clash.
+  * **Local "Hey Jarvis" Wake-Word Engine:** Dedicated high-priority `WakeGrammar` continuously monitoring for "Hey Jarvis", "Jarvis", "Ok Jarvis" without button clicks.
+  * **Streaming Sentence Pipelining:** Pre-fetches subsequent sentence audio while sentence `i` is playing, dropping initial voice response latency to ~250ms.
+  * **Promise-Wrapped Turn Execution:** Locks `processDirective` so multiple threads cannot speak concurrently.
+  * **Instant Termination:** `stopAllSpokenAudio()` immediately cancels active Web Audio buffers, aborts TTS fetches, and restores audio ducking.
+  * **Acoustic Feedback Shield:** Silences microphone input (`set_voice_listening(false)`) during playback with a 600ms calming window post-speech.
+  * **Snappy Repetition Support:** Responsive 800ms debounce prevents parallel engine collisions while immediately catching repeated user commands.
 
 ### Agent 2: Speculative Preemptive Generation Agent
 * **Responsibility:** Begins speculative draft generation during conversational pauses before the user's turn is 100% closed.

@@ -45,6 +45,8 @@ data/documents/*
 !data/documents/.gitkeep
 data/uploads/
 *.jsonl
+*.enc
+src-tauri/data/
 
 # Lockfile deduplication (npm is primary)
 pnpm-lock.yaml

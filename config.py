@@ -22,6 +22,36 @@ except ImportError:
             except Exception:
                 pass
 
+# Windows DPAPI Encrypted Vault Loader
+def _load_dpapi_vault():
+    if os.name != "nt":
+        return
+    for candidate in [BASE_DIR / "data" / "vault.enc", BASE_DIR / "src-tauri" / "data" / "vault.enc"]:
+        if candidate.exists():
+            try:
+                import ctypes
+                from ctypes import wintypes
+                import json
+
+                class DATA_BLOB(ctypes.Structure):
+                    _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+                crypt32 = ctypes.windll.crypt32
+                kernel32 = ctypes.windll.kernel32
+                encrypted = candidate.read_bytes()
+                in_blob = DATA_BLOB(len(encrypted), ctypes.cast(ctypes.create_string_buffer(encrypted), ctypes.POINTER(ctypes.c_char)))
+                out_blob = DATA_BLOB()
+                if crypt32.CryptUnprotectData(ctypes.byref(in_blob), None, None, None, None, 1, ctypes.byref(out_blob)):
+                    decrypted = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+                    kernel32.LocalFree(out_blob.pbData)
+                    secrets = json.loads(decrypted.decode("utf-8"))
+                    for k, v in secrets.items():
+                        os.environ.setdefault(k, str(v))
+            except Exception:
+                pass
+
+_load_dpapi_vault()
+
 class Config:
     # LiveKit
     LIVEKIT_URL = os.getenv("LIVEKIT_URL", "")

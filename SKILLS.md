@@ -18,6 +18,7 @@ This document details the complete functional skills, system actions, execution 
 | **RAG & Citations** | **LlamaIndex** *(Hybrid Engine)* | Local Document Cache | Vector similarity + SQL full-text search with strict page/document citations. |
 | **Live Web Research** | **Tavily Search API** | DuckDuckGo | Real-time news and factual validation with cited URLs. |
 | **Telemetry & Metrics** | **Custom Pipeline Profiler** | Built-in | Tracks live Time-To-First-Audio (TTFA) across STT, LLM, and TTS. |
+| **Security & Secrets** | **Windows DPAPI Vault** (`crypt32.dll`) | Local Encrypted Buffer | Hardware-bound credential encryption at rest without plaintext `.env` risks. |
 
 ---
 
@@ -59,42 +60,58 @@ This document details the complete functional skills, system actions, execution 
 * **Capability:** Enforces critical thinking, logic flaw detection, and counter-argument generation without generic robotic boilerplate.
 * **Cadence:** Keeps voice replies concise (1 to 3 sentences) for optimal audio conversation flow.
 
-### 3. Unified Anti-Collision Voice Matrix & Echo Cancellation
-* **Modules:** [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js), [`voice/audio_device_binding.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/audio_device_binding.py), [`voice/livekit_worker.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/livekit_worker.py)
-* **Capability:** 
+### 3. Unified Anti-Collision Voice Matrix & Pure Voice Shield
+* **Modules:** [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js), [`scripts/speech_worker.ps1`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/speech_worker.ps1), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Capability:**
   * Locks the turn loop via Promise resolution (`processDirective`), ensuring multiple candidate streams never speak simultaneously.
   * `stopAllSpokenAudio()` immediately terminates in-flight audio buffers, cancels pending TTS fetches, and purges Web Speech synthesis queues.
   * Silences hardware input (`set_voice_listening(false)`) and enforces a 600ms acoustic calming window post-speech to prevent speaker loopback.
-  * Cross-engine deduplication window (3.5s) discards redundant speech inputs.
+  * Tight 800ms deduplication window across parallel STT engines while allowing immediate user repetition without dropped directives.
 
-### 4. Neural Local Voice Synthesis (Kokoro-82M & Piper)
+### 4. Background System Audio Ducking & Media Isolation
+* **Modules:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs), [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js)
+* **Capability:** Automatically ducks (pauses/mutes) background media (Spotify, YouTube, browser audio) via `set_system_ducking` when J.A.R.V.I.S. starts listening or speaking, and smoothly restores playback when dialogue concludes. This eliminates background music bleeding into the microphone and prevents audio clashing.
+
+### 5. Local "Hey Jarvis" Wake-Word Engine
+* **Modules:** [`scripts/speech_worker.ps1`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/speech_worker.ps1), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
+* **Capability:** Continuous non-blocking streaming via dedicated `WakeGrammar` in the background speech engine. Detects "Hey Jarvis", "Jarvis", "Ok Jarvis", and "Hello Jarvis" with zero button clicks, triggering immediate wake chime, media ducking, and attached command execution.
+
+### 6. Streaming Token-to-Audio TTS Pipelining
+* **Modules:** [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js), [`scripts/neural_tts_service.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/neural_tts_service.py)
+* **Capability:** Splits incoming LLM response streams into sentence segments. Starts pre-fetching sentence `i+1` audio in parallel while sentence `i` is actively playing via the Web Audio API, slashing TTFA from 1800ms down to ~250ms with continuous seamless playback.
+
+### 7. Windows DPAPI Key Vault & Credential Security
+* **Modules:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs), [`config.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/config.py)
+* **Capability:** Encrypts sensitive cloud API keys (`NVIDIA_API_KEY`, `GEMINI_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY`, `TAVILY_API_KEY`, `PG_*`) using the Windows Data Protection API (`CryptProtectData` in `crypt32.dll`) tied directly to the logged-in Windows user account. Synchronizes encrypted secrets into `data/vault.enc`.
+
+### 8. Neural Local Voice Synthesis (Kokoro-82M & Piper)
 * **Modules:** [`scripts/neural_tts_service.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/scripts/neural_tts_service.py), [`voice/tts_piper.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/voice/tts_piper.py)
-* **Capability:** Local HTTP neural TTS daemon serving Kokoro-82M ONNX models on `localhost:8880`, with Piper TTS as a lightweight ultra-fast fallback.
+* **Capability:** Local HTTP neural TTS daemon serving Kokoro-82M ONNX models on `localhost:5000`, with Piper TTS as a lightweight ultra-fast fallback.
 
-### 5. Resilient Cloud PostgreSQL + `pgvector` & Dead-Letter Queue
+### 9. Resilient Cloud PostgreSQL + `pgvector` & Dead-Letter Queue
 * **Modules:** [`memory/db_postgres.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/db_postgres.py), [`memory/sync_queue.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/sync_queue.py)
 * **Capability:** Connects to OCI PostgreSQL in Hyderabad for relational user memory, conversation logs, and document vector embeddings.
 * **Offline Resilience:** Queues memory writes to `data/cache/offline_sync_queue.jsonl` during outages with exponential backoff and transfers unrecoverable failed records to a dead-letter log.
 
-### 6. Mem0 Long-Term Memory Store
+### 10. Mem0 Long-Term Memory Store
 * **Module:** [`memory/mem0_store.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/mem0_store.py)
 * **Capability:** Automated extraction and semantic search of user facts, preferences, habits, and ongoing tasks backed by PostgreSQL vector storage.
 
-### 7. LlamaIndex Hybrid RAG with Citations
+### 11. LlamaIndex Hybrid RAG with Citations
 * **Module:** [`memory/rag_engine.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/memory/rag_engine.py)
 * **Capability:** Ingests local files/PDFs, generates embeddings into PostgreSQL, and performs hybrid search returning exact file, page number, and source quote citations.
 
-### 8. Wireless Phone Sync & Dynamic Device Radar
+### 12. Wireless Phone Sync & Dynamic Device Radar
 * **Modules:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs), [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js)
 * **Capability:**
   * Generates standard 37x37 QR codes with high-contrast borders and quiet zones for Android camera pairing.
   * Multi-vector discovery: monitors connected USB devices, triggers TCP port 5555 configuration, and performs mDNS discovery (`_adb._tcp` and `_adb-tls-connect._tcp`).
   * Continuous health and status polling capturing dynamic device names and connection states.
 
-### 9. Verified Web Research Engine
+### 13. Verified Web Research Engine
 * **Module:** [`tools/web_search.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/tools/web_search.py)
 * **Capability:** Real-time factual web search via Tavily API with source URLs attached to every claim.
 
-### 10. Pipeline Latency Profiler (TTFA)
+### 14. Pipeline Latency Profiler (TTFA)
 * **Module:** [`core/telemetry.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/telemetry.py)
 * **Capability:** Actively logs millisecond latencies from speech end to STT completion, LLM TTFT, and TTS TTFA.

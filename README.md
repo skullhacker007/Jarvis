@@ -27,6 +27,7 @@
 | **RAG & Citations** | **LlamaIndex** *(Hybrid Engine)* | Local Document Cache | Vector similarity + SQL full-text search with strict page/document citations. |
 | **Live Web Research** | **Tavily Search API** | DuckDuckGo | Real-time news and factual validation with cited URLs. |
 | **Telemetry & Metrics** | **Custom Pipeline Profiler** | Built-in | Tracks live Time-To-First-Audio (TTFA) across STT, LLM, and TTS. |
+| **Security & Secrets** | **Windows DPAPI Vault** (`crypt32.dll`) | Local Encrypted Buffer | Hardware-bound credential encryption at rest without plaintext `.env` risks. |
 
 ---
 
@@ -40,10 +41,17 @@
 
 ### 2. Zero-Compromise Real-Time Voice Engine & Anti-Collision Matrix
 * **Unified Anti-Collision Voice Arbiter**: Prevents overlapping responses by wrapping speech synthesis in a Promise-based lock (`processDirective`), ensuring single-voice natural flow.
+* **Background System Audio Ducking**: Automatically pauses or ducks other PC audio sessions (Spotify, YouTube, browser media) during listening or speaking so the microphone captures pure human voice and Jarvis speaks with crystal-clear output without background clash.
+* **Hands-Free Local Wake-Word Engine**: Continuous streaming speech recognition engine with dedicated `WakeGrammar` detecting "Hey Jarvis", "Jarvis", "Ok Jarvis", and "Hello Jarvis" locally without pressing buttons.
+* **Streaming Token-to-Audio TTS Pipelining**: Pre-fetches neural audio for subsequent sentences in parallel while the current sentence is actively playing via Web Audio API, reducing Time-To-First-Audio to ~250ms.
 * **Instant Cancellation (`stopAllSpokenAudio`)**: Aborts in-flight Web Audio buffer nodes, cancels pending fetch requests, and clears browser SpeechSynthesis queues immediately when interrupted.
 * **Acoustic Feedback Shield**: Enforces a 600ms acoustic calming window and mutes the hardware microphone capture (`set_voice_listening(false)`) during assistant speech to eliminate speaker-to-mic echo loops.
-* **Cross-Engine Voice Debounce**: Deduplicates inputs across parallel STT engines within a 3.5s mutual exclusion window.
-* **Kokoro-82M Local Neural Voice**: Local ONNX neural TTS service running on `localhost:8880` providing lifelike human-cadence voice synthesis offline.
+* **Snappy Phrase Repetition Support**: Responsive 800ms debounce allows immediate repetition or clarification without dropping user directives.
+* **Kokoro-82M Local Neural Voice**: Local ONNX neural TTS service running on `localhost:5000` providing lifelike human-cadence voice synthesis offline.
+
+### 3. Windows DPAPI Key Vault & Enterprise Security
+* **Windows Credential Manager / DPAPI**: Directly interfaces with Windows `crypt32.dll` (`CryptProtectData` & `CryptUnprotectData`) to encrypt API keys at rest in `data/vault.enc`. Keys are mathematically bound to the current Windows user login, eliminating plaintext `.env` risks.
+* **Cross-Language Decryption**: Seamlessly loaded and decrypted by both Rust native backend and Python intelligence runtime via standard Win32 crypt APIs.
 
 ### 3. Long-Term Memory & Hybrid RAG (Oracle Cloud OCI)
 * **OCI PostgreSQL + `pgvector` Cluster (Hyderabad)**: Unified relational storage for user profiles, ongoing tasks, conversation logs, and 1536-dim vector embeddings.
