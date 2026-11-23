@@ -28,3 +28,13 @@ models/
 *.onnx
 *.bin
 *.mp3
+
+# Python virtual environments & bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+data/cache/
+data/uploads/
+*.jsonl
