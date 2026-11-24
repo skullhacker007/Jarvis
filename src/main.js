@@ -80,6 +80,7 @@ const techSecFill = document.getElementById("tech-sec-fill");
 const nnParams = document.getElementById("nn-params");
 const nnQuant = document.getElementById("nn-quant");
 const nnCtx = document.getElementById("nn-ctx");
+const nnSpeed = document.getElementById("nn-speed");
 const nnLatency = document.getElementById("nn-latency");
 const neuralEngineState = document.getElementById("neural-engine-state");
 
@@ -1146,7 +1147,8 @@ const NaviHolisticGestureTracker = (() => {
   let containerEl = null;
   let animId = null;
   let isTracking = true;
-  let isHolisticEffect = true; // By default show Holistic effect (ON = Holistic effect, OFF = Normal webcam)
+  let isHolisticEffect = false; // Default OFF: standby screen on startup, 0% CPU/GPU overhead
+  let currentMode = "combined"; // "holistic" | "gestures" | "combined"
   let activeGestureKey = "victory";
   let currentZoom = 1;
   let zoomPills = [];
@@ -1171,6 +1173,8 @@ const NaviHolisticGestureTracker = (() => {
   };
   let rvfcId = null;
   let isDetecting = false;
+  const MIN_DETECT_INTERVAL_MS = 33; // ~30 FPS detection: responsive and zero hand lag
+  let lastDetectCallTime = 0;
   let cachedRectW = 0;
   let cachedRectH = 0;
   let layoutDirty = true;
@@ -1179,33 +1183,34 @@ const NaviHolisticGestureTracker = (() => {
 
   function smoothLandmarkSet(rawList, smoothedList) {
     if (!rawList || rawList.length === 0) return null;
-    const out = [];
+    const out = smoothedList && Array.isArray(smoothedList) && smoothedList.length === rawList.length ? smoothedList : [];
     for (let i = 0; i < rawList.length; i++) {
       const rawGroup = rawList[i];
-      const prevGroup = smoothedList && smoothedList[i];
+      let prevGroup = out[i];
       if (!prevGroup || prevGroup.length !== rawGroup.length) {
-        out.push(rawGroup.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0 })));
+        prevGroup = new Array(rawGroup.length);
+        for (let k = 0; k < rawGroup.length; k++) {
+          prevGroup[k] = { x: rawGroup[k].x, y: rawGroup[k].y, z: rawGroup[k].z ?? 0 };
+        }
+        out[i] = prevGroup;
       } else {
-        const smoothedGroup = [];
         for (let j = 0; j < rawGroup.length; j++) {
           const rp = rawGroup[j];
           const sp = prevGroup[j];
           const dx = rp.x - sp.x;
           const dy = rp.y - sp.y;
           const distSq = dx * dx + dy * dy;
-          // Adaptive responsive smoothing:
-          // Instant response on fast head/body motion (alpha 0.88 -> zero delay)
-          // Silky stabilization when resting or moving slightly (alpha 0.45 -> zero jitter)
-          const alpha = distSq > 0.0009 ? 0.88 : distSq > 0.0001 ? 0.65 : 0.45;
-          smoothedGroup.push({
-            x: sp.x + (rp.x - sp.x) * alpha,
-            y: sp.y + (rp.y - sp.y) * alpha,
-            z: (sp.z ?? 0) + ((rp.z ?? 0) - (sp.z ?? 0)) * alpha
-          });
+          // Responsive smoothing:
+          // Instant tracking on fast hand/head motion (alpha 0.88 -> zero delay or sticking)
+          // Smooth stabilization when resting or moving slightly (alpha 0.55 -> zero jitter)
+          const alpha = distSq > 0.0004 ? 0.88 : 0.55;
+          sp.x += (rp.x - sp.x) * alpha;
+          sp.y += (rp.y - sp.y) * alpha;
+          sp.z = (sp.z ?? 0) + ((rp.z ?? 0) - (sp.z ?? 0)) * alpha;
         }
-        out.push(smoothedGroup);
       }
     }
+    if (out.length > rawList.length) out.length = rawList.length;
     return out;
   }
 
@@ -1224,26 +1229,42 @@ const NaviHolisticGestureTracker = (() => {
       return;
     }
 
-    if (holisticLandmarker && isTracking && !isDetecting && videoEl.readyState >= 2) {
-      isDetecting = true;
-      const timestampMs = (metadata && metadata.presentationTime) || performance.now();
-      const safeTime = timestampMs > lastTimestampMs ? timestampMs : lastTimestampMs + 1;
-      lastTimestampMs = safeTime;
-      const t0 = performance.now();
-      try {
-        lastResult = holisticLandmarker.detectForVideo(videoEl, safeTime);
-        latencyMs = performance.now() - t0;
-      } catch (e) {
-        console.warn("[NAVI Holistic] detectForVideo warning:", e);
-      } finally {
-        isDetecting = false;
-      }
-    }
-
     if (isWebcamActive && videoEl && typeof videoEl.requestVideoFrameCallback === "function") {
       rvfcId = videoEl.requestVideoFrameCallback(onVideoFrame);
     } else {
       rvfcId = null;
+    }
+
+    // When Holistic effect is OFF (normal webcam), skip heavy neural landmarker inference
+    if (!isHolisticEffect && !isTracking) {
+      return;
+    }
+
+    const tCurrent = performance.now();
+    // Safety recovery: prevent permanent lockup if detection hung for >300ms
+    if (isDetecting && (tCurrent - lastDetectCallTime > 300)) {
+      isDetecting = false;
+    }
+
+    if (holisticLandmarker && isTracking && !isDetecting && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && !videoEl.paused) {
+      if (tCurrent - lastDetectCallTime >= MIN_DETECT_INTERVAL_MS) {
+        isDetecting = true;
+        lastDetectCallTime = tCurrent;
+        const timestampMs = Math.max(tCurrent, (lastTimestampMs || 0) + 1);
+        lastTimestampMs = timestampMs;
+        const t0 = performance.now();
+        try {
+          const res = holisticLandmarker.detectForVideo(videoEl, timestampMs);
+          if (res) {
+            lastResult = res;
+          }
+          latencyMs = performance.now() - t0;
+        } catch (e) {
+          console.warn("[NAVI Holistic] detectForVideo warning:", e);
+        } finally {
+          isDetecting = false;
+        }
+      }
     }
   }
 
@@ -1346,6 +1367,9 @@ const NaviHolisticGestureTracker = (() => {
       camToggleBtn.classList.remove("enabled", "starting");
       camToggleBtn.classList.add("error");
       if (camBtnLabel) camBtnLabel.textContent = "ERR";
+    } else if (state === "idle" || !isWebcamActive || !isHolisticEffect) {
+      camToggleBtn.classList.remove("starting", "error", "enabled");
+      if (camBtnLabel) camBtnLabel.textContent = "OFF";
     } else {
       camToggleBtn.classList.remove("starting", "error");
       camToggleBtn.classList.toggle("enabled", isHolisticEffect);
@@ -1355,21 +1379,19 @@ const NaviHolisticGestureTracker = (() => {
 
   function setHolisticEffect(state) {
     isHolisticEffect = Boolean(state);
-    setCamButtonState("active");
+    setCamButtonState(isHolisticEffect && isWebcamActive ? "active" : "idle");
     if (pulseBeaconEl) {
       pulseBeaconEl.style.opacity = isHolisticEffect ? "1" : "0.35";
-    }
-    if (!isWebcamActive) {
-      enableCam();
     }
   }
 
   function toggleHolisticEffect() {
-    if (!isWebcamActive) {
-      enableCam();
+    if (!isWebcamActive || !isHolisticEffect) {
       setHolisticEffect(true);
+      enableCam();
     } else {
-      setHolisticEffect(!isHolisticEffect);
+      setHolisticEffect(false);
+      stopCam();
     }
   }
 
@@ -1468,9 +1490,9 @@ const NaviHolisticGestureTracker = (() => {
   async function acquireCameraStream() {
     const idealConstraints = {
       video: {
-        width: { ideal: 640, max: 1280 },
-        height: { ideal: 480, max: 720 },
-        frameRate: { ideal: 30, max: 60 }
+        width: { ideal: 640, max: 640 },
+        height: { ideal: 480, max: 480 },
+        frameRate: { ideal: 30, max: 30 }
       }
     };
 
@@ -1722,130 +1744,136 @@ const NaviHolisticGestureTracker = (() => {
   // 4. Gesture Detection & HUD Overlay (1:1 lockstep coordinate space)
   // =============================================================
   function updateGestureFromLandmarks(result, w, h) {
-    const hands = [];
-    if (result.rightHandLandmarks && result.rightHandLandmarks[0]) {
-      hands.push({ lm: result.rightHandLandmarks[0], label: "RIGHT" });
-    }
-    if (result.leftHandLandmarks && result.leftHandLandmarks[0]) {
-      hands.push({ lm: result.leftHandLandmarks[0], label: "LEFT" });
-    }
-
-    if (hands.length === 0) return;
-
-    for (const hand of hands) {
-      const lm = hand.lm;
-      let minX = 1,
-        maxX = 0,
-        minY = 1,
-        maxY = 0;
-      for (const p of lm) {
-        if (p.x < minX) minX = p.x;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.y > maxY) maxY = p.y;
+    try {
+      const hands = [];
+      if (result.rightHandLandmarks && result.rightHandLandmarks[0]) {
+        hands.push({ lm: result.rightHandLandmarks[0], label: "RIGHT" });
+      }
+      if (result.leftHandLandmarks && result.leftHandLandmarks[0]) {
+        hands.push({ lm: result.leftHandLandmarks[0], label: "LEFT" });
       }
 
-      const boxX = minX * w - 12;
-      const boxY = minY * h - 12;
-      const boxW = (maxX - minX) * w + 24;
-      const boxH = (maxY - minY) * h + 24;
+      if (hands.length === 0) return;
 
-      // Classify gesture from 21 landmarks
-      const wrist = lm[0];
-      const thumbTip = lm[4];
-      const indexTip = lm[8];
-      const indexPip = lm[6];
-      const middleTip = lm[12];
-      const middlePip = lm[10];
-      const ringTip = lm[16];
-      const ringPip = lm[14];
-      const pinkyTip = lm[20];
-      const pinkyPip = lm[18];
-
-      const indexExt =
-        Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y) >
-        Math.hypot(indexPip.x - wrist.x, indexPip.y - wrist.y) * 1.15;
-      const middleExt =
-        Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y) >
-        Math.hypot(middlePip.x - wrist.x, middlePip.y - wrist.y) * 1.15;
-      const ringExt =
-        Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y) >
-        Math.hypot(ringPip.x - wrist.x, ringPip.y - wrist.y) * 1.15;
-      const pinkyExt =
-        Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y) >
-        Math.hypot(pinkyPip.x - wrist.x, pinkyPip.y - wrist.y) * 1.15;
-      const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
-
-      let detected = "victory";
-      let confidence = 0.985;
-
-      if (pinchDist < 0.05) {
-        detected = "pinch";
-        confidence = 0.965;
-      } else if (indexExt && middleExt && !ringExt && !pinkyExt) {
-        detected = "victory";
-        confidence = 0.992;
-      } else if (indexExt && !middleExt && !ringExt && !pinkyExt) {
-        detected = "pointing";
-        confidence = 0.978;
-      } else if (!indexExt && !middleExt && !ringExt && !pinkyExt) {
-        detected = "fist";
-        confidence = 0.99;
-      } else if (indexExt && middleExt && ringExt && pinkyExt) {
-        detected = "open_palm";
-        confidence = 0.985;
-      } else if (indexExt && pinkyExt && !ringExt) {
-        detected = "arc_strike";
-        confidence = 0.982;
-      }
-
-      setGesture(detected);
-
-      // Draw Unmirrored Tracking Bracket & Clean Text when gestures or combined mode active
-      if (currentMode === "gestures" || currentMode === "combined") {
-        ctx.save();
-        ctx.strokeStyle = "#00d2ff";
-        ctx.lineWidth = Math.max(1.5, Math.round(w * 0.002));
-
-        const bLen = Math.min(24, boxW * 0.28);
-        // Top-Left
-        ctx.beginPath();
-        ctx.moveTo(boxX, boxY + bLen);
-        ctx.lineTo(boxX, boxY);
-        ctx.lineTo(boxX + bLen, boxY);
-        // Top-Right
-        ctx.moveTo(boxX + boxW - bLen, boxY);
-        ctx.lineTo(boxX + boxW, boxY);
-        ctx.lineTo(boxX + boxW, boxY + bLen);
-        // Bottom-Left
-        ctx.moveTo(boxX, boxY + boxH - bLen);
-        ctx.lineTo(boxX, boxY + boxH);
-        ctx.lineTo(boxX + bLen, boxY + boxH);
-        // Bottom-Right
-        ctx.moveTo(boxX + boxW - bLen, boxY + boxH);
-        ctx.lineTo(boxX + boxW, boxY + boxH);
-        ctx.lineTo(boxX + boxW, boxY + boxH - bLen);
-        ctx.stroke();
-
-        const fontSize = Math.max(12, Math.round(w * 0.018));
-        ctx.font = `bold ${fontSize}px 'JetBrains Mono', monospace`;
-        ctx.fillStyle = "#00f0ff";
-        ctx.shadowColor = "#00f0ff";
-        ctx.shadowBlur = 6;
-        const gObj = GESTURES[detected] || { name: detected.toUpperCase(), icon: "⚡" };
-        const labelText = `${gObj.icon} ${gObj.name} ${(confidence * 100).toFixed(0)}%`;
-
-        if (isMirrored) {
-          ctx.save();
-          ctx.translate(boxX + boxW / 2, boxY);
-          ctx.scale(-1, 1);
-          ctx.fillText(labelText, -boxW / 2 + 4, -6);
-          ctx.restore();
-        } else {
-          ctx.fillText(labelText, boxX + 4, boxY - 6);
+      for (const hand of hands) {
+        const lm = hand.lm;
+        let minX = 1,
+          maxX = 0,
+          minY = 1,
+          maxY = 0;
+        for (const p of lm) {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.y > maxY) maxY = p.y;
         }
-        ctx.restore();
+
+        const boxX = minX * w - 12;
+        const boxY = minY * h - 12;
+        const boxW = (maxX - minX) * w + 24;
+        const boxH = (maxY - minY) * h + 24;
+
+        // Classify gesture from 21 landmarks
+        const wrist = lm[0];
+        const thumbTip = lm[4];
+        const indexTip = lm[8];
+        const indexPip = lm[6];
+        const middleTip = lm[12];
+        const middlePip = lm[10];
+        const ringTip = lm[16];
+        const ringPip = lm[14];
+        const pinkyTip = lm[20];
+        const pinkyPip = lm[18];
+
+        const indexExt =
+          Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y) >
+          Math.hypot(indexPip.x - wrist.x, indexPip.y - wrist.y) * 1.15;
+        const middleExt =
+          Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y) >
+          Math.hypot(middlePip.x - wrist.x, middlePip.y - wrist.y) * 1.15;
+        const ringExt =
+          Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y) >
+          Math.hypot(ringPip.x - wrist.x, ringPip.y - wrist.y) * 1.15;
+        const pinkyExt =
+          Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y) >
+          Math.hypot(pinkyPip.x - wrist.x, pinkyPip.y - wrist.y) * 1.15;
+        const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+
+        let detected = "victory";
+        let confidence = 0.985;
+
+        if (pinchDist < 0.05) {
+          detected = "pinch";
+          confidence = 0.965;
+        } else if (indexExt && middleExt && !ringExt && !pinkyExt) {
+          detected = "victory";
+          confidence = 0.992;
+        } else if (indexExt && !middleExt && !ringExt && !pinkyExt) {
+          detected = "pointing";
+          confidence = 0.978;
+        } else if (!indexExt && !middleExt && !ringExt && !pinkyExt) {
+          detected = "fist";
+          confidence = 0.99;
+        } else if (indexExt && middleExt && ringExt && pinkyExt) {
+          detected = "open_palm";
+          confidence = 0.985;
+        } else if (indexExt && pinkyExt && !ringExt) {
+          detected = "arc_strike";
+          confidence = 0.982;
+        }
+
+        setGesture(detected);
+
+        // Draw Unmirrored Tracking Bracket & Clean Text when gestures or combined mode active
+        if (typeof currentMode !== "undefined" && (currentMode === "gestures" || currentMode === "combined")) {
+          ctx.save();
+          ctx.strokeStyle = "#00d2ff";
+          ctx.lineWidth = Math.max(1.5, Math.round(w * 0.002));
+
+          const bLen = Math.min(24, boxW * 0.28);
+          // Top-Left
+          ctx.beginPath();
+          ctx.moveTo(boxX, boxY + bLen);
+          ctx.lineTo(boxX, boxY);
+          ctx.lineTo(boxX + bLen, boxY);
+          // Top-Right
+          ctx.moveTo(boxX + boxW - bLen, boxY);
+          ctx.lineTo(boxX + boxW, boxY);
+          ctx.lineTo(boxX + boxW, boxY + bLen);
+          // Bottom-Left
+          ctx.moveTo(boxX, boxY + boxH - bLen);
+          ctx.lineTo(boxX, boxY + boxH);
+          ctx.lineTo(boxX + bLen, boxY + boxH);
+          // Bottom-Right
+          ctx.moveTo(boxX + boxW - bLen, boxY + boxH);
+          ctx.lineTo(boxX + boxW, boxY + boxH);
+          ctx.lineTo(boxX + boxW, boxY + boxH - bLen);
+          ctx.stroke();
+
+          const fontSize = Math.max(12, Math.round(w * 0.018));
+          ctx.font = `bold ${fontSize}px 'JetBrains Mono', monospace`;
+          ctx.fillStyle = "#00f0ff";
+          ctx.shadowColor = "#00f0ff";
+          ctx.shadowBlur = 4;
+          const gObj = GESTURES[detected] || { name: detected.toUpperCase(), icon: "⚡" };
+          const labelText = `${gObj.icon} ${gObj.name} ${(confidence * 100).toFixed(0)}%`;
+
+          if (isMirrored) {
+            ctx.save();
+            ctx.translate(boxX + boxW / 2, boxY);
+            ctx.scale(-1, 1);
+            ctx.fillText(labelText, -boxW / 2 + 4, -6);
+            ctx.restore();
+          } else {
+            ctx.fillText(labelText, boxX + 4, boxY - 6);
+          }
+          ctx.restore();
+        }
       }
+    } catch (errG) {
+      console.warn("[NAVI Holistic] Gesture calculation error:", errG);
+    } finally {
+      if (ctx) ctx.shadowBlur = 0;
     }
   }
 
@@ -1914,10 +1942,7 @@ const NaviHolisticGestureTracker = (() => {
   // 6. Main Render Loop
   // =============================================================
   function renderLoop() {
-    if (!isTracking) {
-      animId = requestAnimationFrame(renderLoop);
-      return;
-    }
+    animId = requestAnimationFrame(renderLoop);
 
     const now = performance.now();
     frameCount++;
@@ -1930,61 +1955,70 @@ const NaviHolisticGestureTracker = (() => {
       }
     }
 
-    resizeCanvas();
-    const w = canvasEl.width;
-    const h = canvasEl.height;
+    try {
+      resizeCanvas();
+      const w = canvasEl.width;
+      const h = canvasEl.height;
 
-    if (isWebcamActive && videoEl && videoEl.readyState >= 2) {
-      // Fallback detection ticker if requestVideoFrameCallback is unsupported
-      if (typeof videoEl.requestVideoFrameCallback !== "function") {
-        if (videoEl.currentTime !== lastVideoTime && !isDetecting) {
-          lastVideoTime = videoEl.currentTime;
+      if (isWebcamActive && videoEl && videoEl.readyState >= 2) {
+        // Fallback detection ticker if requestVideoFrameCallback is unsupported
+        if (typeof videoEl.requestVideoFrameCallback !== "function") {
+          if (isHolisticEffect && videoEl.currentTime !== lastVideoTime && !isDetecting && videoEl.videoWidth > 0 && !videoEl.paused) {
+            const tNow = performance.now();
+            if (tNow - lastDetectCallTime >= MIN_DETECT_INTERVAL_MS) {
+              lastVideoTime = videoEl.currentTime;
+              lastDetectCallTime = tNow;
 
-          if (holisticLandmarker && isTracking) {
-            isDetecting = true;
-            const t0 = performance.now();
-            const timestampMs = now > lastTimestampMs ? now : lastTimestampMs + 1;
-            lastTimestampMs = timestampMs;
+              if (holisticLandmarker && isTracking) {
+                isDetecting = true;
+                const t0 = performance.now();
+                const timestampMs = Math.max(tNow, (lastTimestampMs || 0) + 1);
+                lastTimestampMs = timestampMs;
 
-            try {
-              lastResult = holisticLandmarker.detectForVideo(videoEl, timestampMs);
-              latencyMs = performance.now() - t0;
-            } catch (e) {
-              console.warn("[NAVI Holistic] detectForVideo warning:", e);
-            } finally {
-              isDetecting = false;
+                try {
+                  const res = holisticLandmarker.detectForVideo(videoEl, timestampMs);
+                  if (res) lastResult = res;
+                  latencyMs = performance.now() - t0;
+                } catch (e) {
+                  console.warn("[NAVI Holistic] detectForVideo warning:", e);
+                } finally {
+                  isDetecting = false;
+                }
+              }
             }
           }
         }
-      }
 
-      if (isHolisticEffect) {
-        // ON: HOLISTIC EFFECT (Face Mesh + Dual Hands on pure black canvas)
-        ctx.clearRect(0, 0, w, h);
+        if (isHolisticEffect) {
+          // ON: HOLISTIC EFFECT (Face Mesh + Dual Hands on pure black canvas)
+          ctx.clearRect(0, 0, w, h);
 
-        if (lastResult) {
-          const displayResult = getSmoothedResult(lastResult) || lastResult;
-          drawHolisticResults(ctx, displayResult, w, h);
-          updateGestureFromLandmarks(displayResult, w, h);
+          if (lastResult) {
+            const displayResult = getSmoothedResult(lastResult) || lastResult;
+            drawHolisticResults(ctx, displayResult, w, h);
+            updateGestureFromLandmarks(displayResult, w, h);
+          } else {
+            // Video playing, waiting for initial detection
+            ctx.save();
+            ctx.fillStyle = "rgba(56, 189, 248, 0.6)";
+            ctx.font = "11px 'JetBrains Mono', monospace";
+            ctx.textAlign = "center";
+            ctx.fillText("INITIALIZING NEURAL LANDMARKER...", w * 0.5, 30);
+            ctx.restore();
+          }
         } else {
-          // Video playing, waiting for initial detection
-          ctx.save();
-          ctx.fillStyle = "rgba(56, 189, 248, 0.6)";
-          ctx.font = "11px 'JetBrains Mono', monospace";
-          ctx.textAlign = "center";
-          ctx.fillText("INITIALIZING NEURAL LANDMARKER...", w * 0.5, 30);
-          ctx.restore();
+          // OFF: NORMAL WEBCAM (Live full physical camera video feed in natural color)
+          ctx.drawImage(videoEl, 0, 0, w, h);
         }
       } else {
-        // OFF: NORMAL WEBCAM (Live full physical camera video feed in natural color)
-        ctx.drawImage(videoEl, 0, 0, w, h);
+        ctx.clearRect(0, 0, w, h);
+        drawStandbyScreen(ctx, w, h, now);
       }
-    } else {
-      ctx.clearRect(0, 0, w, h);
-      drawStandbyScreen(ctx, w, h, now);
+    } catch (errLoop) {
+      console.warn("[NAVI Holistic] renderLoop error:", errLoop);
+    } finally {
+      if (ctx) ctx.shadowBlur = 0;
     }
-
-    animId = requestAnimationFrame(renderLoop);
   }
 
   function setZoom(zoomLevel) {
@@ -2114,9 +2148,9 @@ const NaviHolisticGestureTracker = (() => {
     // Initialize MediaPipe Tasks in background
     initMediaPipe();
 
-    // By default show Holistic effect and start webcam stream
-    setHolisticEffect(true);
-    enableCam();
+    // Start with Holistic in STANDBY / OFF by default (no automatic webcam or model overhead)
+    setHolisticEffect(false);
+    setCamButtonState("idle");
 
     // Start render loop
     if (!animId) {
@@ -3416,6 +3450,11 @@ async function refreshSystemTelemetry() {
       
       const ctxDisplay = mm.context_length > 0 ? (mm.context_length >= 1024 ? `${Math.round(mm.context_length / 1024)}K` : `${mm.context_length}`) : "--";
       if (nnCtx) nnCtx.textContent = ctxDisplay;
+
+      if (nnSpeed) {
+        const spd = mm.eval_tokens_per_sec > 0 ? `${Math.round(mm.eval_tokens_per_sec)} tok/s` : (lastSpeedRecorded > 0 ? `${Math.round(lastSpeedRecorded)} tok/s` : "--");
+        nnSpeed.textContent = spd;
+      }
       
       if (nnLatency) {
         nnLatency.textContent = mm.last_latency_ms > 0 ? `${mm.last_latency_ms}ms` : "--";
@@ -3526,6 +3565,8 @@ async function refreshSystemTelemetry() {
             if (nnParams) nnParams.textContent = m.id.includes("70b") ? "70B" : m.id.includes("flash") ? "Flash" : m.id.includes("27b") ? "27B" : m.id.includes("3b") ? "3B" : "Dynamic";
             if (nnQuant) nnQuant.textContent = m.provider.includes("LOCAL") ? "Q4_K_M" : m.provider.includes("GEMINI") ? "Cloud" : "FP16";
             if (nnCtx) nnCtx.textContent = m.context_window;
+            if (nnSpeed) nnSpeed.textContent = m.speed_tok_s > 0 ? `${Math.round(m.speed_tok_s)} tok/s` : "--";
+            if (nnLatency) nnLatency.textContent = m.latency_ms > 0 ? `${m.latency_ms}ms` : "--";
             refreshSystemTelemetry();
           } catch (err) {
             console.warn("Model switch error:", err);
@@ -4508,7 +4549,6 @@ function setSystemState(state) {
     if (state === "listening") islandStatus.textContent = "LISTENING...";
     else if (state === "thinking") islandStatus.textContent = "PROCESSING...";
     else if (state === "speaking") islandStatus.textContent = "TRANSMITTING...";
-    else islandStatus.textContent = "STANDBY // MK-VII";
   }
 
   // Center Hologram Stage State Synchronization
@@ -5580,6 +5620,7 @@ async function processDirective(prompt, shouldOpenInput = false) {
       if (refTokenBadge) refTokenBadge.textContent = `${total} TOKENS`;
       if (kvCacheSlots) kvCacheSlots.textContent = `${total} tokens`;
       if (decodingSpeed) decodingSpeed.textContent = `${spd} tok/s`;
+      if (nnSpeed) nnSpeed.textContent = res.tokens_per_sec > 0 ? `${Math.round(res.tokens_per_sec)} tok/s` : `${spd} tok/s`;
       if (nnLatency) nnLatency.textContent = `${res.latency_ms}ms`;
       if (modelNameLabel && res.model_name) modelNameLabel.textContent = formatCleanModelName(res.model_name);
     }

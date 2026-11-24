@@ -257,12 +257,10 @@
             <div class="neural-header-title">
               <span class="neural-beacon"></span>
               <span class="gadget-title">NEURAL NETWORK</span>
-              <span class="neural-status-badge" id="neural-engine-state">ONLINE</span>
             </div>
-            <span class="gadget-val purple" id="model-name-label">AI ENGINE</span>
           </div>
 
-          <!-- Important AI Telemetry & Architecture Grid (100% Real local Ollama) -->
+          <!-- Important AI Telemetry & Architecture Grid -->
           <div class="neural-telemetry-row">
             <div class="neural-metric-cell">
               <span class="neural-metric-tag">PARAMS</span>
@@ -275,6 +273,10 @@
             <div class="neural-metric-cell">
               <span class="neural-metric-tag">CTX WINDOW</span>
               <span class="neural-metric-val emerald" id="nn-ctx">--</span>
+            </div>
+            <div class="neural-metric-cell">
+              <span class="neural-metric-tag">SPEED</span>
+              <span class="neural-metric-val blue" id="nn-speed">--</span>
             </div>
             <div class="neural-metric-cell">
               <span class="neural-metric-tag">LATENCY</span>
@@ -336,16 +338,7 @@
             </div>
           </div>
 
-          <!-- Zone 10 Tool Execution & MCP Dispatch Bar -->
-          <div class="ref-zone-strip">
-            <div class="zone-left">
-              <span class="zone-badge">ZONE 10</span>
-              <span class="zone-label">TOOL EXECUTION &amp; MCP DISPATCH</span>
-            </div>
-            <div class="zone-right">
-              <span class="zone-status">Bypassed in Direct Stream ▲</span>
-            </div>
-          </div>
+
         </div>
 
         <!-- 3. AVAILABLE AI MODELS & AUTO-FAILOVER ROSTER (BOTTOM RIGHT) -->
@@ -478,7 +471,6 @@
             <line x1="8" y1="8" x2="8" y2="16" stroke="currentColor" stroke-width="1" opacity="0.6" />
             <circle cx="8" cy="8" r="1.5" fill="currentColor" opacity="0.8" />
           </svg>
-          <span class="reticle-tag">NAVI // HUD-01</span>
         </div>
 
         <!-- Top Right Reticle Bracket -->
@@ -489,7 +481,6 @@
             <line x1="52" y1="8" x2="52" y2="16" stroke="currentColor" stroke-width="1" opacity="0.6" />
             <circle cx="52" cy="8" r="1.5" fill="currentColor" opacity="0.8" />
           </svg>
-          <span class="reticle-tag">SYS // VISOR-LOK</span>
         </div>
 
         <!-- Bottom Left Reticle Bracket -->
@@ -500,7 +491,6 @@
             <line x1="8" y1="52" x2="8" y2="44" stroke="currentColor" stroke-width="1" opacity="0.6" />
             <circle cx="8" cy="52" r="1.5" fill="currentColor" opacity="0.8" />
           </svg>
-          <span class="reticle-tag">TGT // NAV-04</span>
         </div>
 
         <!-- Bottom Right Reticle Bracket -->
@@ -511,7 +501,6 @@
             <line x1="52" y1="52" x2="52" y2="44" stroke="currentColor" stroke-width="1" opacity="0.6" />
             <circle cx="52" cy="52" r="1.5" fill="currentColor" opacity="0.8" />
           </svg>
-          <span class="reticle-tag">ARMOR // MK-VII</span>
         </div>
       </div>
 

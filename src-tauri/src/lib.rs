@@ -7037,6 +7037,20 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
             mm.name = top_active.display_name.clone();
             mm.eval_tokens_per_sec = top_active.speed_tok_s;
             mm.context_length = if top_active.context_window == "1M" { 1048576 } else { 131072 };
+            let t_id = top_active.id.to_lowercase();
+            if t_id.contains("70b") || t_id.contains("nvidia") {
+                mm.parameter_size = "70B".to_string();
+                mm.quantization = "FP8/16".to_string();
+            } else if t_id.contains("27b") || t_id.contains("qwen") {
+                mm.parameter_size = "27B".to_string();
+                mm.quantization = "FP16 LPU".to_string();
+            } else if t_id.contains("gemini") {
+                mm.parameter_size = "Flash".to_string();
+                mm.quantization = "Cloud".to_string();
+            } else if t_id.contains("3b") {
+                mm.parameter_size = "3B".to_string();
+                mm.quantization = "Q4_K_M".to_string();
+            }
             mm.is_loaded = true;
         }
         mm.clone()
