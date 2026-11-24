@@ -1159,6 +1159,91 @@ const NaviHolisticGestureTracker = (() => {
   let webcamStream = null;
   let cameraInUseError = false;
 
+  // Adaptive Temporal Smoothing State (Zero-Jitter & Zero-Lag)
+  let smoothedResult = {
+    faceLandmarks: null,
+    poseLandmarks: null,
+    leftHandLandmarks: null,
+    rightHandLandmarks: null
+  };
+  let rvfcId = null;
+  let isDetecting = false;
+  let cachedRectW = 0;
+  let cachedRectH = 0;
+  let layoutDirty = true;
+  let cachedPoseConnections = null;
+  window.addEventListener("resize", () => { layoutDirty = true; });
+
+  function smoothLandmarkSet(rawList, smoothedList) {
+    if (!rawList || rawList.length === 0) return null;
+    const out = [];
+    for (let i = 0; i < rawList.length; i++) {
+      const rawGroup = rawList[i];
+      const prevGroup = smoothedList && smoothedList[i];
+      if (!prevGroup || prevGroup.length !== rawGroup.length) {
+        out.push(rawGroup.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0 })));
+      } else {
+        const smoothedGroup = [];
+        for (let j = 0; j < rawGroup.length; j++) {
+          const rp = rawGroup[j];
+          const sp = prevGroup[j];
+          const dx = rp.x - sp.x;
+          const dy = rp.y - sp.y;
+          const distSq = dx * dx + dy * dy;
+          // Adaptive responsive smoothing:
+          // Instant response on fast head/body motion (alpha 0.88 -> zero delay)
+          // Silky stabilization when resting or moving slightly (alpha 0.45 -> zero jitter)
+          const alpha = distSq > 0.0009 ? 0.88 : distSq > 0.0001 ? 0.65 : 0.45;
+          smoothedGroup.push({
+            x: sp.x + (rp.x - sp.x) * alpha,
+            y: sp.y + (rp.y - sp.y) * alpha,
+            z: (sp.z ?? 0) + ((rp.z ?? 0) - (sp.z ?? 0)) * alpha
+          });
+        }
+        out.push(smoothedGroup);
+      }
+    }
+    return out;
+  }
+
+  function getSmoothedResult(rawResult) {
+    if (!rawResult) return null;
+    smoothedResult.faceLandmarks = smoothLandmarkSet(rawResult.faceLandmarks, smoothedResult.faceLandmarks);
+    smoothedResult.poseLandmarks = smoothLandmarkSet(rawResult.poseLandmarks, smoothedResult.poseLandmarks);
+    smoothedResult.leftHandLandmarks = smoothLandmarkSet(rawResult.leftHandLandmarks, smoothedResult.leftHandLandmarks);
+    smoothedResult.rightHandLandmarks = smoothLandmarkSet(rawResult.rightHandLandmarks, smoothedResult.rightHandLandmarks);
+    return smoothedResult;
+  }
+
+  function onVideoFrame(now, metadata) {
+    if (!isWebcamActive || !videoEl) {
+      rvfcId = null;
+      return;
+    }
+
+    if (holisticLandmarker && isTracking && !isDetecting && videoEl.readyState >= 2) {
+      isDetecting = true;
+      const timestampMs = (metadata && metadata.presentationTime) || performance.now();
+      const safeTime = timestampMs > lastTimestampMs ? timestampMs : lastTimestampMs + 1;
+      lastTimestampMs = safeTime;
+      const t0 = performance.now();
+      try {
+        lastResult = holisticLandmarker.detectForVideo(videoEl, safeTime);
+        latencyMs = performance.now() - t0;
+      } catch (e) {
+        console.warn("[NAVI Holistic] detectForVideo warning:", e);
+      } finally {
+        isDetecting = false;
+      }
+    }
+
+    if (isWebcamActive && videoEl && typeof videoEl.requestVideoFrameCallback === "function") {
+      rvfcId = videoEl.requestVideoFrameCallback(onVideoFrame);
+    } else {
+      rvfcId = null;
+    }
+  }
+
   // Google MediaPipe Tasks Vision State
   let visionLoaded = false;
   let holisticLandmarker = null;
@@ -1359,14 +1444,22 @@ const NaviHolisticGestureTracker = (() => {
   }
 
   // =============================================================
-  // 2. Physical Webcam Acquisition (Multi-Strategy with Fallbacks)
+  // 2. Physical Webcam Acquisition (Optimized Ultra-Low Latency)
   // =============================================================
   async function acquireCameraStream() {
-    // Strategy 1: Standard video request
+    const idealConstraints = {
+      video: {
+        width: { ideal: 640, max: 1280 },
+        height: { ideal: 480, max: 720 },
+        frameRate: { ideal: 30, max: 60 }
+      }
+    };
+
+    // Strategy 1: Low-latency 640x480 resolution (dramatically cuts GPU load and inference lag)
     try {
-      return await navigator.mediaDevices.getUserMedia({ video: true });
+      return await navigator.mediaDevices.getUserMedia(idealConstraints);
     } catch (e1) {
-      console.warn("[NAVI Holistic] Default getUserMedia failed, enumerating devices...", e1);
+      console.warn("[NAVI Holistic] Ideal getUserMedia failed, enumerating devices...", e1);
     }
 
     // Strategy 2: Specific videoinput device enumeration
@@ -1376,7 +1469,11 @@ const NaviHolisticGestureTracker = (() => {
       for (const dev of videoDevices) {
         try {
           return await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: { exact: dev.deviceId } }
+            video: {
+              deviceId: { exact: dev.deviceId },
+              width: { ideal: 640, max: 1280 },
+              height: { ideal: 480, max: 720 }
+            }
           });
         } catch (eDev) {
           console.warn(`[NAVI Holistic] Device \${dev.label || dev.deviceId} failed:`, eDev);
@@ -1386,12 +1483,9 @@ const NaviHolisticGestureTracker = (() => {
       console.warn("[NAVI Holistic] Device enumeration failed:", e2);
     }
 
-    // Strategy 3: Explicit standard resolution
+    // Strategy 3: Standard unconstrained fallback
     return await navigator.mediaDevices.getUserMedia({
-      video: {
-        width: { ideal: 640 },
-        height: { ideal: 480 }
-      }
+      video: true
     });
   }
 
@@ -1405,6 +1499,7 @@ const NaviHolisticGestureTracker = (() => {
       webcamStream = stream;
       isWebcamActive = true;
       cameraInUseError = false;
+      layoutDirty = true;
 
       if (containerEl) {
         containerEl.classList.add("webcam-active");
@@ -1414,8 +1509,12 @@ const NaviHolisticGestureTracker = (() => {
         videoEl.srcObject = stream;
         videoEl.style.display = "block";
         const onLoaded = () => {
+          layoutDirty = true;
           resizeCanvas();
           videoEl.play().catch(console.error);
+          if (typeof videoEl.requestVideoFrameCallback === "function" && !rvfcId) {
+            rvfcId = videoEl.requestVideoFrameCallback(onVideoFrame);
+          }
         };
         if (videoEl.readyState >= 2) {
           onLoaded();
@@ -1423,6 +1522,9 @@ const NaviHolisticGestureTracker = (() => {
           videoEl.addEventListener("loadeddata", onLoaded, { once: true });
         }
         videoEl.play().catch(console.error);
+        if (typeof videoEl.requestVideoFrameCallback === "function" && !rvfcId) {
+          rvfcId = videoEl.requestVideoFrameCallback(onVideoFrame);
+        }
       }
 
       setCamButtonState("active");
@@ -1441,6 +1543,19 @@ const NaviHolisticGestureTracker = (() => {
   }
 
   function stopCam() {
+    if (rvfcId && videoEl && typeof videoEl.cancelVideoFrameCallback === "function") {
+      videoEl.cancelVideoFrameCallback(rvfcId);
+      rvfcId = null;
+    }
+    smoothedResult = {
+      faceLandmarks: null,
+      poseLandmarks: null,
+      leftHandLandmarks: null,
+      rightHandLandmarks: null
+    };
+    isDetecting = false;
+    layoutDirty = true;
+
     if (webcamStream) {
       webcamStream.getTracks().forEach((track) => track.stop());
       webcamStream = null;
@@ -1459,8 +1574,8 @@ const NaviHolisticGestureTracker = (() => {
     }
 
     if (canvasEl) {
-      canvasEl.style.width = "";
-      canvasEl.style.height = "";
+      canvasEl.style.width = "100%";
+      canvasEl.style.height = "100%";
     }
 
     setCamButtonState("idle");
@@ -1485,32 +1600,35 @@ const NaviHolisticGestureTracker = (() => {
       if (canvasEl.width !== vw || canvasEl.height !== vh) {
         canvasEl.width = vw;
         canvasEl.height = vh;
+        layoutDirty = true;
       }
       if (videoEl.width !== vw || videoEl.height !== vh) {
         videoEl.width = vw;
         videoEl.height = vh;
+        layoutDirty = true;
       }
-      // Ensure canvas element's displayed size matches video element's displayed size exactly
-      const vRect = videoEl.getBoundingClientRect();
-      if (vRect.width > 0 && vRect.height > 0) {
-        const wPx = `${Math.round(vRect.width)}px`;
-        const hPx = `${Math.round(vRect.height)}px`;
-        if (canvasEl.style.width !== wPx) canvasEl.style.width = wPx;
-        if (canvasEl.style.height !== hPx) canvasEl.style.height = hPx;
+      // Ensure canvas occupies total space inside viewport with zero letterboxing
+      if (layoutDirty) {
+        canvasEl.style.width = "100%";
+        canvasEl.style.height = "100%";
+        layoutDirty = false;
       }
     } else {
-      canvasEl.style.width = "";
-      canvasEl.style.height = "";
-      const rect = containerEl
-        ? containerEl.getBoundingClientRect()
-        : canvasEl.parentElement
-        ? canvasEl.parentElement.getBoundingClientRect()
-        : null;
-      const w = rect && rect.width > 50 ? Math.floor(rect.width) : canvasEl.clientWidth || 380;
-      const h = rect && rect.height > 50 ? Math.floor(rect.height) : canvasEl.clientHeight || 420;
-      if (canvasEl.width !== w || canvasEl.height !== h) {
-        canvasEl.width = w;
-        canvasEl.height = h;
+      canvasEl.style.width = "100%";
+      canvasEl.style.height = "100%";
+      if (layoutDirty) {
+        const rect = containerEl
+          ? containerEl.getBoundingClientRect()
+          : canvasEl.parentElement
+          ? canvasEl.parentElement.getBoundingClientRect()
+          : null;
+        const w = rect && rect.width > 50 ? Math.floor(rect.width) : canvasEl.clientWidth || 380;
+        const h = rect && rect.height > 50 ? Math.floor(rect.height) : canvasEl.clientHeight || 320;
+        if (canvasEl.width !== w || canvasEl.height !== h) {
+          canvasEl.width = w;
+          canvasEl.height = h;
+        }
+        layoutDirty = false;
       }
     }
   }
@@ -1552,13 +1670,24 @@ const NaviHolisticGestureTracker = (() => {
       }
     }
 
-    // Pose Landmarks (33 points - white skeleton with red dots)
+    // Pose Landmarks (white skeleton with red dots, excluding eye and nose tracking markers)
     if (result.poseLandmarks && result.poseLandmarks.length > 0) {
+      const EYE_NOSE_INDICES = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8]);
       for (const landmarks of result.poseLandmarks) {
         totalPoints += landmarks.length;
         if (PL) {
-          drawingUtils.drawConnectors(landmarks, PL.POSE_CONNECTIONS, { color: "#FFFFFF", lineWidth: 2 });
-          drawingUtils.drawLandmarks(landmarks, { color: "#FF0000", radius: 3 });
+          if (!cachedPoseConnections && PL.POSE_CONNECTIONS) {
+            cachedPoseConnections = PL.POSE_CONNECTIONS.filter((conn) => {
+              const s = conn.start !== undefined ? conn.start : conn[0];
+              const e = conn.end !== undefined ? conn.end : conn[1];
+              return !EYE_NOSE_INDICES.has(s) && !EYE_NOSE_INDICES.has(e);
+            });
+          }
+          const activeConnections = cachedPoseConnections || PL.POSE_CONNECTIONS;
+          drawingUtils.drawConnectors(landmarks, activeConnections, { color: "#FFFFFF", lineWidth: 2 });
+
+          const filteredLandmarks = landmarks.filter((_, idx) => !EYE_NOSE_INDICES.has(idx));
+          drawingUtils.drawLandmarks(filteredLandmarks, { color: "#FF0000", radius: 3 });
         }
       }
     }
@@ -1807,19 +1936,25 @@ const NaviHolisticGestureTracker = (() => {
     const h = canvasEl.height;
 
     if (isWebcamActive && videoEl && videoEl.readyState >= 2) {
-      if (videoEl.currentTime !== lastVideoTime) {
-        lastVideoTime = videoEl.currentTime;
+      // Fallback detection ticker if requestVideoFrameCallback is unsupported
+      if (typeof videoEl.requestVideoFrameCallback !== "function") {
+        if (videoEl.currentTime !== lastVideoTime && !isDetecting) {
+          lastVideoTime = videoEl.currentTime;
 
-        if (holisticLandmarker) {
-          const t0 = performance.now();
-          const timestampMs = now > lastTimestampMs ? now : lastTimestampMs + 1;
-          lastTimestampMs = timestampMs;
+          if (holisticLandmarker && isTracking) {
+            isDetecting = true;
+            const t0 = performance.now();
+            const timestampMs = now > lastTimestampMs ? now : lastTimestampMs + 1;
+            lastTimestampMs = timestampMs;
 
-          try {
-            lastResult = holisticLandmarker.detectForVideo(videoEl, timestampMs);
-            latencyMs = performance.now() - t0;
-          } catch (e) {
-            console.warn("[NAVI Holistic] detectForVideo warning:", e);
+            try {
+              lastResult = holisticLandmarker.detectForVideo(videoEl, timestampMs);
+              latencyMs = performance.now() - t0;
+            } catch (e) {
+              console.warn("[NAVI Holistic] detectForVideo warning:", e);
+            } finally {
+              isDetecting = false;
+            }
           }
         }
       }
@@ -1827,10 +1962,11 @@ const NaviHolisticGestureTracker = (() => {
       ctx.clearRect(0, 0, w, h);
 
       if (lastResult) {
+        const displayResult = getSmoothedResult(lastResult) || lastResult;
         if (currentMode === "holistic" || currentMode === "combined") {
-          drawHolisticResults(ctx, lastResult, w, h);
+          drawHolisticResults(ctx, displayResult, w, h);
         }
-        updateGestureFromLandmarks(lastResult, w, h);
+        updateGestureFromLandmarks(displayResult, w, h);
       } else {
         // Video playing, waiting for initial detection
         ctx.save();
