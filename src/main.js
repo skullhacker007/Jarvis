@@ -1146,8 +1146,11 @@ const NaviHolisticGestureTracker = (() => {
   let containerEl = null;
   let animId = null;
   let isTracking = true;
-  let currentMode = "combined"; // "holistic" | "gestures" | "combined"
+  let isHolisticEffect = true; // By default show Holistic effect (ON = Holistic effect, OFF = Normal webcam)
   let activeGestureKey = "victory";
+  let currentZoom = 1;
+  let zoomPills = [];
+  let resetZoomBtn = null;
 
   // Physical Webcam Stream State
   let camToggleBtn = null;
@@ -1335,22 +1338,38 @@ const NaviHolisticGestureTracker = (() => {
 
   function setCamButtonState(state) {
     if (!camToggleBtn) return;
-    if (state === "active") {
-      camToggleBtn.classList.add("enabled");
-      camToggleBtn.classList.remove("error", "starting");
-      if (camBtnLabel) camBtnLabel.textContent = "ON";
-    } else if (state === "starting") {
+    if (state === "starting") {
       camToggleBtn.classList.remove("enabled", "error");
       camToggleBtn.classList.add("starting");
       if (camBtnLabel) camBtnLabel.textContent = "...";
-    } else {
+    } else if (state === "error") {
       camToggleBtn.classList.remove("enabled", "starting");
-      if (state === "error") {
-        camToggleBtn.classList.add("error");
-      } else {
-        camToggleBtn.classList.remove("error");
-      }
-      if (camBtnLabel) camBtnLabel.textContent = "OFF";
+      camToggleBtn.classList.add("error");
+      if (camBtnLabel) camBtnLabel.textContent = "ERR";
+    } else {
+      camToggleBtn.classList.remove("starting", "error");
+      camToggleBtn.classList.toggle("enabled", isHolisticEffect);
+      if (camBtnLabel) camBtnLabel.textContent = isHolisticEffect ? "ON" : "OFF";
+    }
+  }
+
+  function setHolisticEffect(state) {
+    isHolisticEffect = Boolean(state);
+    setCamButtonState("active");
+    if (pulseBeaconEl) {
+      pulseBeaconEl.style.opacity = isHolisticEffect ? "1" : "0.35";
+    }
+    if (!isWebcamActive) {
+      enableCam();
+    }
+  }
+
+  function toggleHolisticEffect() {
+    if (!isWebcamActive) {
+      enableCam();
+      setHolisticEffect(true);
+    } else {
+      setHolisticEffect(!isHolisticEffect);
     }
   }
 
@@ -1623,7 +1642,7 @@ const NaviHolisticGestureTracker = (() => {
           ? canvasEl.parentElement.getBoundingClientRect()
           : null;
         const w = rect && rect.width > 50 ? Math.floor(rect.width) : canvasEl.clientWidth || 380;
-        const h = rect && rect.height > 50 ? Math.floor(rect.height) : canvasEl.clientHeight || 320;
+        const h = rect && rect.height > 30 ? Math.floor(rect.height) : canvasEl.clientHeight || 190;
         if (canvasEl.width !== w || canvasEl.height !== h) {
           canvasEl.width = w;
           canvasEl.height = h;
@@ -1670,27 +1689,7 @@ const NaviHolisticGestureTracker = (() => {
       }
     }
 
-    // Pose Landmarks (white skeleton with red dots, excluding eye and nose tracking markers)
-    if (result.poseLandmarks && result.poseLandmarks.length > 0) {
-      const EYE_NOSE_INDICES = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8]);
-      for (const landmarks of result.poseLandmarks) {
-        totalPoints += landmarks.length;
-        if (PL) {
-          if (!cachedPoseConnections && PL.POSE_CONNECTIONS) {
-            cachedPoseConnections = PL.POSE_CONNECTIONS.filter((conn) => {
-              const s = conn.start !== undefined ? conn.start : conn[0];
-              const e = conn.end !== undefined ? conn.end : conn[1];
-              return !EYE_NOSE_INDICES.has(s) && !EYE_NOSE_INDICES.has(e);
-            });
-          }
-          const activeConnections = cachedPoseConnections || PL.POSE_CONNECTIONS;
-          drawingUtils.drawConnectors(landmarks, activeConnections, { color: "#FFFFFF", lineWidth: 2 });
-
-          const filteredLandmarks = landmarks.filter((_, idx) => !EYE_NOSE_INDICES.has(idx));
-          drawingUtils.drawLandmarks(filteredLandmarks, { color: "#FF0000", radius: 3 });
-        }
-      }
-    }
+    // Face and Hands only: Pose/Body landmarks intentionally omitted per tactical UI spec
 
     // Left Hand Landmarks (21 points - red bones with green dots)
     if (result.leftHandLandmarks && result.leftHandLandmarks.length > 0) {
@@ -1959,22 +1958,26 @@ const NaviHolisticGestureTracker = (() => {
         }
       }
 
-      ctx.clearRect(0, 0, w, h);
+      if (isHolisticEffect) {
+        // ON: HOLISTIC EFFECT (Face Mesh + Dual Hands on pure black canvas)
+        ctx.clearRect(0, 0, w, h);
 
-      if (lastResult) {
-        const displayResult = getSmoothedResult(lastResult) || lastResult;
-        if (currentMode === "holistic" || currentMode === "combined") {
+        if (lastResult) {
+          const displayResult = getSmoothedResult(lastResult) || lastResult;
           drawHolisticResults(ctx, displayResult, w, h);
+          updateGestureFromLandmarks(displayResult, w, h);
+        } else {
+          // Video playing, waiting for initial detection
+          ctx.save();
+          ctx.fillStyle = "rgba(56, 189, 248, 0.6)";
+          ctx.font = "11px 'JetBrains Mono', monospace";
+          ctx.textAlign = "center";
+          ctx.fillText("INITIALIZING NEURAL LANDMARKER...", w * 0.5, 30);
+          ctx.restore();
         }
-        updateGestureFromLandmarks(displayResult, w, h);
       } else {
-        // Video playing, waiting for initial detection
-        ctx.save();
-        ctx.fillStyle = "rgba(56, 189, 248, 0.6)";
-        ctx.font = "11px 'JetBrains Mono', monospace";
-        ctx.textAlign = "center";
-        ctx.fillText("INITIALIZING NEURAL LANDMARKER...", w * 0.5, 30);
-        ctx.restore();
+        // OFF: NORMAL WEBCAM (Live full physical camera video feed in natural color)
+        ctx.drawImage(videoEl, 0, 0, w, h);
       }
     } else {
       ctx.clearRect(0, 0, w, h);
@@ -1984,10 +1987,15 @@ const NaviHolisticGestureTracker = (() => {
     animId = requestAnimationFrame(renderLoop);
   }
 
-  function setMode(mode) {
-    currentMode = mode;
-    modePills.forEach((pill) => {
-      pill.classList.toggle("active", pill.getAttribute("data-mode") === mode);
+  function setZoom(zoomLevel) {
+    currentZoom = Number(zoomLevel) || 1;
+    if (viewportEl) {
+      viewportEl.style.transform = currentZoom === 2 ? "scale(2)" : "scale(1)";
+      viewportEl.style.transformOrigin = "center center";
+    }
+    zoomPills.forEach((pill) => {
+      const z = Number(pill.getAttribute("data-zoom"));
+      pill.classList.toggle("active", z === currentZoom);
     });
   }
 
@@ -2036,7 +2044,8 @@ const NaviHolisticGestureTracker = (() => {
     fpsValEl = document.getElementById("holistic-fps-val");
     pulseBeaconEl = document.getElementById("holistic-pulse-beacon");
 
-    modePills = Array.from(document.querySelectorAll(".holistic-mode-pill"));
+    zoomPills = Array.from(document.querySelectorAll(".webcam-zoom-pill"));
+    resetZoomBtn = document.getElementById("webcam-zoom-reset");
     triggerItems = Array.from(document.querySelectorAll(".gesture-trigger-item"));
 
     if (canvasEl) {
@@ -2044,10 +2053,11 @@ const NaviHolisticGestureTracker = (() => {
       resizeCanvas();
     }
 
-    // Connect Webcam Button Click
+    // Connect Holistic Effect ON / OFF Button Click
+    // ON = Holistic Effect, OFF = Normal Webcam
     if (camToggleBtn) {
       camToggleBtn.addEventListener("click", () => {
-        toggleWebcam();
+        toggleHolisticEffect();
       });
     }
 
@@ -2058,7 +2068,7 @@ const NaviHolisticGestureTracker = (() => {
       });
     }
 
-    // Clicking canvas when off also prompts or activates webcam
+    // Clicking canvas when off also starts webcam
     if (canvasEl) {
       canvasEl.addEventListener("click", () => {
         if (!isWebcamActive) {
@@ -2074,13 +2084,20 @@ const NaviHolisticGestureTracker = (() => {
       });
     }
 
-    // Connect Mode Selectors
-    modePills.forEach((pill) => {
+    // Connect Zoom Selectors (1X, 2X)
+    zoomPills.forEach((pill) => {
       pill.addEventListener("click", () => {
-        const mode = pill.getAttribute("data-mode");
-        if (mode) setMode(mode);
+        const zoom = pill.getAttribute("data-zoom");
+        if (zoom) setZoom(Number(zoom));
       });
     });
+
+    // Connect Zoom Reset Button
+    if (resetZoomBtn) {
+      resetZoomBtn.addEventListener("click", () => {
+        setZoom(1);
+      });
+    }
 
     // Connect Gesture Strip Triggers
     triggerItems.forEach((item) => {
@@ -2096,6 +2113,10 @@ const NaviHolisticGestureTracker = (() => {
 
     // Initialize MediaPipe Tasks in background
     initMediaPipe();
+
+    // By default show Holistic effect and start webcam stream
+    setHolisticEffect(true);
+    enableCam();
 
     // Start render loop
     if (!animId) {
@@ -2116,7 +2137,11 @@ const NaviHolisticGestureTracker = (() => {
     stopWebcam: stopCam,
     toggleWebcam,
     isWebcamRunning: () => isWebcamActive,
-    setMode,
+    setHolisticEffect,
+    toggleHolisticEffect,
+    isHolisticActive: () => isHolisticEffect,
+    setZoom,
+    getZoom: () => currentZoom,
     setGesture,
     isGesturesRunning: () => isTracking,
     getActiveGesture: () => activeGestureKey
@@ -3449,8 +3474,14 @@ async function refreshSystemTelemetry() {
       modelsList.innerHTML = "";
       const activeMod = telem.available_models.find(m => m.is_active);
       if (modelRosterPill && activeMod) {
-        modelRosterPill.textContent = activeMod.provider.includes("GROQ") ? "GROQ LPU ACTIVE" : "LOCAL OLLAMA ACTIVE";
-        modelRosterPill.className = activeMod.provider.includes("GROQ") ? "gadget-sub-pill pulse-emerald" : "gadget-sub-pill pulse-purple";
+        modelRosterPill.textContent = `${activeMod.provider} ACTIVE`;
+        if (activeMod.provider.includes("GEMINI")) {
+          modelRosterPill.className = "gadget-sub-pill pulse-blue";
+        } else if (activeMod.provider.includes("NVIDIA") || activeMod.provider.includes("GROQ")) {
+          modelRosterPill.className = "gadget-sub-pill pulse-emerald";
+        } else {
+          modelRosterPill.className = "gadget-sub-pill pulse-purple";
+        }
       }
 
       telem.available_models.forEach(m => {
@@ -3460,6 +3491,8 @@ async function refreshSystemTelemetry() {
         let badgeClass = "badge-groq";
         if (m.is_active) {
           badgeClass = "badge-active";
+        } else if (m.provider.includes("GEMINI")) {
+          badgeClass = "badge-gemini";
         } else if (m.provider.includes("LOCAL")) {
           badgeClass = "badge-local";
         }
@@ -3488,10 +3521,10 @@ async function refreshSystemTelemetry() {
         card.addEventListener("click", async () => {
           try {
             await invoke("switch_ai_model", { modelId: m.id });
-            currentActiveModelName = m.provider.includes("LOCAL") ? "OLLAMA LOCAL" : `GROQ ${m.display_name}`;
+            currentActiveModelName = m.display_name;
             if (modelNameLabel) modelNameLabel.textContent = m.display_name;
-            if (nnParams) nnParams.textContent = m.id.includes("120b") ? "120B" : m.id.includes("20b") ? "20B" : m.id.includes("7b") ? "7B" : m.id.includes("qwen3.5") ? "1.9B" : "27B";
-            if (nnQuant) nnQuant.textContent = m.provider.includes("LOCAL") ? "Q8_0" : "FP16 LPU";
+            if (nnParams) nnParams.textContent = m.id.includes("70b") ? "70B" : m.id.includes("flash") ? "Flash" : m.id.includes("27b") ? "27B" : m.id.includes("3b") ? "3B" : "Dynamic";
+            if (nnQuant) nnQuant.textContent = m.provider.includes("LOCAL") ? "Q4_K_M" : m.provider.includes("GEMINI") ? "Cloud" : "FP16";
             if (nnCtx) nnCtx.textContent = m.context_window;
             refreshSystemTelemetry();
           } catch (err) {

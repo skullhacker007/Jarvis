@@ -50,3 +50,7 @@ src-tauri/data/
 
 # Lockfile deduplication (npm is primary)
 pnpm-lock.yaml
+
+# Executables & Binaries
+*.exe
+Jarvis.exe

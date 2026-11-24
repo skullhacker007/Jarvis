@@ -18,7 +18,10 @@ except ImportError:
                         line = line.strip()
                         if line and not line.startswith("#") and "=" in line:
                             k, v = line.split("=", 1)
-                            os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+                            clean_k = k.strip()
+                            clean_v = v.strip().strip("'\"")
+                            os.environ.setdefault(clean_k, clean_v)
+                            os.environ.setdefault(clean_k.upper(), clean_v)
             except Exception:
                 pass
 
@@ -55,8 +58,9 @@ _load_dpapi_vault()
 class Config:
     # LiveKit
     LIVEKIT_URL = os.getenv("LIVEKIT_URL", "")
-    LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "")
+    LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", os.getenv("LiveKit_API_KEY", ""))
     LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
+    LIVEKIT_TOKEN = os.getenv("LIVEKIT_TOKEN", os.getenv("LiveKit_API_KEY", ""))
 
     # Core LLM - NVIDIA NIM API (Primary)
     NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
@@ -65,7 +69,10 @@ class Config:
 
     # Secondary Cloud LLM Backup (Gemini Flash)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+
+    # Groq LPU
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
     # Deepgram & Cartesia
     DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")

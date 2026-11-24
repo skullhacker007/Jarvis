@@ -148,7 +148,7 @@
       -->
 
       <!-- ========================================================= -->
-      <!-- LEFT CENTER: HOLISTIC LANDMARKER & GESTURE RECOGNIZER     -->
+      <!-- LEFT CENTER: HOLISTIC BIOMETRIC SENSOR PANEL              -->
       <!-- ========================================================= -->
       <div class="gadget-panel gesture-recognize-panel holistic-gesture-panel" id="holistic-gesture-panel">
         <!-- Cyber Corner Reticles -->
@@ -157,16 +157,23 @@
         <div class="hud-corner-bracket bottom-left"></div>
         <div class="hud-corner-bracket bottom-right"></div>
 
-        <!-- Sleek Header: Just Title and ON/OFF -->
+        <!-- Sleek Header: Title, Zoom Controls, and Holistic ON/OFF -->
         <div class="gadget-top gesture-panel-top">
           <div class="gesture-title-group">
             <span class="gesture-blue-beacon" id="holistic-pulse-beacon"></span>
-            <span class="gadget-title gesture-blue-title">HOLISTIC LANDMARKER</span>
+            <span class="gadget-title gesture-blue-title">HOLISTIC</span>
           </div>
           <div class="holistic-controls-group">
-            <button type="button" class="holistic-cam-btn" id="holistic-cam-toggle-btn" title="Toggle Camera Sensor">
+            <!-- Zoom Controls: 1X, 2X, RESET -->
+            <div class="holistic-mode-selector webcam-zoom-selector" id="webcam-zoom-selector">
+              <button type="button" class="holistic-mode-pill webcam-zoom-pill active" data-zoom="1" title="1x Standard View">1X</button>
+              <button type="button" class="holistic-mode-pill webcam-zoom-pill" data-zoom="2" title="2x Zoom">2X</button>
+              <button type="button" class="holistic-mode-pill webcam-zoom-pill webcam-reset-pill" id="webcam-zoom-reset" title="Reset Zoom to 1X">RESET</button>
+            </div>
+            <!-- Toggle Button: ON = Holistic effect, OFF = Normal webcam -->
+            <button type="button" class="holistic-cam-btn enabled" id="holistic-cam-toggle-btn" title="ON = Holistic Effect, OFF = Normal Webcam">
               <span class="toggle-dot" id="holistic-cam-toggle-dot"></span>
-              <span id="holistic-cam-btn-label">OFF</span>
+              <span id="holistic-cam-btn-label">ON</span>
             </button>
           </div>
         </div>
@@ -183,24 +190,9 @@
       </div>
 
       <!-- ========================================================= -->
-      <!-- LEFT: PROCESSOR, MEMORY AND NETWORK HARDWARE CLUSTER       -->
+      <!-- LEFT: PROCESSOR, MEMORY, NETWORK AND GPU HARDWARE CLUSTER   -->
       <!-- ========================================================= -->
       <div class="left-system-deck">
-        <!-- 0. GRAPHICS / GPU LIVE GADGET (DYNAMIC HARDWARE & VRAM) -->
-        <div class="gadget-panel gpu-panel">
-          <div class="gadget-top">
-            <span class="gadget-title" id="gpu-title-label">GPU COMPUTE</span>
-            <span class="gadget-val emerald" id="gpu-percent-label">--%</span>
-          </div>
-          <div class="gadget-sub" id="gpu-sub-label">INITIALIZING GPU VRAM...</div>
-          <div class="gpu-meter-bar">
-            <div class="gpu-meter-fill" id="gpu-meter-fill" style="width: 0%;"></div>
-          </div>
-          <div class="canvas-box">
-            <canvas id="gpu-graph-canvas" class="telemetry-spark-canvas"></canvas>
-          </div>
-        </div>
-
         <!-- 1. PROCESSOR (CPU) LIVE GADGET -->
         <div class="gadget-panel">
           <div class="gadget-top">
@@ -235,6 +227,21 @@
           </div>
           <div class="canvas-box">
             <canvas id="net-graph-canvas" class="telemetry-spark-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- 4. GRAPHICS / GPU LIVE GADGET (ANCHORED AT BOTTOM) -->
+        <div class="gadget-panel gpu-panel">
+          <div class="gadget-top">
+            <span class="gadget-title" id="gpu-title-label">GPU COMPUTE</span>
+            <span class="gadget-val emerald" id="gpu-percent-label">--%</span>
+          </div>
+          <div class="gadget-sub" id="gpu-sub-label">INITIALIZING GPU VRAM...</div>
+          <div class="gpu-meter-bar">
+            <div class="gpu-meter-fill" id="gpu-meter-fill" style="width: 0%;"></div>
+          </div>
+          <div class="canvas-box">
+            <canvas id="gpu-graph-canvas" class="telemetry-spark-canvas"></canvas>
           </div>
         </div>
       </div>

@@ -541,7 +541,7 @@ fn parse_key_from_env_str(content: &str, key_name: &str) -> Option<String> {
             continue;
         }
         if let Some((k, v)) = trimmed.split_once('=') {
-            if k.trim() == key_name {
+            if k.trim().eq_ignore_ascii_case(key_name) {
                 let res = v.trim().trim_matches('\'').trim_matches('"').to_string();
                 if !res.is_empty() {
                     return Some(res);
@@ -559,12 +559,14 @@ fn get_env_or_file_key(key_name: &str) -> Option<String> {
             return Some(t.to_string());
         }
     }
-    // Also check Windows DPAPI vault
+    // Also check Windows DPAPI vault (case-insensitive)
     let vault = load_vault_map();
-    if let Some(val) = vault.get(key_name) {
-        let t = val.trim().trim_matches('\'').trim_matches('"');
-        if !t.is_empty() {
-            return Some(t.to_string());
+    for (k, val) in &vault {
+        if k.eq_ignore_ascii_case(key_name) {
+            let t = val.trim().trim_matches('\'').trim_matches('"');
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
         }
     }
     for file_name in [".env.local", ".env"] {
@@ -605,7 +607,7 @@ fn get_gemini_api_key() -> String {
 }
 
 fn get_gemini_model() -> String {
-    get_env_or_file_key("GEMINI_MODEL").unwrap_or_else(|| "gemini-2.5-flash".to_string())
+    get_env_or_file_key("GEMINI_MODEL").unwrap_or_else(|| "gemini-3.5-flash-lite".to_string())
 }
 
 fn get_groq_api_key() -> String {
@@ -5256,15 +5258,19 @@ async fn handle_screen_vision(
     let mut model_used = "qwen/qwen3.8-27b (Vision)".to_string();
     let mut visual_success = false;
 
-    // 1. Primary: Google Gemini Flash Multimodal Vision
+    // 1. Primary: Google Gemini Flash Multimodal Vision (Dynamic Model Redundancy)
     let gemini_key = get_gemini_api_key();
     if !gemini_key.is_empty() {
         if let Some(ref bmp_bytes) = ram_bmp {
             let b64 = base64::prelude::BASE64_STANDARD.encode(bmp_bytes);
-            let gemini_url = format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
-                gemini_key
-            );
+            let configured_model = get_gemini_model();
+            let mut vision_candidates = vec![configured_model.as_str()];
+            for fb in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.8-flash"] {
+                if !vision_candidates.contains(&fb) {
+                    vision_candidates.push(fb);
+                }
+            }
+
             let prompt_text = format!(
                 "Active Foreground Window: '{}'{}. User instruction: '{}'. Provide a sharp, tactical 1-2 sentence spoken summary as NAVI's assistant JARVIS. Do not use markdown.",
                 fg_window, ui_summary, prompt
@@ -5282,23 +5288,33 @@ async fn handle_screen_vision(
                 }
             });
 
-            if let Ok(res) = client
-                .post(&gemini_url)
-                .header("Content-Type", "application/json")
-                .timeout(Duration::from_millis(5000))
-                .json(&gemini_payload)
-                .send()
-                .await
-            {
-                if let Ok(json_val) = res.json::<serde_json::Value>().await {
-                    if let Some(content) = json_val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
-                        let cleaned = content.trim().replace('"', "").replace('*', "");
-                        if !cleaned.is_empty() {
-                            reply = cleaned;
-                            model_used = "gemini-2.5-flash (Multimodal Vision)".to_string();
-                            prompt_tokens = json_val["usageMetadata"]["promptTokenCount"].as_u64().unwrap_or(280) as u32;
-                            eval_tokens = json_val["usageMetadata"]["candidatesTokenCount"].as_u64().unwrap_or(30) as u32;
-                            visual_success = true;
+            for candidate_model in vision_candidates {
+                let gemini_url = format!(
+                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                    candidate_model, gemini_key
+                );
+
+                if let Ok(res) = client
+                    .post(&gemini_url)
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration::from_millis(5000))
+                    .json(&gemini_payload)
+                    .send()
+                    .await
+                {
+                    if res.status().is_success() {
+                        if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                            if let Some(content) = json_val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
+                                let cleaned = content.trim().replace('"', "").replace('*', "");
+                                if !cleaned.is_empty() {
+                                    reply = cleaned;
+                                    model_used = format!("{} (Multimodal Vision)", candidate_model);
+                                    prompt_tokens = json_val["usageMetadata"]["promptTokenCount"].as_u64().unwrap_or(280) as u32;
+                                    eval_tokens = json_val["usageMetadata"]["candidatesTokenCount"].as_u64().unwrap_or(30) as u32;
+                                    visual_success = true;
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -5855,34 +5871,33 @@ Rules:
     let gemini_model = get_gemini_model();
     let configured_ollama_model = get_ollama_model_name();
 
-    // Priority candidates: ordered with the active model first
-    let ai_provider = get_ai_provider();
-
-    let active_mod = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| {
-        if ai_provider == "ollama" {
-            configured_ollama_model.clone()
-        } else if !nvidia_key.is_empty() {
-            nvidia_model.clone()
-        } else if !gemini_key.is_empty() {
-            gemini_model.clone()
-        } else {
-            "qwen/qwen3.8-27b".to_string()
-        }
-    });
+    // Dynamic candidates ordered strictly as per speed
+    let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
+    let gemini_speed = stats_map.get(&gemini_model).map(|s| s.speed_tok_s).unwrap_or(0.0);
+    let nvidia_speed = stats_map.get(&nvidia_model).map(|s| s.speed_tok_s).unwrap_or(0.0);
+    let groq_speed = stats_map.get("qwen/qwen3.8-27b").map(|s| s.speed_tok_s).unwrap_or(0.0);
+    let ollama_speed = stats_map.get(&configured_ollama_model).map(|s| s.speed_tok_s).unwrap_or(0.0);
 
     let mut candidates = vec![
-        (nvidia_model.as_str(), "NVIDIA NIM", "70B", "FP8/16", 131072u32),
-        (gemini_model.as_str(), "GOOGLE GEMINI", "Flash", "Cloud", 1048576u32),
-        ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32),
-        (configured_ollama_model.as_str(), "LOCAL OLLAMA", "3B", "Q4_K_M", 131072u32),
-        ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32),
+        (gemini_model.as_str(), "GOOGLE GEMINI", "Flash", "Cloud", 1048576u32, if !gemini_key.is_empty() { gemini_speed.max(240.0) } else { 0.0 }),
+        (nvidia_model.as_str(), "NVIDIA NIM", "70B", "FP8/16", 131072u32, if !nvidia_key.is_empty() { nvidia_speed.max(185.0) } else { 0.0 }),
+        ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32, if !groq_key.is_empty() { groq_speed.max(267.0) } else { 0.0 }),
+        (configured_ollama_model.as_str(), "LOCAL OLLAMA", "3B", "Q4_K_M", 131072u32, ollama_speed.max(13.5)),
+        ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32, 12.0),
     ];
+    // Sort strictly by speed descending: highest speed first
+    candidates.sort_by(|a, b| b.5.partial_cmp(&a.5).unwrap_or(std::cmp::Ordering::Equal));
+
+    let active_mod = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| {
+        candidates.first().map(|c| c.0.to_string()).unwrap_or_else(|| get_gemini_model())
+    });
+
     if let Some(pos) = candidates.iter().position(|c| c.0 == active_mod) {
         let chosen = candidates.remove(pos);
         candidates.insert(0, chosen);
     }
 
-    for (model_id, provider, param_size, quant, ctx_len) in candidates {
+    for (model_id, provider, param_size, quant, ctx_len, _) in candidates {
         // -------------------------------------------------------------
         // TIER 1: NVIDIA NIM (Llama 3.3 70B Primary)
         // -------------------------------------------------------------
@@ -6008,10 +6023,13 @@ Rules:
                 continue;
             }
 
-            let gemini_url = format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-                model_id, gemini_key
-            );
+            let mut gemini_candidates = vec![model_id];
+            for fb in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.8-flash"] {
+                if !gemini_candidates.contains(&fb) {
+                    gemini_candidates.push(fb);
+                }
+            }
+
             let gemini_payload = serde_json::json!({
                 "contents": [
                     { "parts": [{ "text": format!("{}\n\nUser instruction: {}", system_prompt, prompt_clean) }] }
@@ -6023,93 +6041,100 @@ Rules:
                 }
             });
 
-            let res = client
-                .post(&gemini_url)
-                .header("Content-Type", "application/json")
-                .timeout(Duration::from_millis(4500))
-                .json(&gemini_payload)
-                .send()
-                .await;
+            for chosen_gemini_model in gemini_candidates {
+                let gemini_url = format!(
+                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                    chosen_gemini_model, gemini_key
+                );
 
-            if let Ok(response) = res {
-                if response.status().is_success() {
-                    if let Ok(json_val) = response.json::<serde_json::Value>().await {
-                        if let Some(raw_text) = json_val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
-                            let latency_ms = start_time.elapsed().as_millis();
-                            let prompt_tokens = json_val["usageMetadata"]["promptTokenCount"].as_u64().unwrap_or(45) as u32;
-                            let eval_tokens = json_val["usageMetadata"]["candidatesTokenCount"].as_u64().unwrap_or(25) as u32;
-                            let total_tokens = prompt_tokens + eval_tokens;
-                            let tokens_per_sec = if latency_ms > 0 { (eval_tokens as f32) / (latency_ms as f32 / 1000.0) } else { 220.0 };
+                let res = client
+                    .post(&gemini_url)
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration::from_millis(4500))
+                    .json(&gemini_payload)
+                    .send()
+                    .await;
 
-                            if let Ok(mut mm) = state.model_metrics.lock() {
-                                mm.name = format!("{} (Gemini Flash)", model_id);
-                                mm.parameter_size = param_size.to_string();
-                                mm.quantization = quant.to_string();
-                                mm.context_length = ctx_len;
-                                mm.eval_tokens_per_sec = tokens_per_sec;
-                                mm.last_eval_count = eval_tokens;
-                                mm.last_prompt_eval_count = prompt_tokens;
-                                mm.last_latency_ms = latency_ms;
-                                mm.is_loaded = true;
-                            }
+                if let Ok(response) = res {
+                    if response.status().is_success() {
+                        if let Ok(json_val) = response.json::<serde_json::Value>().await {
+                            if let Some(raw_text) = json_val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
+                                let latency_ms = start_time.elapsed().as_millis();
+                                let prompt_tokens = json_val["usageMetadata"]["promptTokenCount"].as_u64().unwrap_or(45) as u32;
+                                let eval_tokens = json_val["usageMetadata"]["candidatesTokenCount"].as_u64().unwrap_or(25) as u32;
+                                let total_tokens = prompt_tokens + eval_tokens;
+                                let tokens_per_sec = if latency_ms > 0 { (eval_tokens as f32) / (latency_ms as f32 / 1000.0) } else { 220.0 };
 
-                            if let Ok(mut stats) = state.model_stats.lock() {
-                                let entry = stats.entry(model_id.to_string()).or_default();
-                                entry.tokens_used += total_tokens as u64;
-                                entry.speed_tok_s = tokens_per_sec;
-                                entry.latency_ms = latency_ms;
-                            }
+                                if let Ok(mut mm) = state.model_metrics.lock() {
+                                    mm.name = format!("{} (Gemini Flash)", chosen_gemini_model);
+                                    mm.parameter_size = param_size.to_string();
+                                    mm.quantization = quant.to_string();
+                                    mm.context_length = ctx_len;
+                                    mm.eval_tokens_per_sec = tokens_per_sec;
+                                    mm.last_eval_count = eval_tokens;
+                                    mm.last_prompt_eval_count = prompt_tokens;
+                                    mm.last_latency_ms = latency_ms;
+                                    mm.is_loaded = true;
+                                }
 
-                            if let Ok(mut act) = state.active_model_id.lock() {
-                                *act = model_id.to_string();
-                            }
+                                if let Ok(mut stats) = state.model_stats.lock() {
+                                    let entry = stats.entry(chosen_gemini_model.to_string()).or_default();
+                                    entry.tokens_used += total_tokens as u64;
+                                    entry.speed_tok_s = tokens_per_sec;
+                                    entry.latency_ms = latency_ms;
+                                }
 
-                            let (action, target, reply) = parse_model_output(raw_text.trim(), prompt_clean);
-                            let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
+                                if let Ok(mut act) = state.active_model_id.lock() {
+                                    *act = chosen_gemini_model.to_string();
+                                }
 
-                            if action != "none" && !target.is_empty() {
-                                let act_name = match action.as_str() {
-                                    "open" | "open_app" | "launch" | "start" => "open_app",
-                                    "close" | "close_app" | "kill" | "stop" => "close_app",
-                                    "system_ctrl" | "media" => target.as_str(),
-                                    "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
-                                    _ => action.as_str(),
-                                };
+                                let (action, target, reply) = parse_model_output(raw_text.trim(), prompt_clean);
+                                let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
 
-                                match execute_system_action(act_name, &target) {
-                                    Ok(msg) => {
-                                        action_label = Some(format!("⚡ {}", msg));
-                                        output_msg = Some(msg);
-                                    }
-                                    Err(err) => {
-                                        action_label = Some(format!("⚠️ {}", err));
-                                        output_msg = Some(err.clone());
-                                        reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
+                                if action != "none" && !target.is_empty() {
+                                    let act_name = match action.as_str() {
+                                        "open" | "open_app" | "launch" | "start" => "open_app",
+                                        "close" | "close_app" | "kill" | "stop" => "close_app",
+                                        "system_ctrl" | "media" => target.as_str(),
+                                        "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
+                                        _ => action.as_str(),
+                                    };
+
+                                    match execute_system_action(act_name, &target) {
+                                        Ok(msg) => {
+                                            action_label = Some(format!("⚡ {}", msg));
+                                            output_msg = Some(msg);
+                                        }
+                                        Err(err) => {
+                                            action_label = Some(format!("⚠️ {}", err));
+                                            output_msg = Some(err.clone());
+                                            reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
+                                        }
                                     }
                                 }
-                            }
 
-                            let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
-                            words.push("→".to_string());
-                            for w in reply_text.split_whitespace() {
-                                words.push(w.to_string());
-                                let _ = app.emit("jarvis://stream_token", format!("{} ", w));
-                            }
-                            let _ = app.emit("jarvis://stream_end", ());
+                                let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
+                                words.push("→".to_string());
+                                for w in reply_text.split_whitespace() {
+                                    words.push(w.to_string());
+                                    let _ = app.emit("jarvis://stream_token", format!("{} ", w));
+                                }
+                                let _ = app.emit("jarvis://stream_end", ());
 
-                            return Ok(JarvisResponse {
-                                reply: reply_text,
-                                action: action_label,
-                                command: if !target.is_empty() { Some(target) } else { None },
-                                output: output_msg,
-                                latency_ms,
-                                prompt_tokens,
-                                eval_tokens,
-                                total_tokens,
-                                tokens_per_sec,
-                                model_name: format!("{} (Gemini Flash Cloud Backup)", model_id),
-                                token_words: words,
-                            });
+                                return Ok(JarvisResponse {
+                                    reply: reply_text,
+                                    action: action_label,
+                                    command: if !target.is_empty() { Some(target) } else { None },
+                                    output: output_msg,
+                                    latency_ms,
+                                    prompt_tokens,
+                                    eval_tokens,
+                                    total_tokens,
+                                    tokens_per_sec,
+                                    model_name: format!("{} (Gemini Flash Cloud Backup)", chosen_gemini_model),
+                                    token_words: words,
+                                });
+                            }
                         }
                     }
                 }
@@ -6841,7 +6866,6 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
     };
 
     // Model Metrics & Dynamic Failover Roster
-    let active_id = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| "qwen/qwen3.8-27b".to_string());
 
     // GPU Telemetry (Remote Kaggle Dual Tesla T4 vs Local Windows GPU)
     let mut gpu_brand = String::new();
@@ -6925,59 +6949,96 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
     let qwen_stats = stats_map.get("qwen/qwen3.8-27b").cloned().unwrap_or_default();
     let local_stats = stats_map.get(&ollama_mod).cloned().unwrap_or_default();
 
-    let available_models = vec![
+    let mut available_models = vec![
+        AvailableModelInfo {
+            id: gemini_mod.clone(),
+            display_name: "GEMINI FLASH (FAST / MULTIMODAL)".to_string(),
+            provider: "GOOGLE GEMINI".to_string(),
+            status: if has_gemini { "ONLINE".to_string() } else { "STANDBY".to_string() },
+            priority: 0,
+            context_window: "1M".to_string(),
+            tokens_used: gemini_stats.tokens_used,
+            speed_tok_s: if gemini_stats.speed_tok_s > 0.0 { gemini_stats.speed_tok_s } else { if has_gemini { 240.0 } else { 0.0 } },
+            latency_ms: if gemini_stats.latency_ms > 0 { gemini_stats.latency_ms } else { if has_gemini { 200 } else { 0 } },
+            is_active: false,
+        },
         AvailableModelInfo {
             id: nvidia_mod.clone(),
             display_name: "NVIDIA LLAMA 3.3 70B (PRIMARY)".to_string(),
             provider: "NVIDIA NIM".to_string(),
-            status: if active_id == nvidia_mod { "ACTIVE".to_string() } else if has_nvidia { "ONLINE".to_string() } else { "STANDBY".to_string() },
-            priority: 1,
+            status: if has_nvidia { "ONLINE".to_string() } else { "STANDBY".to_string() },
+            priority: 0,
             context_window: "128K".to_string(),
             tokens_used: nvidia_stats.tokens_used,
-            speed_tok_s: if nvidia_stats.speed_tok_s > 0.0 { nvidia_stats.speed_tok_s } else { 185.0 },
-            latency_ms: if nvidia_stats.latency_ms > 0 { nvidia_stats.latency_ms } else { 240 },
-            is_active: active_id == nvidia_mod,
-        },
-        AvailableModelInfo {
-            id: gemini_mod.clone(),
-            display_name: "GEMINI FLASH (CLOUD BACKUP)".to_string(),
-            provider: "GOOGLE GEMINI".to_string(),
-            status: if active_id == gemini_mod { "ACTIVE".to_string() } else if has_gemini { "ONLINE".to_string() } else { "STANDBY".to_string() },
-            priority: 2,
-            context_window: "1M".to_string(),
-            tokens_used: gemini_stats.tokens_used,
-            speed_tok_s: if gemini_stats.speed_tok_s > 0.0 { gemini_stats.speed_tok_s } else { 220.0 },
-            latency_ms: if gemini_stats.latency_ms > 0 { gemini_stats.latency_ms } else { 210 },
-            is_active: active_id == gemini_mod,
+            speed_tok_s: if nvidia_stats.speed_tok_s > 0.0 { nvidia_stats.speed_tok_s } else { if has_nvidia { 185.0 } else { 0.0 } },
+            latency_ms: if nvidia_stats.latency_ms > 0 { nvidia_stats.latency_ms } else { if has_nvidia { 240 } else { 0 } },
+            is_active: false,
         },
         AvailableModelInfo {
             id: "qwen/qwen3.8-27b".to_string(),
             display_name: "QWEN 3.8 27B (GROQ LPU)".to_string(),
             provider: "GROQ LPU".to_string(),
-            status: if active_id == "qwen/qwen3.8-27b" { "ACTIVE".to_string() } else if has_groq { "ONLINE".to_string() } else { "STANDBY".to_string() },
-            priority: 3,
+            status: if has_groq { "ONLINE".to_string() } else { "STANDBY".to_string() },
+            priority: 0,
             context_window: "131K".to_string(),
             tokens_used: qwen_stats.tokens_used,
-            speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { 267.0 },
-            latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { 267 },
-            is_active: active_id == "qwen/qwen3.8-27b",
+            speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { if has_groq { 267.0 } else { 0.0 } },
+            latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { if has_groq { 267 } else { 0 } },
+            is_active: false,
         },
         AvailableModelInfo {
             id: ollama_mod.clone(),
             display_name: "OLLAMA 3B (OFFLINE FAILOVER)".to_string(),
             provider: "LOCAL OLLAMA".to_string(),
-            status: if active_id.contains(&ollama_mod) || active_id.contains("qwen3.5") { "ACTIVE (LOCAL)".to_string() } else { "FAILSAFE BACKUP".to_string() },
-            priority: 4,
+            status: "ONLINE (LOCAL)".to_string(),
+            priority: 0,
             context_window: "128K".to_string(),
             tokens_used: local_stats.tokens_used,
             speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 13.5 },
             latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 1200 },
-            is_active: active_id.contains(&ollama_mod) || active_id.contains("qwen3.5"),
+            is_active: false,
         },
     ];
 
+    // 1. Sort available models strictly by online status and speed (tok/s descending)
+    available_models.sort_by(|a, b| {
+        let a_online = a.status.contains("ONLINE") || a.status.contains("ACTIVE");
+        let b_online = b.status.contains("ONLINE") || b.status.contains("ACTIVE");
+        match (a_online, b_online) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => b.speed_tok_s.partial_cmp(&a.speed_tok_s).unwrap_or(std::cmp::Ordering::Equal),
+        }
+    });
+
+    // 2. Dynamically assign priority strictly as per speed rank
+    for (idx, m) in available_models.iter_mut().enumerate() {
+        m.priority = (idx + 1) as u32;
+    }
+
+    // 3. Dynamically set active model strictly as per fastest speed
+    let mut resolved_active_id = String::new();
+    if let Some(fastest) = available_models.iter_mut().find(|m| m.status.contains("ONLINE") || m.status.contains("ACTIVE")) {
+        fastest.status = "ACTIVE".to_string();
+        fastest.is_active = true;
+        resolved_active_id = fastest.id.clone();
+    }
+
+    if !resolved_active_id.is_empty() {
+        if let Ok(mut act) = state.active_model_id.lock() {
+            *act = resolved_active_id.clone();
+        }
+    }
+    let active_id = resolved_active_id;
+
     let model_metrics = {
-        let mm = state.model_metrics.lock().map_err(|e| e.to_string())?;
+        let mut mm = state.model_metrics.lock().map_err(|e| e.to_string())?;
+        if let Some(top_active) = available_models.iter().find(|m| m.is_active) {
+            mm.name = top_active.display_name.clone();
+            mm.eval_tokens_per_sec = top_active.speed_tok_s;
+            mm.context_length = if top_active.context_window == "1M" { 1048576 } else { 131072 };
+            mm.is_loaded = true;
+        }
         mm.clone()
     };
 
@@ -7226,10 +7287,19 @@ pub fn run() {
     sys.refresh_all();
     let networks = Networks::new_with_refreshed_list();
 
-    let initial_model = if get_ai_provider() == "ollama" {
-        get_ollama_model_name()
-    } else {
-        "qwen/qwen3.8-27b".to_string()
+    let initial_model = {
+        let provider = get_ai_provider();
+        if provider == "ollama" {
+            get_ollama_model_name()
+        } else if !get_gemini_api_key().is_empty() {
+            get_gemini_model()
+        } else if !get_nvidia_api_key().is_empty() {
+            get_nvidia_model()
+        } else if !get_groq_api_key().is_empty() {
+            "qwen/qwen3.8-27b".to_string()
+        } else {
+            get_ollama_model_name()
+        }
     };
 
     let state = AppState {
