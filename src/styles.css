@@ -3706,6 +3706,39 @@ body:not(.island-mode-active) .dynamic-island-pill {
   background: rgba(56, 189, 248, 0.2);
 }
 
+.webcam-obj-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(3, 7, 18, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 4px;
+  color: #64748b;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 2.5px 6.5px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.webcam-obj-pill:hover {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.6);
+  background: rgba(56, 189, 248, 0.15);
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.3);
+}
+
+.webcam-obj-pill.active {
+  color: #030712;
+  background: #00f0ff;
+  border-color: #00f0ff;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+}
+
 .holistic-mode-selector {
   display: inline-flex;
   align-items: center;

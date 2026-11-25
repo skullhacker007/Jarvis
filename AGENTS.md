@@ -117,9 +117,11 @@ flowchart LR
 * **Locations:** [`core/telemetry.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/telemetry.py), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
 * **Responsibility:** Continuously samples CPU kernel utilization, RAM allocation, GPU counters, and network bandwidth, while measuring millisecond TTFA (STT -> LLM TTFT -> TTS TTFA) with Page Visibility frame throttling.
 
-### Agent 8: Multimodal Vision Agent
-* **Locations:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)
-* **Responsibility:** Real-time in-memory screen capture with base64 encoding sent directly to Google Gemini Flash Vision (`gemini-2.5-flash`), with Groq Vision and Win32 UI accessibility tree analysis fallback.
+### Agent 8: Multimodal Vision & Optical Object Detection Agent
+* **Locations:** [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs), [`src/main.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/main.js), [`src/vendor/mediapipe/models/`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/vendor/mediapipe/models/)
+* **Responsibility:** 
+  * Real-time in-memory screen capture with base64 encoding sent directly to Google Gemini Flash Vision (`gemini-2.5-flash`), with Groq Vision and Win32 UI accessibility tree analysis fallback.
+  * **Real-Time Webcam Object & Fruit Detection Matrix:** 100% on-device neural object detection (`efficientdet_lite0.tflite` + `efficientnet_lite0.tflite`) running at 15-30 FPS via WebAssembly/WebGL GPU. Identifies pens, ballpoints, fountain pens, pencils, specific fruit varieties (apple, banana, orange, strawberry, pineapple, lemon, etc.), and everyday tools with cyberpunk neon target lock reticles, bounding brackets, and spoken voice confirmation.
 
 ### Agent 9: Autonomous Task Planner & Chained Execution Agent
 * **Locations:** [`core/task_planner.py`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/core/task_planner.py), [`src/modules/planner.js`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src/modules/planner.js), [`src-tauri/src/lib.rs`](file:///C:/Users/Chowdary/Desktop/Project/Jarvis/src-tauri/src/lib.rs)

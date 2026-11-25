@@ -1235,34 +1235,69 @@ const NaviHolisticGestureTracker = (() => {
       rvfcId = null;
     }
 
-    // When Holistic effect is OFF (normal webcam), skip heavy neural landmarker inference
-    if (!isHolisticEffect && !isTracking) {
-      return;
-    }
-
     const tCurrent = performance.now();
-    // Safety recovery: prevent permanent lockup if detection hung for >300ms
-    if (isDetecting && (tCurrent - lastDetectCallTime > 300)) {
-      isDetecting = false;
+
+    // 1. Holistic Landmarker (Face Mesh + Hand Skeleton - Active in Holistic Mode)
+    if (isHolisticEffect && isTracking) {
+      if (isDetecting && (tCurrent - lastDetectCallTime > 300)) {
+        isDetecting = false;
+      }
+
+      if (holisticLandmarker && !isDetecting && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && !videoEl.paused) {
+        if (tCurrent - lastDetectCallTime >= MIN_DETECT_INTERVAL_MS) {
+          isDetecting = true;
+          lastDetectCallTime = tCurrent;
+          const timestampMs = Math.max(tCurrent, (lastTimestampMs || 0) + 1);
+          lastTimestampMs = timestampMs;
+          const t0 = performance.now();
+          try {
+            const res = holisticLandmarker.detectForVideo(videoEl, timestampMs);
+            if (res) {
+              lastResult = res;
+            }
+            latencyMs = performance.now() - t0;
+          } catch (e) {
+            console.warn("[NAVI Holistic] detectForVideo warning:", e);
+          } finally {
+            isDetecting = false;
+          }
+        }
+      }
     }
 
-    if (holisticLandmarker && isTracking && !isDetecting && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && !videoEl.paused) {
-      if (tCurrent - lastDetectCallTime >= MIN_DETECT_INTERVAL_MS) {
-        isDetecting = true;
-        lastDetectCallTime = tCurrent;
-        const timestampMs = Math.max(tCurrent, (lastTimestampMs || 0) + 1);
-        lastTimestampMs = timestampMs;
-        const t0 = performance.now();
+    // 2. Real-Time Neural Object & Fruit Detection (Runs ONLY in Normal Camera View, NEVER when Holistic is ON)
+    if (!isHolisticEffect && isObjectDetectionActive && (objectDetector || imageClassifier) && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && !videoEl.paused) {
+      if (isDetectingObjects && (tCurrent - lastObjDetectCallTime > 350)) {
+        isDetectingObjects = false;
+      }
+      if (!isDetectingObjects && (tCurrent - lastObjDetectCallTime >= MIN_OBJ_DETECT_INTERVAL_MS)) {
+        isDetectingObjects = true;
+        lastObjDetectCallTime = tCurrent;
+        const tsObj = Math.max(tCurrent, (lastObjTimestampMs || 0) + 1);
+        lastObjTimestampMs = tsObj;
+
         try {
-          const res = holisticLandmarker.detectForVideo(videoEl, timestampMs);
-          if (res) {
-            lastResult = res;
+          let detections = [];
+          if (objectDetector) {
+            const dRes = objectDetector.detectForVideo(videoEl, tsObj);
+            if (dRes && dRes.detections) {
+              detections = dRes.detections;
+            }
           }
-          latencyMs = performance.now() - t0;
-        } catch (e) {
-          console.warn("[NAVI Holistic] detectForVideo warning:", e);
+
+          let classifications = [];
+          if (imageClassifier) {
+            const cRes = imageClassifier.classifyForVideo(videoEl, tsObj);
+            if (cRes && cRes.classifications && cRes.classifications[0]) {
+              classifications = cRes.classifications[0].categories || [];
+            }
+          }
+
+          updateUnifiedObjectDetections(detections, classifications, videoEl.videoWidth, videoEl.videoHeight);
+        } catch (eObj) {
+          // Silently handle video drop
         } finally {
-          isDetecting = false;
+          isDetectingObjects = false;
         }
       }
     }
@@ -1271,10 +1306,458 @@ const NaviHolisticGestureTracker = (() => {
   // Google MediaPipe Tasks Vision State
   let visionLoaded = false;
   let holisticLandmarker = null;
+  let objectDetector = null;
+  let imageClassifier = null;
+  let isObjectDetectionActive = true;
+  let objToggleBtn = null;
+  let isDetectingObjects = false;
+  let lastObjDetectCallTime = 0;
+  const MIN_OBJ_DETECT_INTERVAL_MS = 66; // ~15 FPS: ultra responsive, zero video lag
+  let lastObjTimestampMs = -1;
+  let activeDetections = [];
+  let lastAnnouncedObject = "";
+  let lastAnnouncedTime = 0;
+  let detectionHoldCounter = {};
   let isModelLoading = false;
   let lastVideoTime = -1;
   let lastTimestampMs = -1;
   let lastResult = null;
+
+  // Real-Time Object & Fruit Taxonomy Dictionary
+  const OBJECT_DICTIONARY = {
+    // Writing & Stationery (COCO has no pen, pens are classified as toothbrush/ballpoint)
+    pen: { name: "PEN", icon: "🖊️", color: "#00f0ff", type: "stationery" },
+    ballpoint: { name: "PEN", icon: "🖊️", color: "#00f0ff", type: "stationery" },
+    fountain: { name: "FOUNTAIN PEN", icon: "✒️", color: "#00f0ff", type: "stationery" },
+    "fountain pen": { name: "FOUNTAIN PEN", icon: "✒️", color: "#00f0ff", type: "stationery" },
+    toothbrush: { name: "PEN", icon: "🖊️", color: "#00f0ff", type: "stationery" }, // 100% remap: COCO misclassifies pens as toothbrush
+    pencil: { name: "PENCIL", icon: "✏️", color: "#38bdf8", type: "stationery" },
+    "pencil box": { name: "PENCIL CASE", icon: "✏️", color: "#38bdf8", type: "stationery" },
+    "pencil sharpener": { name: "PENCIL SHARPENER", icon: "✏️", color: "#38bdf8", type: "stationery" },
+    marker: { name: "MARKER PEN", icon: "🖍️", color: "#00f0ff", type: "stationery" },
+    scissors: { name: "SCISSORS", icon: "✂️", color: "#ec4899", type: "tool" },
+    book: { name: "BOOK / NOTEBOOK", icon: "📖", color: "#a855f7", type: "stationery" },
+
+    // Fruits & Produce
+    apple: { name: "APPLE", icon: "🍎", color: "#ef4444", type: "fruit" },
+    "granny smith": { name: "GREEN APPLE", icon: "🍏", color: "#10b981", type: "fruit" },
+    "custard apple": { name: "CUSTARD APPLE", icon: "🍏", color: "#10b981", type: "fruit" },
+    banana: { name: "BANANA", icon: "🍌", color: "#eab308", type: "fruit" },
+    orange: { name: "ORANGE", icon: "🍊", color: "#f97316", type: "fruit" },
+    lemon: { name: "LEMON", icon: "🍋", color: "#facc15", type: "fruit" },
+    strawberry: { name: "STRAWBERRY", icon: "🍓", color: "#f43f5e", type: "fruit" },
+    pineapple: { name: "PINEAPPLE", icon: "🍍", color: "#eab308", type: "fruit" },
+    pomegranate: { name: "POMEGRANATE", icon: "🫐", color: "#be123c", type: "fruit" },
+    fig: { name: "FIG", icon: "🍈", color: "#84cc16", type: "fruit" },
+    mango: { name: "MANGO", icon: "🥭", color: "#f59e0b", type: "fruit" },
+    grape: { name: "GRAPES", icon: "🍇", color: "#8b5cf6", type: "fruit" },
+    grapes: { name: "GRAPES", icon: "🍇", color: "#8b5cf6", type: "fruit" },
+    watermelon: { name: "WATERMELON", icon: "🍉", color: "#ef4444", type: "fruit" },
+    broccoli: { name: "BROCCOLI", icon: "🥦", color: "#22c55e", type: "vegetable" },
+    carrot: { name: "CARROT", icon: "🥕", color: "#f97316", type: "vegetable" },
+    sandwich: { name: "SANDWICH", icon: "🥪", color: "#d97706", type: "food" },
+    pizza: { name: "PIZZA", icon: "🍕", color: "#f97316", type: "food" },
+    hot_dog: { name: "HOT DOG", icon: "🌭", color: "#ea580c", type: "food" },
+
+    // Devices & Common Objects
+    bottle: { name: "BOTTLE", icon: "🍶", color: "#06b6d4", type: "object" },
+    cup: { name: "CUP / MUG", icon: "☕", color: "#d97706", type: "object" },
+    "wine glass": { name: "GLASS", icon: "🍷", color: "#ec4899", type: "object" },
+    "cell phone": { name: "SMARTPHONE", icon: "📱", color: "#3b82f6", type: "tech" },
+    laptop: { name: "LAPTOP", icon: "💻", color: "#6366f1", type: "tech" },
+    mouse: { name: "MOUSE", icon: "🖱️", color: "#06b6d4", type: "tech" },
+    keyboard: { name: "KEYBOARD", icon: "⌨️", color: "#14b8a6", type: "tech" },
+    clock: { name: "CLOCK / WATCH", icon: "⏰", color: "#f59e0b", type: "tech" },
+    knife: { name: "KNIFE", icon: "🔪", color: "#94a3b8", type: "tool" },
+    fork: { name: "FORK", icon: "🍴", color: "#94a3b8", type: "tool" },
+    spoon: { name: "SPOON", icon: "🥄", color: "#94a3b8", type: "tool" },
+    bowl: { name: "BOWL", icon: "🥣", color: "#a855f7", type: "object" }
+  };
+
+  function updateUnifiedObjectDetections(rawDetections, rawClassifications, vw, vh) {
+    const newItems = [];
+    const now = performance.now();
+
+    // 1. Process 2D Bounding Box detections from ObjectDetector
+    if (rawDetections && rawDetections.length > 0) {
+      for (const d of rawDetections) {
+        if (!d.categories || !d.categories[0]) continue;
+        const cat = d.categories[0];
+        let rawName = (cat.categoryName || "").toLowerCase().trim();
+        // Skip user person/body and static furniture (chair, couch, bed, table) to prevent background clutter
+        if (rawName === "person" || rawName === "chair" || rawName === "couch" || rawName === "bed" || rawName === "dining table" || cat.score < 0.28) continue;
+
+        // CRITICAL CORRECTION: COCO lacks 'pen', so pens are misclassified as 'toothbrush'!
+        // When user shows a pen in front of desktop camera, map 'toothbrush' directly to 'pen'
+        if (rawName === "toothbrush") {
+          rawName = "pen";
+        }
+
+        // Slender cylindrical objects (aspect ratio > 2.0) like pens misclassified as knife/remote
+        const b = d.boundingBox;
+        const aspect = Math.max(b.width / (b.height || 1), b.height / (b.width || 1));
+        if ((rawName === "knife" || rawName === "remote" || rawName === "fork" || rawName === "baseball bat") && aspect >= 2.0) {
+          rawName = "pen";
+        }
+
+        const meta = OBJECT_DICTIONARY[rawName] || {
+          name: rawName.toUpperCase(),
+          icon: "🎯",
+          color: "#00f0ff",
+          type: "object"
+        };
+
+        newItems.push({
+          key: rawName,
+          label: meta.name,
+          icon: meta.icon,
+          color: meta.color,
+          score: cat.score,
+          type: meta.type || "object",
+          targetX: b.originX,
+          targetY: b.originY,
+          targetW: b.width,
+          targetH: b.height
+        });
+      }
+    }
+
+    // 2. Check Fine-Grained Classifications (Stationery/Pens, Specific Fruits)
+    if (rawClassifications && rawClassifications.length > 0) {
+      // Check for stationery / pen indicators in classifier
+      let foundPenClass = false;
+      let penLabel = "PEN";
+      let penIcon = "🖊️";
+
+      for (const c of rawClassifications) {
+        const cName = (c.categoryName || "").toLowerCase();
+        const score = c.score || 0;
+        if (score < 0.08) continue;
+        if (cName.includes("ballpoint") || cName.includes("fountain") || cName.includes("pencil") || cName.includes("quill")) {
+          foundPenClass = true;
+          if (cName.includes("fountain")) {
+            penLabel = "FOUNTAIN PEN";
+            penIcon = "✒️";
+          } else if (cName.includes("pencil")) {
+            penLabel = "PENCIL";
+            penIcon = "✏️";
+          } else {
+            penLabel = "PEN";
+            penIcon = "🖊️";
+          }
+          break;
+        }
+      }
+
+      if (foundPenClass) {
+        // Upgrade any existing detection item to PEN
+        let penUpdated = false;
+        for (const item of newItems) {
+          if (item.key === "pen" || item.key === "toothbrush" || item.key === "knife" || item.key === "remote") {
+            item.key = "pen";
+            item.label = penLabel;
+            item.icon = penIcon;
+            item.color = "#00f0ff";
+            penUpdated = true;
+          }
+        }
+        if (!penUpdated) {
+          // Add pen bounding box around active hand or center
+          let bBox = null;
+          if (smoothedResult) {
+            const rHand = smoothedResult.rightHandLandmarks && smoothedResult.rightHandLandmarks[0];
+            const lHand = smoothedResult.leftHandLandmarks && smoothedResult.leftHandLandmarks[0];
+            const activeHand = rHand || lHand;
+            if (activeHand && activeHand.length > 0) {
+              let minX = 1, minY = 1, maxX = 0, maxY = 0;
+              for (const p of activeHand) {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+              }
+              const padX = (maxX - minX) * 0.35 + 0.05;
+              const padY = (maxY - minY) * 0.35 + 0.05;
+              bBox = {
+                x: Math.max(0, (minX - padX)) * vw,
+                y: Math.max(0, (minY - padY)) * vh,
+                w: Math.min(vw, (maxX - minX + padX * 2)) * vw,
+                h: Math.min(vh, (maxY - minY + padY * 2)) * vh
+              };
+            }
+          }
+          if (!bBox) {
+            bBox = { x: vw * 0.25, y: vh * 0.2, w: vw * 0.5, h: vh * 0.6 };
+          }
+          newItems.push({
+            key: "pen",
+            label: penLabel,
+            icon: penIcon,
+            color: "#00f0ff",
+            score: 0.92,
+            targetX: bBox.x,
+            targetY: bBox.y,
+            targetW: bBox.w,
+            targetH: bBox.h
+          });
+        }
+      }
+
+      // Check for specific fruits
+      for (const c of rawClassifications) {
+        const cName = (c.categoryName || "").toLowerCase();
+        const score = c.score || 0;
+        if (score < 0.14) continue;
+
+        let matchedKey = null;
+        for (const dictKey of Object.keys(OBJECT_DICTIONARY)) {
+          if (cName.includes(dictKey) || dictKey.includes(cName)) {
+            matchedKey = dictKey;
+            break;
+          }
+        }
+
+        if (matchedKey) {
+          const meta = OBJECT_DICTIONARY[matchedKey];
+          const alreadyCovered = newItems.find((item) => item.key === matchedKey || (meta.type === "fruit" && (item.key === "apple" || item.key === "orange" || item.key === "banana")));
+          if (alreadyCovered) {
+            // Refine the label to the specific fruit variety
+            alreadyCovered.label = meta.name;
+            alreadyCovered.icon = meta.icon;
+            alreadyCovered.color = meta.color;
+          } else if (meta.type === "fruit" && score >= 0.25) {
+            let bBox = null;
+            if (smoothedResult) {
+              const rHand = smoothedResult.rightHandLandmarks && smoothedResult.rightHandLandmarks[0];
+              const lHand = smoothedResult.leftHandLandmarks && smoothedResult.leftHandLandmarks[0];
+              const activeHand = rHand || lHand;
+              if (activeHand && activeHand.length > 0) {
+                let minX = 1, minY = 1, maxX = 0, maxY = 0;
+                for (const p of activeHand) {
+                  if (p.x < minX) minX = p.x;
+                  if (p.x > maxX) maxX = p.x;
+                  if (p.y < minY) minY = p.y;
+                  if (p.y > maxY) maxY = p.y;
+                }
+                const padX = (maxX - minX) * 0.35 + 0.05;
+                const padY = (maxY - minY) * 0.35 + 0.05;
+                bBox = {
+                  x: Math.max(0, (minX - padX)) * vw,
+                  y: Math.max(0, (minY - padY)) * vh,
+                  w: Math.min(vw, (maxX - minX + padX * 2)) * vw,
+                  h: Math.min(vh, (maxY - minY + padY * 2)) * vh
+                };
+              }
+            }
+            if (!bBox) {
+              bBox = { x: vw * 0.25, y: vh * 0.2, w: vw * 0.5, h: vh * 0.6 };
+            }
+
+            newItems.push({
+              key: matchedKey,
+              label: meta.name,
+              icon: meta.icon,
+              color: meta.color,
+              score: Math.min(0.99, score * 1.5 + 0.2),
+              targetX: bBox.x,
+              targetY: bBox.y,
+              targetW: bBox.w,
+              targetH: bBox.h
+            });
+          }
+        }
+      }
+    }
+
+    // Absolute filter: Never allow 'TOOTHBRUSH' to leak into results
+    for (const item of newItems) {
+      if (item.label.toUpperCase().includes("TOOTHBRUSH") || item.key === "toothbrush") {
+        item.key = "pen";
+        item.label = "PEN";
+        item.icon = "🖊️";
+        item.color = "#00f0ff";
+      }
+    }
+
+    // 3. SINGLE-TARGET FOCAL SELECTOR: Detect ONLY the single nearest object to the camera
+    // (Prevents multiple bounding boxes and eliminates background disturbance)
+    let singleTarget = [];
+    if (newItems.length > 0) {
+      // Calculate proximity score for each item:
+      // Closer to camera = larger apparent bounding box area + central focal alignment + interactive object priority
+      for (const item of newItems) {
+        const areaRatio = (item.targetW * item.targetH) / Math.max(1, (vw * vh));
+        const centerX = (item.targetX + item.targetW * 0.5) / Math.max(1, vw);
+        const centerY = (item.targetY + item.targetH * 0.5) / Math.max(1, vh);
+        const distFromCenter = Math.hypot(centerX - 0.5, centerY - 0.5);
+
+        // Priority: pens, fruits, bottles, cups held up have highest focal weight
+        const isInteractive = item.type === "stationery" || item.type === "fruit" || item.key === "pen" || item.key === "bottle" || item.key === "cup";
+        const priorityWeight = isInteractive ? 3.5 : (item.key === "keyboard" || item.key === "chair" || item.key === "laptop" || item.key === "mouse" ? 0.15 : 1.0);
+
+        item.proximityScore = (Math.sqrt(areaRatio) * 2.5 + (1.0 - Math.min(1.0, distFromCenter * 1.2))) * priorityWeight * (item.score || 0.6);
+      }
+
+      // Sort descending by proximity to camera (nearest object first)
+      newItems.sort((a, b) => (b.proximityScore || 0) - (a.proximityScore || 0));
+      const nearest = newItems[0];
+
+      // Smooth temporal tracking on the single chosen target
+      const prev = activeDetections.length > 0 ? activeDetections[0] : null;
+      if (prev && (prev.key === nearest.key || Math.hypot(prev.x - nearest.targetX, prev.y - nearest.targetY) < 140)) {
+        const alpha = 0.65;
+        nearest.x = prev.x + (nearest.targetX - prev.x) * alpha;
+        nearest.y = prev.y + (nearest.targetY - prev.y) * alpha;
+        nearest.w = prev.w + (nearest.targetW - prev.w) * alpha;
+        nearest.h = prev.h + (nearest.targetH - prev.h) * alpha;
+      } else {
+        nearest.x = nearest.targetX;
+        nearest.y = nearest.targetY;
+        nearest.w = nearest.targetW;
+        nearest.h = nearest.targetH;
+      }
+      singleTarget = [nearest];
+    }
+
+    activeDetections = singleTarget;
+
+    // 4. Voice & Feedback trigger (Debounced: announce identified items naturally)
+    if (activeDetections.length > 0) {
+      const topItem = activeDetections[0];
+      if (topItem && topItem.score >= 0.45) {
+        if (!detectionHoldCounter[topItem.key]) {
+          detectionHoldCounter[topItem.key] = { count: 1, firstSeen: now };
+        } else {
+          detectionHoldCounter[topItem.key].count++;
+        }
+
+        const hold = detectionHoldCounter[topItem.key];
+        // Held steady for at least ~800ms
+        if (hold && (now - hold.firstSeen >= 800) && hold.count >= 4) {
+          if (lastAnnouncedObject !== topItem.key || (now - lastAnnouncedTime > 12000)) {
+            lastAnnouncedObject = topItem.key;
+            lastAnnouncedTime = now;
+            try {
+              if (typeof showJarvisFeedback === "function") {
+                showJarvisFeedback(`${topItem.icon || "🎯"} ${topItem.label} IDENTIFIED`, "vision_scan");
+              }
+              if (typeof speakResponse === "function" && !voiceMutedByUser) {
+                speakResponse(`${topItem.label} identified, sir.`);
+              }
+            } catch (eF) {}
+          }
+        }
+      }
+    }
+  }
+
+  function drawObjectDetections(ctx, detections, w, h) {
+    if (!detections || detections.length === 0) return;
+
+    ctx.save();
+    try {
+      for (const obj of detections) {
+        const x = Math.max(0, Math.min(w - 20, obj.x));
+        const y = Math.max(0, Math.min(h - 20, obj.y));
+        const boxW = Math.max(24, Math.min(w - x, obj.w));
+        const boxH = Math.max(24, Math.min(h - y, obj.h));
+        const color = obj.color || "#00f0ff";
+        const scorePct = Math.round((obj.score || 0.8) * 100);
+
+        // 1. Subtle semi-transparent bounding fill
+        ctx.fillStyle = `${color}14`;
+        ctx.fillRect(x, y, boxW, boxH);
+
+        // 2. High-Tech Corner Brackets
+        const bLen = Math.min(18, boxW * 0.28, boxH * 0.28);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 8;
+
+        // Top-Left Corner
+        ctx.beginPath();
+        ctx.moveTo(x, y + bLen);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + bLen, y);
+        ctx.stroke();
+
+        // Top-Right Corner
+        ctx.beginPath();
+        ctx.moveTo(x + boxW - bLen, y);
+        ctx.lineTo(x + boxW, y);
+        ctx.lineTo(x + boxW, y + bLen);
+        ctx.stroke();
+
+        // Bottom-Left Corner
+        ctx.beginPath();
+        ctx.moveTo(x, y + boxH - bLen);
+        ctx.lineTo(x, y + boxH);
+        ctx.lineTo(x + bLen, y + boxH);
+        ctx.stroke();
+
+        // Bottom-Right Corner
+        ctx.beginPath();
+        ctx.moveTo(x + boxW - bLen, y + boxH);
+        ctx.lineTo(x + boxW, y + boxH);
+        ctx.lineTo(x + boxW, y + boxH - bLen);
+        ctx.stroke();
+
+        // 3. Cyber Target Crosshair in Center
+        const cx = x + boxW * 0.5;
+        const cy = y + boxH * 0.5;
+        const cArm = Math.min(6, boxW * 0.1);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(cx - cArm, cy);
+        ctx.lineTo(cx + cArm, cy);
+        ctx.moveTo(cx, cy - cArm);
+        ctx.lineTo(cx, cy + cArm);
+        ctx.stroke();
+
+        // 4. Futuristic HUD Badge
+        const labelText = `${obj.icon || "🎯"} ${obj.label} ${scorePct}%`;
+        const fontSize = Math.max(10, Math.min(13, Math.round(w * 0.022)));
+        ctx.font = `bold ${fontSize}px 'JetBrains Mono', monospace`;
+        const textWidth = ctx.measureText(labelText).width;
+        const badgeW = textWidth + 14;
+        const badgeH = fontSize + 8;
+        const badgeY = Math.max(4, y - badgeH - 3);
+
+        if (isMirrored) {
+          ctx.save();
+          ctx.translate(x + boxW / 2, y);
+          ctx.scale(-1, 1);
+          ctx.fillStyle = "rgba(3, 7, 18, 0.88)";
+          ctx.shadowBlur = 0;
+          ctx.fillRect(-badgeW / 2, -badgeH - 3, badgeW, badgeH);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-badgeW / 2, -badgeH - 3, badgeW, badgeH);
+          ctx.fillStyle = color;
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 5;
+          ctx.fillText(labelText, -textWidth / 2, -7);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = "rgba(3, 7, 18, 0.88)";
+          ctx.shadowBlur = 0;
+          ctx.fillRect(x, badgeY, badgeW, badgeH);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x, badgeY, badgeW, badgeH);
+          ctx.fillStyle = color;
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 5;
+          ctx.fillText(labelText, x + 7, badgeY + badgeH - 5);
+        }
+      }
+    } catch (e) {
+      console.warn("[NAVI Vision] drawObjectDetections error:", e);
+    } finally {
+      ctx.restore();
+    }
+  }
 
   // UI Element References
   let modePills = [];
@@ -1379,6 +1862,11 @@ const NaviHolisticGestureTracker = (() => {
 
   function setHolisticEffect(state) {
     isHolisticEffect = Boolean(state);
+    if (isHolisticEffect) {
+      activeDetections = [];
+      isDetectingObjects = false;
+      detectionHoldCounter = {};
+    }
     setCamButtonState(isHolisticEffect && isWebcamActive ? "active" : "idle");
     if (pulseBeaconEl) {
       pulseBeaconEl.style.opacity = isHolisticEffect ? "1" : "0.35";
@@ -1474,9 +1962,71 @@ const NaviHolisticGestureTracker = (() => {
         }
       }
 
+      // Initialize Neural Object Detector (Bounding Boxes: Fruits, Bottles, Cups, Tech, Items)
+      const objModelPath = "vendor/mediapipe/models/efficientdet_lite0.tflite";
+      try {
+        objectDetector = await window.Vision.ObjectDetector.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: objModelPath,
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          scoreThreshold: 0.32,
+          maxResults: 8
+        });
+        console.log("[NAVI Vision] Loaded ObjectDetector with GPU delegate.");
+      } catch (eObj1) {
+        console.warn("[NAVI Vision] ObjectDetector GPU failed, fallback to CPU...", eObj1);
+        try {
+          objectDetector = await window.Vision.ObjectDetector.createFromOptions(filesetResolver, {
+            baseOptions: {
+              modelAssetPath: objModelPath,
+              delegate: "CPU"
+            },
+            runningMode: "VIDEO",
+            scoreThreshold: 0.32,
+            maxResults: 8
+          });
+          console.log("[NAVI Vision] Loaded ObjectDetector with CPU delegate.");
+        } catch (eObj2) {
+          console.warn("[NAVI Vision] Failed to load local ObjectDetector:", eObj2);
+        }
+      }
+
+      // Initialize Fine-Grained Classifier (Pens, Pencils, Specific Fruits, Fine Objects)
+      const classModelPath = "vendor/mediapipe/models/efficientnet_lite0.tflite";
+      try {
+        imageClassifier = await window.Vision.ImageClassifier.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath: classModelPath,
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          scoreThreshold: 0.15,
+          maxResults: 6
+        });
+        console.log("[NAVI Vision] Loaded ImageClassifier with GPU delegate.");
+      } catch (eCl1) {
+        console.warn("[NAVI Vision] ImageClassifier GPU failed, fallback to CPU...", eCl1);
+        try {
+          imageClassifier = await window.Vision.ImageClassifier.createFromOptions(filesetResolver, {
+            baseOptions: {
+              modelAssetPath: classModelPath,
+              delegate: "CPU"
+            },
+            runningMode: "VIDEO",
+            scoreThreshold: 0.15,
+            maxResults: 6
+          });
+          console.log("[NAVI Vision] Loaded ImageClassifier with CPU delegate.");
+        } catch (eCl2) {
+          console.warn("[NAVI Vision] Failed to load local ImageClassifier:", eCl2);
+        }
+      }
+
       visionLoaded = true;
       isModelLoading = false;
-      updatePipelineStatus("HOLISTIC v0.10");
+      updatePipelineStatus("VISION ONLINE");
     } catch (err) {
       console.error("[NAVI Holistic] Failed to initialize MediaPipe Holistic Landmarker:", err);
       isModelLoading = false;
@@ -1595,6 +2145,9 @@ const NaviHolisticGestureTracker = (() => {
       rightHandLandmarks: null
     };
     isDetecting = false;
+    activeDetections = [];
+    isDetectingObjects = false;
+    detectionHoldCounter = {};
     layoutDirty = true;
 
     if (webcamStream) {
@@ -1987,6 +2540,23 @@ const NaviHolisticGestureTracker = (() => {
               }
             }
           }
+
+          if (!isHolisticEffect && isObjectDetectionActive && (objectDetector || imageClassifier) && !isDetectingObjects && videoEl.videoWidth > 0 && !videoEl.paused) {
+            const tNow = performance.now();
+            if (tNow - lastObjDetectCallTime >= MIN_OBJ_DETECT_INTERVAL_MS) {
+              isDetectingObjects = true;
+              lastObjDetectCallTime = tNow;
+              const tsObj = Math.max(tNow, (lastObjTimestampMs || 0) + 1);
+              lastObjTimestampMs = tsObj;
+              try {
+                let d = objectDetector ? (objectDetector.detectForVideo(videoEl, tsObj)?.detections || []) : [];
+                let c = imageClassifier ? (imageClassifier.classifyForVideo(videoEl, tsObj)?.classifications?.[0]?.categories || []) : [];
+                updateUnifiedObjectDetections(d, c, videoEl.videoWidth, videoEl.videoHeight);
+              } catch (eObj) {} finally {
+                isDetectingObjects = false;
+              }
+            }
+          }
         }
 
         if (isHolisticEffect) {
@@ -2009,6 +2579,12 @@ const NaviHolisticGestureTracker = (() => {
         } else {
           // OFF: NORMAL WEBCAM (Live full physical camera video feed in natural color)
           ctx.drawImage(videoEl, 0, 0, w, h);
+
+          // Real-Time Neural Object Detection HUD Overlay (Pens, Fruits, Items)
+          // Strictly ONLY in Camera View, NEVER in Holistic mode
+          if (!isHolisticEffect && isObjectDetectionActive && activeDetections.length > 0) {
+            drawObjectDetections(ctx, activeDetections, w, h);
+          }
         }
       } else {
         ctx.clearRect(0, 0, w, h);
@@ -2077,6 +2653,7 @@ const NaviHolisticGestureTracker = (() => {
     activeGestureEl = document.getElementById("holistic-active-gesture");
     fpsValEl = document.getElementById("holistic-fps-val");
     pulseBeaconEl = document.getElementById("holistic-pulse-beacon");
+    objToggleBtn = document.getElementById("webcam-obj-toggle-btn");
 
     zoomPills = Array.from(document.querySelectorAll(".webcam-zoom-pill"));
     resetZoomBtn = document.getElementById("webcam-zoom-reset");
@@ -2085,6 +2662,13 @@ const NaviHolisticGestureTracker = (() => {
     if (canvasEl) {
       ctx = canvasEl.getContext("2d");
       resizeCanvas();
+    }
+
+    // Connect Neural Object Detection Toggle Button
+    if (objToggleBtn) {
+      objToggleBtn.addEventListener("click", () => {
+        toggleObjectDetection();
+      });
     }
 
     // Connect Holistic Effect ON / OFF Button Click
@@ -2160,6 +2744,17 @@ const NaviHolisticGestureTracker = (() => {
     console.log("[NAVI Holistic] NaviHolisticGestureTracker initialized successfully.");
   }
 
+  function toggleObjectDetection(state) {
+    isObjectDetectionActive = typeof state === "boolean" ? state : !isObjectDetectionActive;
+    if (objToggleBtn) {
+      objToggleBtn.classList.toggle("active", isObjectDetectionActive);
+    }
+    if (!isObjectDetectionActive) {
+      activeDetections = [];
+    }
+    console.log("[NAVI Vision] Object detection active:", isObjectDetectionActive);
+  }
+
   return {
     init,
     start: () => toggleTracking(true),
@@ -2178,7 +2773,10 @@ const NaviHolisticGestureTracker = (() => {
     getZoom: () => currentZoom,
     setGesture,
     isGesturesRunning: () => isTracking,
-    getActiveGesture: () => activeGestureKey
+    getActiveGesture: () => activeGestureKey,
+    toggleObjectDetection,
+    isObjectDetectionRunning: () => isObjectDetectionActive,
+    getActiveDetections: () => activeDetections
   };
 })();
 
@@ -4939,6 +5537,31 @@ async function processDirective(prompt, shouldOpenInput = false) {
     const replyMsg = `Today is ${istDateStr}, sir.`;
     showJarvisFeedback(replyMsg, "date");
     speakResponse(replyMsg);
+    setSystemState("idle");
+    return;
+  }
+
+  // Fast-Path: Webcam Object & Fruit Optical Identification Query
+  if (/^(?:what\s+do\s+you\s+see|what\s+is\s+this|what\s+am\s+i\s+holding|identify\s+this(?:\s+object)?|scan\s+object|detect\s+objects?|what\s+object\s+is\s+this|what\s+fruit\s+is\s+this|what\s+pen\s+is\s+this)$/i.test(lowerDirective)) {
+    if (!NaviVisionSensor.isWebcamRunning()) {
+      NaviVisionSensor.startWebcam();
+      const replyMsg = "Optical camera sensor engaged, sir. Scanning items in visual range.";
+      showJarvisFeedback(replyMsg, "camera");
+      speakResponse(replyMsg);
+      setSystemState("idle");
+      return;
+    }
+    const detections = NaviVisionSensor.getActiveDetections();
+    if (detections && detections.length > 0) {
+      const top = detections[0];
+      const replyMsg = `Visual identification confirmed, sir. I detect a ${top.label.toLowerCase()} with ${Math.round((top.score || 0.85) * 100)} percent confidence.`;
+      showJarvisFeedback(`${top.icon || "🎯"} ${top.label} IDENTIFIED`, "vision_scan");
+      speakResponse(replyMsg);
+    } else {
+      const replyMsg = "Optical scanner active, sir. Please hold the pen, fruit, or item clearly in front of the lens.";
+      showJarvisFeedback(replyMsg, "vision_scan");
+      speakResponse(replyMsg);
+    }
     setSystemState("idle");
     return;
   }
