@@ -349,7 +349,10 @@
         <div class="gadget-panel models-roster-panel">
           <div class="gadget-top">
             <span class="gadget-title">AVAILABLE AI MODELS</span>
-            <span class="gadget-sub-pill pulse-emerald" id="model-roster-pill">AUTO FAILOVER</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <button type="button" id="btn-refresh-models" title="Refresh Models (Live Probe)" style="background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.35);color:#00e5ff;border-radius:6px;padding:2px 7px;font-size:11px;cursor:pointer;line-height:1.2;">↻</button>
+              <span class="gadget-sub-pill pulse-emerald" id="model-roster-pill">AUTO FAILOVER</span>
+            </div>
           </div>
           <div class="models-list" id="models-list">
             <!-- Populated dynamically with live metrics & priority -->
@@ -362,15 +365,6 @@
       <!-- COMPACT FLOATING INPUT PILL (MIC - TEXTFIELD - EXEC)      -->
       <!-- ========================================================= -->
       <div class="holographic-input-bar visor-collapsed" id="holographic-visor-container">
-        <!-- Floating Feedback Readout Banner -->
-        <div class="visor-response-banner" id="visor-response-banner" style="display: none;">
-          <span class="visor-jarvis-dot" id="visor-beacon-dot"></span>
-          <span class="visor-jarvis-text" id="visor-jarvis-text">Standing by for your directive, sir.</span>
-          <span class="visor-action-tag" id="visor-action-tag" style="display: none;">
-            <span class="action-desc" id="visor-action-desc">READY</span>
-          </span>
-        </div>
-
         <form class="visor-command-form" id="visor-command-form" autocomplete="off">
           <!-- Voice Mic Button (With Active Mic & Mute Slash SVGs) -->
           <button type="button" class="visor-mic-btn" id="visor-mic-btn" title="Voice Input (Click to Mute / Unmute)">
@@ -390,7 +384,6 @@
               <line x1="12" y1="19" x2="12" y2="22"/>
             </svg>
           </button>
-          <span class="visor-mic-status listening" id="visor-mic-text" title="Voice Input Status">LISTENING</span>
 
           <!-- Input Textfield (Pure input, clean & dynamic) -->
           <div class="visor-input-box">

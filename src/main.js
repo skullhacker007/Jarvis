@@ -140,46 +140,8 @@ const visorMicText = document.getElementById("visor-mic-text");
 const visorUserLine = document.getElementById("visor-user-line");
 const visorUserText = document.getElementById("visor-user-text");
 
-function showJarvisFeedback(text, action = null, isThinking = false) {
-  if (visorResponseBanner) {
-    visorResponseBanner.style.display = "flex";
-  }
-  if (visorJarvisText) {
-    visorJarvisText.textContent = text;
-  }
-  if (visorBeaconDot) {
-    if (isThinking) {
-      visorBeaconDot.className = "visor-jarvis-dot thinking";
-    } else if (action && action.startsWith("⚠️")) {
-      visorBeaconDot.className = "visor-jarvis-dot warning";
-    } else if (isSpeakingTTS) {
-      visorBeaconDot.className = "visor-jarvis-dot speaking";
-    } else {
-      visorBeaconDot.className = "visor-jarvis-dot";
-    }
-  }
-  if (visorActionTag && visorActionDesc) {
-    if (action) {
-      visorActionDesc.textContent = action;
-      visorActionTag.style.display = "inline-flex";
-      if (action.startsWith("⚠️")) {
-        visorActionTag.style.borderColor = "rgba(255, 170, 0, 0.7)";
-        visorActionTag.style.color = "#ffaa00";
-      } else {
-        visorActionTag.style.borderColor = "";
-        visorActionTag.style.color = "";
-      }
-    } else {
-      visorActionTag.style.display = "none";
-    }
-  }
-  if (visorCmdInput) {
-    if (isThinking) {
-      visorCmdInput.placeholder = text;
-    } else {
-      visorCmdInput.placeholder = text && text.length > 55 ? (text.slice(0, 52) + "...") : (text || "Give an instruction or ask anything...");
-    }
-  }
+function showJarvisFeedback(_text, _action = null, _isThinking = false) {
+  // Minimalist UI: keep command bar clean without feedback banner or answer text
 }
 
 function openInputBar() {
@@ -4014,6 +3976,110 @@ requestAnimationFrame(updateArcReactorAudio);
 // -------------------------------------------------------------
 // REAL-TIME HARDWARE & TOKEN TELEMETRY POLLER (100% DYNAMIC)
 // -------------------------------------------------------------
+function renderAvailableModelsRoster(models) {
+  const modelsList = document.getElementById("models-list");
+  const modelRosterPill = document.getElementById("model-roster-pill");
+  if (!modelsList) return;
+
+  modelsList.innerHTML = "";
+  if (!models || models.length === 0) {
+    if (modelRosterPill) {
+      modelRosterPill.textContent = "NO FAST MODELS";
+      modelRosterPill.className = "gadget-sub-pill";
+    }
+    const emptyEl = document.createElement("div");
+    emptyEl.className = "model-item";
+    emptyEl.innerHTML = `<div class="model-item-top"><span class="model-name">No models &le; 500ms</span></div>`;
+    modelsList.appendChild(emptyEl);
+    return;
+  }
+
+  const activeMod = models.find(m => m.is_active);
+  if (modelRosterPill && activeMod) {
+    modelRosterPill.textContent = `${activeMod.provider} ACTIVE`;
+    if (activeMod.provider.includes("GEMINI")) {
+      modelRosterPill.className = "gadget-sub-pill pulse-blue";
+    } else if (activeMod.provider.includes("NVIDIA") || activeMod.provider.includes("GROQ")) {
+      modelRosterPill.className = "gadget-sub-pill pulse-emerald";
+    } else {
+      modelRosterPill.className = "gadget-sub-pill pulse-purple";
+    }
+  }
+
+  models.forEach(m => {
+    const card = document.createElement("div");
+    card.className = `model-item ${m.is_active ? 'active-model' : ''}`;
+
+    let badgeClass = "badge-groq";
+    if (m.is_active) {
+      badgeClass = "badge-active";
+    } else if (m.provider.includes("GEMINI")) {
+      badgeClass = "badge-gemini";
+    } else if (m.provider.includes("LOCAL")) {
+      badgeClass = "badge-local";
+    }
+
+    const spdDisplay = m.speed_tok_s > 0 ? `${Math.round(m.speed_tok_s)} tok/s` : "--";
+    const latDisplay = m.latency_ms > 0 ? `${m.latency_ms}ms` : "--";
+    const usedDisplay = m.tokens_used > 0 ? m.tokens_used.toLocaleString() : "0";
+    const tierTag = m.latency_ms <= 200 ? "PRIMARY" : "2ND";
+
+    card.innerHTML = `
+      <div class="model-item-top">
+        <div class="model-name-group">
+          <span class="model-priority">P${m.priority}</span>
+          <span class="model-name">${m.display_name}</span>
+        </div>
+        <span class="model-badge ${badgeClass}">${m.status}</span>
+      </div>
+      <div class="model-item-sub">
+        <span>TIER: <b>${tierTag}</b></span>
+        <span>CTX: <b>${m.context_window}</b></span>
+        <span>USED: <b>${usedDisplay}</b></span>
+        <span>SPD: <b>${spdDisplay}</b></span>
+        <span>LAT: <b>${latDisplay}</b></span>
+      </div>
+    `;
+
+    card.style.cursor = "pointer";
+    card.title = `Click to switch active model to ${m.display_name}`;
+    card.addEventListener("click", async () => {
+      try {
+        await invoke("switch_ai_model", { modelId: m.id });
+        currentActiveModelName = m.display_name;
+        if (modelNameLabel) modelNameLabel.textContent = m.display_name;
+        if (nnParams) nnParams.textContent = m.parameter_size || "Dynamic";
+        if (nnQuant) nnQuant.textContent = m.quantization || "--";
+        if (nnCtx) nnCtx.textContent = m.context_window;
+        if (nnSpeed) nnSpeed.textContent = m.speed_tok_s > 0 ? `${Math.round(m.speed_tok_s)} tok/s` : "--";
+        if (nnLatency) nnLatency.textContent = m.latency_ms > 0 ? `${m.latency_ms}ms` : "--";
+        refreshSystemTelemetry();
+      } catch (err) {
+        console.warn("Model switch error:", err);
+      }
+    });
+
+    modelsList.appendChild(card);
+  });
+}
+
+const refreshModelsBtn = document.getElementById("btn-refresh-models");
+if (refreshModelsBtn) {
+  refreshModelsBtn.addEventListener("click", async () => {
+    refreshModelsBtn.disabled = true;
+    refreshModelsBtn.textContent = "...";
+    try {
+      const liveModels = await invoke("refresh_ai_models");
+      renderAvailableModelsRoster(liveModels);
+    } catch (err) {
+      console.warn("Refresh models error:", err);
+    } finally {
+      refreshModelsBtn.disabled = false;
+      refreshModelsBtn.textContent = "↻";
+    }
+  });
+}
+
 async function refreshSystemTelemetry() {
   try {
     resizeCanvases();
@@ -4162,76 +4228,8 @@ async function refreshSystemTelemetry() {
       }
     }
 
-    // 6. Available AI Models & Auto-Failover Fleet
-    const modelsList = document.getElementById("models-list");
-    const modelRosterPill = document.getElementById("model-roster-pill");
-    if (modelsList && telem.available_models && telem.available_models.length > 0) {
-      modelsList.innerHTML = "";
-      const activeMod = telem.available_models.find(m => m.is_active);
-      if (modelRosterPill && activeMod) {
-        modelRosterPill.textContent = `${activeMod.provider} ACTIVE`;
-        if (activeMod.provider.includes("GEMINI")) {
-          modelRosterPill.className = "gadget-sub-pill pulse-blue";
-        } else if (activeMod.provider.includes("NVIDIA") || activeMod.provider.includes("GROQ")) {
-          modelRosterPill.className = "gadget-sub-pill pulse-emerald";
-        } else {
-          modelRosterPill.className = "gadget-sub-pill pulse-purple";
-        }
-      }
-
-      telem.available_models.forEach(m => {
-        const card = document.createElement("div");
-        card.className = `model-item ${m.is_active ? 'active-model' : ''}`;
-        
-        let badgeClass = "badge-groq";
-        if (m.is_active) {
-          badgeClass = "badge-active";
-        } else if (m.provider.includes("GEMINI")) {
-          badgeClass = "badge-gemini";
-        } else if (m.provider.includes("LOCAL")) {
-          badgeClass = "badge-local";
-        }
-
-        const spdDisplay = m.speed_tok_s > 0 ? `${Math.round(m.speed_tok_s)} tok/s` : "--";
-        const latDisplay = m.latency_ms > 0 ? `${m.latency_ms}ms` : "--";
-        const usedDisplay = m.tokens_used > 0 ? m.tokens_used.toLocaleString() : "0";
-
-        card.innerHTML = `
-          <div class="model-item-top">
-            <div class="model-name-group">
-              <span class="model-priority">P${m.priority}</span>
-              <span class="model-name">${m.display_name}</span>
-            </div>
-            <span class="model-badge ${badgeClass}">${m.status}</span>
-          </div>
-          <div class="model-item-sub">
-            <span>CTX: <b>${m.context_window}</b></span>
-            <span>USED: <b>${usedDisplay}</b></span>
-            <span>SPD: <b>${spdDisplay}</b></span>
-            <span>LAT: <b>${latDisplay}</b></span>
-          </div>
-        `;
-        card.style.cursor = "pointer";
-        card.title = `Click to switch active model to ${m.display_name}`;
-        card.addEventListener("click", async () => {
-          try {
-            await invoke("switch_ai_model", { modelId: m.id });
-            currentActiveModelName = m.display_name;
-            if (modelNameLabel) modelNameLabel.textContent = m.display_name;
-            if (nnParams) nnParams.textContent = m.parameter_size || "Dynamic";
-            if (nnQuant) nnQuant.textContent = m.quantization || "--";
-            if (nnCtx) nnCtx.textContent = m.context_window;
-            if (nnSpeed) nnSpeed.textContent = m.speed_tok_s > 0 ? `${Math.round(m.speed_tok_s)} tok/s` : "--";
-            if (nnLatency) nnLatency.textContent = m.latency_ms > 0 ? `${m.latency_ms}ms` : "--";
-            refreshSystemTelemetry();
-          } catch (err) {
-            console.warn("Model switch error:", err);
-          }
-        });
-
-        modelsList.appendChild(card);
-      });
-    }
+    // 6. Available AI Models & Auto-Failover Fleet (<= 500ms only, top 5)
+    renderAvailableModelsRoster(telem.available_models || []);
 
     // Dynamic Ollama Model Puller
     const modelPullInput = document.getElementById("model-pull-input");

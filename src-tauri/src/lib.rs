@@ -2024,6 +2024,7 @@ pub struct DiscoveredModelEntry {
     pub context_length: u32,
     pub parameter_size: String,
     pub quantization: String,
+    pub probe_latency_ms: u128,
 }
 
 #[derive(Default)]
@@ -2076,7 +2077,7 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
         let guard = get_catalog_cache().lock().await;
         if !force_refresh {
             if let Some(ts) = guard.last_fetched {
-                if ts.elapsed() < Duration::from_secs(30) && !guard.models.is_empty() {
+                if ts.elapsed() < Duration::from_secs(15) && !guard.models.is_empty() {
                     return guard.models.clone();
                 }
             }
@@ -2100,13 +2101,12 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
             return out;
         }
         let url = format!("https://generativelanguage.googleapis.com/v1beta/models?key={}", gemini_key);
-        let mut online = false;
-        if let Ok(res) = client.get(&url).timeout(Duration::from_millis(1200)).send().await {
+        let probe_start = Instant::now();
+        if let Ok(res) = client.get(&url).timeout(Duration::from_millis(3500)).send().await {
+            let probe_ms = probe_start.elapsed().as_millis();
             if res.status().is_success() {
-                online = true;
                 if let Ok(json) = res.json::<serde_json::Value>().await {
                     if let Some(arr) = json["models"].as_array() {
-                        // Prefer configured model first, then latest flash/pro generateContent models
                         let mut matched: Vec<DiscoveredModelEntry> = Vec::new();
                         for m in arr {
                             let raw_name = m["name"].as_str().unwrap_or("");
@@ -2119,7 +2119,7 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
                                 continue;
                             }
                             let is_conf = id == gemini_configured;
-                            let is_relevant = is_conf || (id.contains("gemini") && (id.contains("flash") || id.contains("pro")) && !id.contains("vision") && !id.contains("exp") && !id.contains("tuning"));
+                            let is_relevant = is_conf || (id.contains("gemini") && (id.contains("flash") || id.contains("pro")) && !id.contains("vision") && !id.contains("exp") && !id.contains("tuning") && !id.contains("tts"));
                             if !is_relevant {
                                 continue;
                             }
@@ -2134,27 +2134,15 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
                                 context_length: ctx_len,
                                 parameter_size: infer_param_size(&id),
                                 quantization: "Cloud".to_string(),
+                                probe_latency_ms: probe_ms,
                             });
                         }
-                        // Put configured model first, keep up to 3 Gemini models
                         matched.sort_by_key(|e| if e.id == gemini_configured { 0 } else { 1 });
                         matched.truncate(3);
                         out.extend(matched);
                     }
                 }
             }
-        }
-        if out.is_empty() {
-            out.push(DiscoveredModelEntry {
-                id: gemini_configured.clone(),
-                display_name: gemini_configured.to_uppercase(),
-                provider: "GOOGLE GEMINI".to_string(),
-                status: if online { "ONLINE".to_string() } else { "OFFLINE".to_string() },
-                context_window: "1M".to_string(),
-                context_length: 1_048_576,
-                parameter_size: infer_param_size(&gemini_configured),
-                quantization: "Cloud".to_string(),
-            });
         }
         out
     };
@@ -2165,16 +2153,16 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
             return out;
         }
         let url = format!("{}/models", nvidia_base.trim_end_matches('/'));
-        let mut online = false;
+        let probe_start = Instant::now();
         if let Ok(res) = client
             .get(&url)
             .header("Authorization", format!("Bearer {}", nvidia_key))
-            .timeout(Duration::from_millis(1200))
+            .timeout(Duration::from_millis(3500))
             .send()
             .await
         {
+            let probe_ms = probe_start.elapsed().as_millis();
             if res.status().is_success() {
-                online = true;
                 if let Ok(json) = res.json::<serde_json::Value>().await {
                     if let Some(arr) = json["data"].as_array() {
                         if let Some(found) = arr.iter().find(|m| m["id"].as_str() == Some(nvidia_configured.as_str())) {
@@ -2189,23 +2177,12 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
                                 context_length: ctx_len,
                                 parameter_size: infer_param_size(&id),
                                 quantization: "FP8/16".to_string(),
+                                probe_latency_ms: probe_ms,
                             });
                         }
                     }
                 }
             }
-        }
-        if out.is_empty() {
-            out.push(DiscoveredModelEntry {
-                id: nvidia_configured.clone(),
-                display_name: format!("{} (NVIDIA NIM)", nvidia_configured.split('/').last().unwrap_or(&nvidia_configured).to_uppercase()),
-                provider: "NVIDIA NIM".to_string(),
-                status: if online { "ONLINE".to_string() } else { "OFFLINE".to_string() },
-                context_window: "128K".to_string(),
-                context_length: 131_072,
-                parameter_size: infer_param_size(&nvidia_configured),
-                quantization: "FP8/16".to_string(),
-            });
         }
         out
     };
@@ -2216,16 +2193,16 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
             return out;
         }
         let url = "https://api.groq.com/openai/v1/models";
-        let mut online = false;
+        let probe_start = Instant::now();
         if let Ok(res) = client
             .get(url)
             .header("Authorization", format!("Bearer {}", groq_key))
-            .timeout(Duration::from_millis(1200))
+            .timeout(Duration::from_millis(3500))
             .send()
             .await
         {
+            let probe_ms = probe_start.elapsed().as_millis();
             if res.status().is_success() {
-                online = true;
                 if let Ok(json) = res.json::<serde_json::Value>().await {
                     if let Some(arr) = json["data"].as_array() {
                         let groq_configured = get_env_or_file_key("GROQ_MODEL").unwrap_or_default();
@@ -2234,7 +2211,7 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
                             let id = m["id"].as_str().unwrap_or("").to_string();
                             let active = m["active"].as_bool().unwrap_or(true);
                             let lower = id.to_lowercase();
-                            if id.is_empty() || !active || lower.contains("whisper") || lower.contains("tts") || lower.contains("guard") || lower.contains("safeguard") {
+                            if id.is_empty() || !active || lower.contains("whisper") || lower.contains("tts") || lower.contains("guard") || lower.contains("safeguard") || lower.contains("orpheus") {
                                 continue;
                             }
                             let ctx_len = m["context_window"].as_u64().unwrap_or(131_072) as u32;
@@ -2247,6 +2224,7 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
                                 context_length: ctx_len,
                                 parameter_size: infer_param_size(&id),
                                 quantization: "LPU".to_string(),
+                                probe_latency_ms: probe_ms,
                             });
                         }
                         matched.sort_by_key(|e| {
@@ -2258,24 +2236,11 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
                                 2
                             }
                         });
-                        matched.truncate(3);
+                        matched.truncate(4);
                         out.extend(matched);
                     }
                 }
             }
-        }
-        if out.is_empty() && !online {
-            let fallback_id = get_env_or_file_key("GROQ_MODEL").unwrap_or_else(|| "llama-3.3-70b-versatile".to_string());
-            out.push(DiscoveredModelEntry {
-                id: fallback_id.clone(),
-                display_name: format!("{} (GROQ LPU)", fallback_id.to_uppercase()),
-                provider: "GROQ LPU".to_string(),
-                status: "OFFLINE".to_string(),
-                context_window: "128K".to_string(),
-                context_length: 131_072,
-                parameter_size: infer_param_size(&fallback_id),
-                quantization: "LPU".to_string(),
-            });
         }
         out
     };
@@ -2285,10 +2250,12 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
         let tags_url = format!("{}/api/tags", ollama_base);
         let ps_url = format!("{}/api/ps", ollama_base);
 
-        let tags_req = add_navi_headers(client.get(&tags_url).timeout(Duration::from_millis(800)));
-        let ps_req = add_navi_headers(client.get(&ps_url).timeout(Duration::from_millis(600)));
+        let tags_req = add_navi_headers(client.get(&tags_url).timeout(Duration::from_millis(1500)));
+        let ps_req = add_navi_headers(client.get(&ps_url).timeout(Duration::from_millis(800)));
 
+        let probe_start = Instant::now();
         let (tags_res, ps_res) = tokio::join!(tags_req.send(), ps_req.send());
+        let probe_ms = probe_start.elapsed().as_millis();
 
         let mut loaded_names: Vec<String> = Vec::new();
         if let Ok(res) = ps_res {
@@ -2338,24 +2305,12 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
                                 context_length: 131_072,
                                 parameter_size: param_size,
                                 quantization: quant,
+                                probe_latency_ms: probe_ms,
                             });
                         }
                     }
                 }
             }
-        }
-
-        if out.is_empty() {
-            out.push(DiscoveredModelEntry {
-                id: ollama_configured.clone(),
-                display_name: format!("{} (OFFLINE)", ollama_configured.to_uppercase()),
-                provider: provider_label.to_string(),
-                status: "OFFLINE".to_string(),
-                context_window: "128K".to_string(),
-                context_length: 131_072,
-                parameter_size: infer_param_size(&ollama_configured),
-                quantization: "Q4_K_M".to_string(),
-            });
         }
         out
     };
@@ -2367,7 +2322,7 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
     combined.extend(grq_list);
     combined.extend(oll_list);
 
-    {
+    if !combined.is_empty() {
         let mut guard = get_catalog_cache().lock().await;
         guard.models = combined.clone();
         guard.last_fetched = Some(std::time::Instant::now());
@@ -7489,9 +7444,23 @@ Rules:
 
     let mut candidates: Vec<(String, String, String, String, u32, f32)> = discovered
         .into_iter()
-        .filter(|m| m.status != "OFFLINE")
+        .filter(|m| {
+            if m.status == "OFFLINE" {
+                return false;
+            }
+            let lat = stats_map
+                .get(&m.id)
+                .map(|s| if s.latency_ms > 0 { s.latency_ms } else { m.probe_latency_ms })
+                .unwrap_or(m.probe_latency_ms);
+            lat <= 500
+        })
         .map(|m| {
-            let spd = effective_speed(&m.id, &m.provider, &m.status);
+            let lat = stats_map
+                .get(&m.id)
+                .map(|s| if s.latency_ms > 0 { s.latency_ms } else { m.probe_latency_ms })
+                .unwrap_or(m.probe_latency_ms);
+            let tier_bonus = if lat <= 200 { 1000.0 } else { 500.0 };
+            let spd = effective_speed(&m.id, &m.provider, &m.status) + tier_bonus - (lat as f32 * 0.1);
             let prov = if m.provider.contains("OLLAMA") { "LOCAL OLLAMA".to_string() } else { m.provider };
             (m.id, prov, m.parameter_size, m.quantization, m.context_length, spd)
         })
@@ -8791,63 +8760,8 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
 
     let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
     let discovered = discover_models_dynamic(false).await;
-
-    let mut available_models: Vec<AvailableModelInfo> = discovered
-        .iter()
-        .map(|d| {
-            let st = stats_map.get(&d.id).cloned().unwrap_or_default();
-            AvailableModelInfo {
-                id: d.id.clone(),
-                display_name: d.display_name.clone(),
-                provider: d.provider.clone(),
-                status: d.status.clone(),
-                priority: 0,
-                context_window: d.context_window.clone(),
-                tokens_used: st.tokens_used,
-                speed_tok_s: st.speed_tok_s,
-                latency_ms: st.latency_ms,
-                is_active: false,
-                parameter_size: d.parameter_size.clone(),
-                quantization: d.quantization.clone(),
-            }
-        })
-        .collect();
-
     let current_active_id = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_default();
-
-    // 1. Sort available models: online first, then by live measured speed (tok/s descending)
-    available_models.sort_by(|a, b| {
-        let a_online = a.status != "OFFLINE";
-        let b_online = b.status != "OFFLINE";
-        match (a_online, b_online) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => b.speed_tok_s.partial_cmp(&a.speed_tok_s).unwrap_or(std::cmp::Ordering::Equal),
-        }
-    });
-
-    // 2. Dynamically assign priority strictly as per rank
-    for (idx, m) in available_models.iter_mut().enumerate() {
-        m.priority = (idx + 1) as u32;
-    }
-
-    // 3. Preserve user/runtime active_model_id if online; otherwise auto-failover to fastest online model
-    let mut resolved_active_id = String::new();
-    let mut matched_idx = None;
-    if !current_active_id.is_empty() {
-        matched_idx = available_models
-            .iter()
-            .position(|m| m.id == current_active_id && m.status != "OFFLINE");
-    }
-    if matched_idx.is_none() {
-        matched_idx = available_models.iter().position(|m| m.status != "OFFLINE");
-    }
-
-    if let Some(idx) = matched_idx {
-        available_models[idx].status = "ACTIVE".to_string();
-        available_models[idx].is_active = true;
-        resolved_active_id = available_models[idx].id.clone();
-    }
+    let (available_models, resolved_active_id) = build_filtered_models(&discovered, &stats_map, &current_active_id);
 
     if !resolved_active_id.is_empty() && resolved_active_id != current_active_id {
         if let Ok(mut act) = state.active_model_id.lock() {
@@ -8902,6 +8816,94 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         active_model_id: active_id,
         tunnel_status: get_cached_tunnel_status(),
     })
+}
+
+fn build_filtered_models(
+    discovered: &[DiscoveredModelEntry],
+    stats_map: &HashMap<String, ModelRuntimeStats>,
+    current_active_id: &str,
+) -> (Vec<AvailableModelInfo>, String) {
+    let mut available_models: Vec<AvailableModelInfo> = discovered
+        .iter()
+        .filter_map(|d| {
+            if d.status == "OFFLINE" {
+                return None;
+            }
+            let st = stats_map.get(&d.id).cloned().unwrap_or_default();
+            let effective_latency = if st.latency_ms > 0 {
+                st.latency_ms
+            } else {
+                d.probe_latency_ms
+            };
+            // Strict speed gate: only allow models <= 500ms (0-200ms primary, 201-500ms secondary)
+            if effective_latency > 500 {
+                return None;
+            }
+            Some(AvailableModelInfo {
+                id: d.id.clone(),
+                display_name: d.display_name.clone(),
+                provider: d.provider.clone(),
+                status: d.status.clone(),
+                priority: 0,
+                context_window: d.context_window.clone(),
+                tokens_used: st.tokens_used,
+                speed_tok_s: st.speed_tok_s,
+                latency_ms: effective_latency,
+                is_active: false,
+                parameter_size: d.parameter_size.clone(),
+                quantization: d.quantization.clone(),
+            })
+        })
+        .collect();
+
+    // Sort: Tier 1 (0-200ms) first, Tier 2 (201-500ms) second, then fastest latency, then tok/s desc
+    available_models.sort_by(|a, b| {
+        let a_tier = if a.latency_ms <= 200 { 0u8 } else { 1u8 };
+        let b_tier = if b.latency_ms <= 200 { 0u8 } else { 1u8 };
+        a_tier
+            .cmp(&b_tier)
+            .then_with(|| a.latency_ms.cmp(&b.latency_ms))
+            .then_with(|| b.speed_tok_s.partial_cmp(&a.speed_tok_s).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    // Top 5 active fast models only
+    available_models.truncate(5);
+
+    for (idx, m) in available_models.iter_mut().enumerate() {
+        m.priority = (idx + 1) as u32;
+    }
+
+    let mut resolved_active_id = String::new();
+    let mut matched_idx = None;
+    if !current_active_id.is_empty() {
+        matched_idx = available_models.iter().position(|m| m.id == current_active_id);
+    }
+    if matched_idx.is_none() && !available_models.is_empty() {
+        matched_idx = Some(0);
+    }
+
+    if let Some(idx) = matched_idx {
+        available_models[idx].status = "ACTIVE".to_string();
+        available_models[idx].is_active = true;
+        resolved_active_id = available_models[idx].id.clone();
+    }
+
+    (available_models, resolved_active_id)
+}
+
+#[tauri::command]
+async fn refresh_ai_models(state: tauri::State<'_, AppState>) -> Result<Vec<AvailableModelInfo>, String> {
+    let discovered = discover_models_dynamic(true).await;
+    let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
+    let current_active_id = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_default();
+    let (available_models, resolved_active_id) = build_filtered_models(&discovered, &stats_map, &current_active_id);
+
+    if !resolved_active_id.is_empty() && resolved_active_id != current_active_id {
+        if let Ok(mut act) = state.active_model_id.lock() {
+            *act = resolved_active_id;
+        }
+    }
+    Ok(available_models)
 }
 
 #[tauri::command]
@@ -9246,6 +9248,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ask_jarvis,
             switch_ai_model,
+            refresh_ai_models,
             run_direct_action,
             get_system_telemetry,
             get_bluetooth_watch_status,
@@ -9711,5 +9714,42 @@ mod tests {
         assert!(env_res.to_lowercase().contains("windows"));
         let reg_res = execute_system_action("registry_read", "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion|ProductName").unwrap();
         assert!(reg_res.to_lowercase().contains("windows"));
+    }
+
+    #[test]
+    fn test_speed_filter_0_200_500() {
+        let mk = |id: &str, prov: &str, status: &str, lat: u128| DiscoveredModelEntry {
+            id: id.to_string(),
+            display_name: id.to_uppercase(),
+            provider: prov.to_string(),
+            status: status.to_string(),
+            context_window: "128K".to_string(),
+            context_length: 131_072,
+            parameter_size: "7B".to_string(),
+            quantization: "LPU".to_string(),
+            probe_latency_ms: lat,
+        };
+        let discovered = vec![
+            mk("slow-model", "GROQ LPU", "ONLINE", 650),
+            mk("offline-model", "LOCAL OLLAMA", "OFFLINE", 50),
+            mk("sec-model-1", "GOOGLE GEMINI", "ONLINE", 320),
+            mk("prim-model-1", "GROQ LPU", "ONLINE", 120),
+            mk("prim-model-2", "GROQ LPU", "ONLINE", 180),
+            mk("sec-model-2", "GOOGLE GEMINI", "ONLINE", 450),
+            mk("prim-model-3", "NVIDIA NIM", "ONLINE", 95),
+            mk("sec-model-3", "LOCAL OLLAMA", "ONLINE", 250),
+        ];
+        let stats = HashMap::new();
+        let (models, active_id) = build_filtered_models(&discovered, &stats, "");
+        assert_eq!(models.len(), 5, "Should cap at top 5 fast models");
+        assert!(models.iter().all(|m| m.latency_ms <= 500 && m.status != "OFFLINE"));
+        assert!(!models.iter().any(|m| m.id == "slow-model" || m.id == "offline-model"));
+        assert_eq!(models[0].id, "prim-model-3");
+        assert_eq!(active_id, "prim-model-3");
+        assert!(models[0].is_active);
+        assert_eq!(models[1].id, "prim-model-1");
+        assert_eq!(models[2].id, "prim-model-2");
+        assert_eq!(models[3].id, "sec-model-3");
+        assert_eq!(models[4].id, "sec-model-1");
     }
 }
