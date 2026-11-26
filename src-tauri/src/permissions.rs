@@ -3,8 +3,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::Emitter;
 use tokio::sync::oneshot;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,8 +82,16 @@ fn get_state() -> &'static Mutex<PermissionManagerState> {
 pub fn normalize_action(action: &str) -> String {
     match action.trim().to_lowercase().as_str() {
         "open" | "launch" | "launch_app" | "start" => "open_app".to_string(),
-        "close" | "kill" | "kill_app" | "terminate" | "stop" => "close_app".to_string(),
-        "run" | "cmd" | "shell" | "powershell" => "run_cmd".to_string(),
+        "close" | "kill" | "kill_app" | "kill_process" | "terminate" | "stop" => "close_app".to_string(),
+        "run" | "shell" | "powershell" | "exec" => "run_cmd".to_string(),
+        "cmd" => "cmd".to_string(),
+        "mkdir" => "create_folder".to_string(),
+        "rmdir" => "delete_folder".to_string(),
+        "write_file" => "create_file".to_string(),
+        "append_file" => "modify_file".to_string(),
+        "rename_file" | "move_folder" => "move_file".to_string(),
+        "copy_folder" => "copy_file".to_string(),
+        "list_files" | "ls" | "dir" => "list_dir".to_string(),
         other => other.to_string(),
     }
 }
@@ -105,7 +111,9 @@ pub fn classify_action(action: &str, target: &str) -> (RiskLevel, &'static str) 
         "diskpart",
         "reg delete hklm",
     ];
-    if norm == "run_cmd" && dangerous_patterns.iter().any(|p| t_lower.contains(p)) {
+    if (norm == "run_cmd" || norm == "cmd" || norm == "run_as_admin")
+        && dangerous_patterns.iter().any(|p| t_lower.contains(p))
+    {
         return (
             RiskLevel::Blocked,
             "Destructive system command blocked by JARVIS Safety Policy.",
@@ -113,7 +121,7 @@ pub fn classify_action(action: &str, target: &str) -> (RiskLevel, &'static str) 
     }
 
     match norm.as_str() {
-        "run_cmd" | "self_heal_code" => (
+        "run_cmd" | "cmd" | "run_as_admin" | "elevated_cmd" | "self_heal_code" => (
             RiskLevel::High,
             "Executes arbitrary system or shell commands.",
         ),
@@ -121,11 +129,19 @@ pub fn classify_action(action: &str, target: &str) -> (RiskLevel, &'static str) 
             RiskLevel::High,
             "Terminates a running application process.",
         ),
+        "delete_file" | "delete_folder" => (
+            RiskLevel::High,
+            "Deletes a file or folder from disk.",
+        ),
+        "start_service" | "stop_service" | "restart_service" | "registry_write" | "env_set" => (
+            RiskLevel::High,
+            "Modifies Windows services, registry, or environment.",
+        ),
         "memory_clear" => (
             RiskLevel::High,
             "Permanently clears stored long-term memories.",
         ),
-        "lock_pc" | "sleep_pc" | "shutdown" | "restart" => (
+        "lock_pc" | "sleep_pc" | "sleep" | "hibernate" | "shutdown" | "shutdown_pc" | "restart" | "restart_pc" | "logoff" => (
             RiskLevel::High,
             "Changes workstation power or lock state.",
         ),
@@ -145,9 +161,10 @@ pub fn classify_action(action: &str, target: &str) -> (RiskLevel, &'static str) 
             RiskLevel::High,
             "Interacts with live web page DOM elements.",
         ),
-        "open_app" | "close_tab" | "paste_clipboard" | "open_file" => (
+        "open_app" | "close_tab" | "paste_clipboard" | "open_file" | "create_file" | "modify_file"
+        | "move_file" | "copy_file" | "create_folder" => (
             RiskLevel::Moderate,
-            "Standard desktop or tab manipulation.",
+            "Standard desktop, file, or tab manipulation.",
         ),
         _ => (RiskLevel::Safe, "Read-only or low-risk control."),
     }
@@ -156,8 +173,8 @@ pub fn classify_action(action: &str, target: &str) -> (RiskLevel, &'static str) 
 fn default_decision(risk: RiskLevel) -> PolicyDecision {
     match risk {
         RiskLevel::Blocked => PolicyDecision::Deny,
-        RiskLevel::High => PolicyDecision::Prompt,
-        RiskLevel::Moderate | RiskLevel::Safe => PolicyDecision::Allow,
+        // Full administrator autonomy: all non-blocked actions are allowed without approval prompts
+        RiskLevel::High | RiskLevel::Moderate | RiskLevel::Safe => PolicyDecision::Allow,
     }
 }
 
@@ -178,17 +195,13 @@ pub fn check_sync_policy(action: &str, target: &str) -> Result<(), String> {
     };
 
     match decision {
-        PolicyDecision::Allow => Ok(()),
+        PolicyDecision::Allow | PolicyDecision::Prompt => Ok(()),
         PolicyDecision::Deny => Err(format!("DENIED by Permission Manager: {} ({})", norm, reason)),
-        PolicyDecision::Prompt => Err(format!(
-            "CONFIRMATION_REQUIRED: Action '{}' requires approval ({})",
-            norm, reason
-        )),
     }
 }
 
 pub async fn authorize_action(
-    app: &tauri::AppHandle,
+    _app: &tauri::AppHandle,
     action: &str,
     target: &str,
 ) -> Result<(), String> {
@@ -208,44 +221,8 @@ pub async fn authorize_action(
     };
 
     match decision {
-        PolicyDecision::Allow => return Ok(()),
-        PolicyDecision::Deny => {
-            return Err(format!("DENIED by Permission Manager: {} ({})", norm, reason));
-        }
-        PolicyDecision::Prompt => {}
-    }
-
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let request_id = format!("perm_{}_{}", norm, ts);
-    let (tx, rx) = oneshot::channel::<bool>();
-
-    {
-        let mut guard = get_state().lock().map_err(|_| "Permission lock poisoned")?;
-        guard.pending.insert(request_id.clone(), (norm.clone(), tx));
-    }
-
-    let payload = PermissionRequestPayload {
-        request_id: request_id.clone(),
-        action: norm.clone(),
-        target: target.to_string(),
-        risk: format!("{:?}", risk),
-        reason: reason.to_string(),
-    };
-    let _ = app.emit("jarvis://permission_request", payload);
-
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(true)) => Ok(()),
-        Ok(Ok(false)) => Err(format!("Action '{}' denied by user.", norm)),
-        Ok(Err(_)) => Err(format!("Permission request '{}' cancelled.", norm)),
-        Err(_) => {
-            if let Ok(mut guard) = get_state().lock() {
-                guard.pending.remove(&request_id);
-            }
-            Err(format!("Permission request '{}' timed out.", norm))
-        }
+        PolicyDecision::Allow | PolicyDecision::Prompt => Ok(()),
+        PolicyDecision::Deny => Err(format!("DENIED by Permission Manager: {} ({})", norm, reason)),
     }
 }
 

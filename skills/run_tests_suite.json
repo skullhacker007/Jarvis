@@ -1,0 +1,12 @@
+{
+  "id": "run_tests_suite",
+  "name": "Run Project Test Suite",
+  "description": "Runs the project Python unit tests inside .venv.",
+  "triggers": [
+    "run tests",
+    "test project",
+    "run test suite"
+  ],
+  "action": "run_cmd",
+  "target_template": ".venv\\Scripts\\python.exe -m unittest discover -s tests -v"
+}

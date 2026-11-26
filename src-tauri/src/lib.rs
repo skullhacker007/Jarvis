@@ -3604,6 +3604,908 @@ pub struct JarvisResponse {
     pub token_words: Vec<String>,
 }
 
+// =============================================================
+// COMPREHENSIVE WINDOWS SYSTEM OPERATIONS ENGINE
+// =============================================================
+pub mod win_sys_ops {
+    use super::*;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use sysinfo::{Disks, Networks, System};
+
+    pub fn resolve_powershell_exe() -> String {
+        let sys_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+        let ps_v1 = PathBuf::from(&sys_root)
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        if ps_v1.exists() {
+            return ps_v1.to_string_lossy().to_string();
+        }
+        "powershell.exe".to_string()
+    }
+
+    pub fn resolve_cmd_exe() -> String {
+        if let Ok(comspec) = std::env::var("ComSpec") {
+            if Path::new(&comspec).exists() {
+                return comspec;
+            }
+        }
+        let sys_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+        let cmd_path = PathBuf::from(&sys_root).join("System32").join("cmd.exe");
+        if cmd_path.exists() {
+            return cmd_path.to_string_lossy().to_string();
+        }
+        "cmd.exe".to_string()
+    }
+
+    /// Strips surrounding quotes, trailing punctuation (preserving ':' for URI/drive), and leading verbs.
+    pub fn sanitize_app_target(raw: &str) -> String {
+        let mut s = raw
+            .trim()
+            .trim_matches(|c| c == '"' || c == '\'' || c == '`')
+            .trim()
+            .to_string();
+
+        // Strip trailing punctuation often added by STT or user sentences (e.g., "powershell..")
+        // Keep ':' only if it's a URI protocol or drive letter like "C:" or "ms-settings:"
+        loop {
+            let trimmed = s.trim_end_matches(|c: char| {
+                c.is_whitespace() || matches!(c, '.' | ',' | '!' | '?' | ';')
+            });
+            if trimmed.len() == s.len() {
+                break;
+            }
+            s = trimmed.to_string();
+        }
+
+        let lower = s.to_lowercase();
+        for prefix in ["open ", "launch ", "start ", "run "] {
+            if lower.starts_with(prefix) {
+                s = s[prefix.len()..].trim().to_string();
+                break;
+            }
+        }
+        s.trim_matches(|c| c == '"' || c == '\'' || c == '`')
+            .trim()
+            .to_string()
+    }
+
+    /// Expands ~, %ENV_VAR%, and common Windows user folder prefixes (Desktop, Documents, Downloads).
+    pub fn resolve_windows_path(raw: &str) -> PathBuf {
+        let mut s = raw
+            .trim()
+            .trim_matches(|c| c == '"' || c == '\'' || c == '`')
+            .trim()
+            .to_string();
+
+        let user_profile = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Public".to_string());
+        if s == "~" {
+            return PathBuf::from(&user_profile);
+        } else if s.starts_with("~/") || s.starts_with("~\\") {
+            s = format!("{}{}{}", user_profile, std::path::MAIN_SEPARATOR, &s[2..]);
+        }
+
+        // Expand %VAR% tokens
+        let mut expanded = String::with_capacity(s.len());
+        let mut rest = s.as_str();
+        while let Some(start) = rest.find('%') {
+            expanded.push_str(&rest[..start]);
+            let after_start = &rest[start + 1..];
+            if let Some(end) = after_start.find('%') {
+                let var_name = &after_start[..end];
+                if let Ok(val) = std::env::var(var_name) {
+                    expanded.push_str(&val);
+                } else {
+                    expanded.push('%');
+                    expanded.push_str(var_name);
+                    expanded.push('%');
+                }
+                rest = &after_start[end + 1..];
+            } else {
+                expanded.push('%');
+                rest = after_start;
+                break;
+            }
+        }
+        expanded.push_str(rest);
+
+        let p = PathBuf::from(&expanded);
+        if p.is_absolute() {
+            return p;
+        }
+
+        let lower = expanded.to_lowercase();
+        for folder in ["desktop", "documents", "downloads", "pictures", "music", "videos"] {
+            if lower == folder
+                || lower.starts_with(&format!("{}\\", folder))
+                || lower.starts_with(&format!("{}/", folder))
+            {
+                return PathBuf::from(&user_profile).join(&expanded);
+            }
+        }
+
+        p
+    }
+
+    /// Parses either JSON object or delimited string `a|b` / `a -> b`.
+    pub fn parse_two_args(raw: &str, key_a: &str, key_b: &str) -> (String, String) {
+        let trimmed = raw.trim();
+        if trimmed.starts_with('{') {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                let a = val[key_a]
+                    .as_str()
+                    .or_else(|| val["path"].as_str())
+                    .or_else(|| val["src"].as_str())
+                    .or_else(|| val["source"].as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let b = val[key_b]
+                    .as_str()
+                    .or_else(|| val["content"].as_str())
+                    .or_else(|| val["dst"].as_str())
+                    .or_else(|| val["dest"].as_str())
+                    .or_else(|| val["destination"].as_str())
+                    .or_else(|| val["text"].as_str())
+                    .unwrap_or("")
+                    .to_string();
+                return (a, b);
+            }
+        }
+        if let Some((a, b)) = trimmed.split_once('|') {
+            return (a.trim().to_string(), b.trim().to_string());
+        }
+        if let Some((a, b)) = trimmed.split_once("->") {
+            return (a.trim().to_string(), b.trim().to_string());
+        }
+        (trimmed.to_string(), String::new())
+    }
+
+    pub fn run_powershell(script: &str) -> Result<String, String> {
+        let clean = script.trim();
+        if clean.is_empty() {
+            return Err("Empty PowerShell command.".to_string());
+        }
+        let ps_exe = resolve_powershell_exe();
+        let output = silent_command(&ps_exe)
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                clean,
+            ])
+            .output()
+            .map_err(|e| format!("Failed to invoke PowerShell ({}): {}", ps_exe, e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+        if output.status.success() {
+            if !stdout.is_empty() {
+                Ok(stdout)
+            } else if !stderr.is_empty() {
+                Ok(stderr)
+            } else {
+                Ok("PowerShell command executed successfully.".to_string())
+            }
+        } else {
+            let err_detail = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("Exit code {}", output.status.code().unwrap_or(-1))
+            };
+            Err(format!("PowerShell error: {}", err_detail))
+        }
+    }
+
+    pub fn run_cmd_shell(command: &str) -> Result<String, String> {
+        let clean = command.trim();
+        if clean.is_empty() {
+            return Err("Empty CMD command.".to_string());
+        }
+        let cmd_exe = resolve_cmd_exe();
+        let output = silent_command(&cmd_exe)
+            .args(["/C", clean])
+            .output()
+            .map_err(|e| format!("Failed to invoke CMD ({}): {}", cmd_exe, e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+        if output.status.success() {
+            if !stdout.is_empty() {
+                Ok(stdout)
+            } else if !stderr.is_empty() {
+                Ok(stderr)
+            } else {
+                Ok("CMD command executed successfully.".to_string())
+            }
+        } else {
+            let err_detail = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("Exit code {}", output.status.code().unwrap_or(-1))
+            };
+            Err(format!("CMD error: {}", err_detail))
+        }
+    }
+
+    pub fn run_as_admin(command: &str) -> Result<String, String> {
+        let clean = command.trim();
+        if clean.is_empty() {
+            return Err("Empty elevated command.".to_string());
+        }
+        let escaped = clean.replace('\'', "''");
+        let ps = format!(
+            "Start-Process -FilePath '{}' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command','{}' -Verb RunAs -ErrorAction Stop; 'ELEVATED_OK'",
+            resolve_powershell_exe().replace('\'', "''"),
+            escaped
+        );
+        run_powershell(&ps)?;
+        Ok(format!("Launched elevated command: {}", clean))
+    }
+
+    pub fn map_app_alias(app_lower: &str) -> &str {
+        match app_lower {
+            "notepad" | "note pad" => "notepad.exe",
+            "calc" | "calculator" => "calc.exe",
+            "cmd" | "command prompt" | "cmd.exe" => "cmd.exe",
+            "powershell" | "power shell" | "windows powershell" | "powershell.exe" => "powershell.exe",
+            "pwsh" | "powershell 7" | "powershell core" => "pwsh.exe",
+            "terminal" | "wt" | "windows terminal" => "wt.exe",
+            "explorer" | "files" | "file manager" | "file explorer" => "explorer.exe",
+            "taskmgr" | "task manager" => "taskmgr.exe",
+            "paint" | "mspaint" => "mspaint.exe",
+            "control" | "control panel" => "control.exe",
+            "regedit" | "registry" | "registry editor" => "regedit.exe",
+            "device manager" | "devmgmt" => "devmgmt.msc",
+            "services" | "services.msc" => "services.msc",
+            "task scheduler" | "taskschd" => "taskschd.msc",
+            "disk management" | "diskmgmt" => "diskmgmt.msc",
+            "event viewer" | "eventvwr" => "eventvwr.msc",
+            "resource monitor" | "resmon" => "resmon.exe",
+            "performance monitor" | "perfmon" => "perfmon.exe",
+            "system information" | "msinfo32" => "msinfo32.exe",
+            "dxdiag" => "dxdiag.exe",
+            "winver" => "winver.exe",
+            "snipping tool" | "snippingtool" | "snip" => "snippingtool.exe",
+            "disk cleanup" | "cleanmgr" => "cleanmgr.exe",
+            "on-screen keyboard" | "osk" => "osk.exe",
+            "character map" | "charmap" => "charmap.exe",
+            "system properties" | "sysdm.cpl" => "sysdm.cpl",
+            "network connections" | "ncpa.cpl" => "ncpa.cpl",
+            "programs and features" | "appwiz.cpl" => "appwiz.cpl",
+            "chrome" | "google chrome" => "chrome",
+            "edge" | "msedge" | "microsoft edge" => "msedge",
+            "firefox" | "mozilla firefox" => "firefox",
+            "brave" => "brave",
+            "opera" => "opera",
+            "code" | "vscode" | "vs code" | "visual studio code" => "code",
+            "word" | "microsoft word" | "winword" => "winword",
+            "excel" | "microsoft excel" => "excel",
+            "powerpoint" | "microsoft powerpoint" | "powerpnt" => "powerpnt",
+            "discord" => "discord",
+            "slack" => "slack",
+            "vlc" => "vlc",
+            "obs" | "obs studio" => "obs64",
+            "settings" | "windows settings" => "ms-settings:",
+            "bluetooth settings" => "ms-settings:bluetooth",
+            "wifi settings" | "wi-fi settings" => "ms-settings:network-wifi",
+            "display settings" => "ms-settings:display",
+            "sound settings" | "audio settings" => "ms-settings:sound",
+            "windows update" => "ms-settings:windowsupdate",
+            "apps settings" => "ms-settings:appsfeatures",
+            "mail" | "email" | "outlook" => "ms-outlook:",
+            "message" | "messages" | "whatsapp" => "whatsapp:",
+            "music" | "spotify" => "spotify:",
+            "store" | "microsoft store" => "ms-windows-store:",
+            _ => app_lower,
+        }
+    }
+
+    pub fn launch_windows_app(raw_target: &str) -> Result<String, String> {
+        let app_clean = sanitize_app_target(raw_target);
+        if app_clean.is_empty() {
+            return Err("No application or target specified.".to_string());
+        }
+        let app_lower = app_clean.to_lowercase();
+
+        // Direct URL or URI Protocol support
+        if app_lower.starts_with("http://")
+            || app_lower.starts_with("https://")
+            || app_lower.starts_with("www.")
+            || app_lower.starts_with("ms-")
+            || app_lower.ends_with(':')
+        {
+            let url = if app_lower.starts_with("www.") {
+                format!("https://{}", app_clean)
+            } else {
+                app_clean.clone()
+            };
+            let ps_script = format!(
+                "try {{ Start-Process '{}' -ErrorAction Stop; 'OK' }} catch {{ $_.Exception.Message }}",
+                url.replace('\'', "''")
+            );
+            let out = run_powershell(&ps_script)?;
+            if out == "OK" || out.is_empty() {
+                return Ok(format!("Opened {}", url));
+            }
+            return Err(format!("Could not open {}: {}", url, out));
+        }
+
+        // Direct Phone / Call - strictly HUD managed, never launch Windows Phone Link
+        if app_lower == "call" || app_lower == "phone" {
+            return Ok("Phone call matrix active in HUD".to_string());
+        }
+
+        // If target is an existing local file/folder path, open it directly
+        let candidate_path = resolve_windows_path(&app_clean);
+        if candidate_path.exists() {
+            let p_str = candidate_path.to_string_lossy().to_string();
+            let ps_script = format!(
+                "try {{ Start-Process -FilePath '{}' -WindowStyle Normal -ErrorAction Stop; 'OK' }} catch {{ $_.Exception.Message }}",
+                p_str.replace('\'', "''")
+            );
+            let out = run_powershell(&ps_script)?;
+            if out == "OK" || out.is_empty() {
+                return Ok(format!("Opened {}", p_str));
+            }
+        }
+
+        let mapped = map_app_alias(&app_lower);
+        let mapped_escaped = mapped.replace('\'', "''");
+
+        // Strategy 1: Direct Start-Process (handles System32, PATH, App Paths, URI protocols)
+        let ps_direct = format!(
+            "try {{ Start-Process '{}' -WindowStyle Normal -ErrorAction Stop; 'OK' }} catch {{ 'ERR:' + $_.Exception.Message }}",
+            mapped_escaped
+        );
+        if let Ok(res) = run_powershell(&ps_direct) {
+            if res == "OK" {
+                return Ok(format!("Opened {}", app_clean));
+            }
+        }
+
+        // Strategy 2: Fallback if wt.exe or pwsh.exe is missing -> powershell.exe
+        if mapped == "wt.exe" || mapped == "pwsh.exe" {
+            let ps_fallback = format!(
+                "try {{ Start-Process '{}' -WindowStyle Normal -ErrorAction Stop; 'OK' }} catch {{ 'ERR:' + $_.Exception.Message }}",
+                resolve_powershell_exe().replace('\'', "''")
+            );
+            if let Ok(res) = run_powershell(&ps_fallback) {
+                if res == "OK" {
+                    return Ok(format!("Opened {} (via Windows PowerShell)", app_clean));
+                }
+            }
+        }
+
+        // Strategy 3: Search Start Menu .lnk shortcuts & UWP Get-StartApps
+        let search_escaped = app_clean.replace('\'', "''");
+        let ps_discover = format!(
+            r#"
+$q = '{0}'
+$lnkDirs = @(
+    "$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
+    "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
+)
+$lnk = $lnkDirs | Where-Object {{ Test-Path $_ }} | ForEach-Object {{
+    Get-ChildItem -Path $_ -Filter "*.lnk" -Recurse -ErrorAction SilentlyContinue
+}} | Where-Object {{ $_.BaseName -like "*$q*" }} | Select-Object -First 1
+if ($lnk) {{
+    Start-Process -FilePath $lnk.FullName -WindowStyle Normal -ErrorAction Stop
+    Write-Output ("OK_LNK:" + $lnk.BaseName)
+    exit 0
+}}
+$uwp = Get-StartApps | Where-Object {{ $_.Name -like "*$q*" }} | Select-Object -First 1
+if ($uwp) {{
+    Start-Process "explorer.exe" -ArgumentList ("shell:AppsFolder\" + $uwp.AppID) -ErrorAction Stop
+    Write-Output ("OK_UWP:" + $uwp.Name)
+    exit 0
+}}
+Write-Output "NOT_FOUND"
+"#,
+            search_escaped
+        );
+
+        match run_powershell(&ps_discover) {
+            Ok(out) if out.starts_with("OK_LNK:") || out.starts_with("OK_UWP:") => {
+                let name = out.split_once(':').map(|(_, n)| n).unwrap_or(&app_clean);
+                Ok(format!("Opened {}", name))
+            }
+            Ok(_) => Err(format!("Could not find or launch '{}'.", app_clean)),
+            Err(e) => Err(format!("Could not launch {}: {}", app_clean, e)),
+        }
+    }
+
+    pub fn close_windows_app_or_process(raw_target: &str) -> Result<String, String> {
+        let clean = sanitize_app_target(raw_target);
+        if clean.is_empty() {
+            return Err("No application or process specified to close.".to_string());
+        }
+
+        // Support killing by numeric PID
+        if let Ok(pid_num) = clean.parse::<u32>() {
+            let mut sys = System::new_all();
+            sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            let pid = sysinfo::Pid::from_u32(pid_num);
+            if let Some(proc_item) = sys.process(pid) {
+                let pname = proc_item.name().to_string_lossy().to_string();
+                if proc_item.kill() {
+                    return Ok(format!("Terminated process {} (PID {}).", pname, pid_num));
+                }
+            }
+            let out = run_cmd_shell(&format!("taskkill /PID {} /F", pid_num))?;
+            return Ok(out);
+        }
+
+        let lower = clean.to_lowercase();
+        let exe_name = match lower.as_str() {
+            "code" | "vscode" | "vs code" | "visual studio code" => "Code.exe".to_string(),
+            "notepad" | "note pad" => "notepad.exe".to_string(),
+            "calc" | "calculator" => "CalculatorApp.exe".to_string(),
+            "chrome" | "google chrome" => "chrome.exe".to_string(),
+            "edge" | "msedge" | "microsoft edge" => "msedge.exe".to_string(),
+            "spotify" => "Spotify.exe".to_string(),
+            "powershell" | "power shell" => "powershell.exe".to_string(),
+            "cmd" | "command prompt" => "cmd.exe".to_string(),
+            "terminal" | "wt" | "windows terminal" => "WindowsTerminal.exe".to_string(),
+            "explorer" | "file explorer" => "explorer.exe".to_string(),
+            _ if lower.ends_with(".exe") => clean.clone(),
+            _ => format!("{}.exe", clean),
+        };
+
+        let proc_base = exe_name.trim_end_matches(".exe");
+        let tk_out = silent_command("taskkill")
+            .args(["/IM", &exe_name, "/F", "/T"])
+            .output();
+
+        let tk_ok = tk_out.as_ref().map(|o| o.status.success()).unwrap_or(false);
+        let ps_script = format!(
+            "$p = Get-Process -Name '{}' -ErrorAction SilentlyContinue; if ($p) {{ $p | Stop-Process -Force -ErrorAction SilentlyContinue; 'KILLED' }} else {{ 'NONE' }}",
+            proc_base.replace('\'', "''")
+        );
+        let ps_res = run_powershell(&ps_script).unwrap_or_default();
+
+        if tk_ok || ps_res == "KILLED" {
+            Ok(format!("Closed {}", clean))
+        } else {
+            Err(format!("No running process found matching '{}'.", clean))
+        }
+    }
+
+    // ---------------- FILE & FOLDER OPERATIONS ----------------
+    pub fn create_or_write_file(raw: &str) -> Result<String, String> {
+        let (path_str, content) = parse_two_args(raw, "path", "content");
+        if path_str.is_empty() {
+            return Err("File path is required.".to_string());
+        }
+        let path = resolve_windows_path(&path_str);
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                fs::create_dir_all(parent).map_err(|e| format!("Failed to create parent directory: {}", e))?;
+            }
+        }
+        fs::write(&path, content.as_bytes()).map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+        let meta = fs::metadata(&path).map_err(|e| format!("Write verification failed: {}", e))?;
+        Ok(format!("Wrote {} bytes to {}", meta.len(), path.display()))
+    }
+
+    pub fn read_file_op(raw: &str) -> Result<String, String> {
+        let path = resolve_windows_path(raw);
+        if !path.exists() {
+            return Err(format!("File not found: {}", path.display()));
+        }
+        if path.is_dir() {
+            return list_dir_op(raw);
+        }
+        let bytes = fs::read(&path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+        let total = bytes.len();
+        let text = String::from_utf8_lossy(&bytes);
+        let max_chars = 16000;
+        if text.len() > max_chars {
+            let truncated: String = text.chars().take(max_chars).collect();
+            Ok(format!("{}...\n[Truncated: showing first {} chars of {} bytes]", truncated, max_chars, total))
+        } else {
+            Ok(text.to_string())
+        }
+    }
+
+    pub fn modify_or_append_file(raw: &str) -> Result<String, String> {
+        let trimmed = raw.trim();
+        if trimmed.starts_with('{') {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                if let (Some(p), Some(old_s), Some(new_s)) = (
+                    val["path"].as_str(),
+                    val["old"].as_str(),
+                    val["new"].as_str(),
+                ) {
+                    let path = resolve_windows_path(p);
+                    let content = fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+                    if !content.contains(old_s) {
+                        return Err(format!("Target text not found in {}", path.display()));
+                    }
+                    let updated = content.replacen(old_s, new_s, 1);
+                    fs::write(&path, updated.as_bytes()).map_err(|e| format!("Failed to update {}: {}", path.display(), e))?;
+                    return Ok(format!("Modified {}", path.display()));
+                }
+            }
+        }
+        let (path_str, content) = parse_two_args(raw, "path", "content");
+        if path_str.is_empty() {
+            return Err("File path is required.".to_string());
+        }
+        let path = resolve_windows_path(&path_str);
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|e| format!("Failed to open {} for append: {}", path.display(), e))?;
+        writeln!(file, "{}", content).map_err(|e| format!("Failed to append to {}: {}", path.display(), e))?;
+        Ok(format!("Appended {} bytes to {}", content.len(), path.display()))
+    }
+
+    pub fn delete_file_op(raw: &str) -> Result<String, String> {
+        let path = resolve_windows_path(raw);
+        if !path.exists() {
+            return Err(format!("File not found: {}", path.display()));
+        }
+        if path.is_dir() {
+            return Err(format!("'{}' is a directory; use delete_folder instead.", path.display()));
+        }
+        fs::remove_file(&path).map_err(|e| format!("Failed to delete {}: {}", path.display(), e))?;
+        if path.exists() {
+            return Err(format!("Verification failed: {} still exists.", path.display()));
+        }
+        Ok(format!("Deleted file {}", path.display()))
+    }
+
+    pub fn create_folder_op(raw: &str) -> Result<String, String> {
+        let path = resolve_windows_path(raw);
+        if path.as_os_str().is_empty() {
+            return Err("Folder path is required.".to_string());
+        }
+        fs::create_dir_all(&path).map_err(|e| format!("Failed to create folder {}: {}", path.display(), e))?;
+        if !path.is_dir() {
+            return Err(format!("Verification failed: {} is not a directory.", path.display()));
+        }
+        Ok(format!("Created folder {}", path.display()))
+    }
+
+    pub fn delete_folder_op(raw: &str) -> Result<String, String> {
+        let path = resolve_windows_path(raw);
+        if !path.exists() {
+            return Err(format!("Folder not found: {}", path.display()));
+        }
+        if !path.is_dir() {
+            return Err(format!("'{}' is a file; use delete_file instead.", path.display()));
+        }
+        // Guard against deleting drive roots like C:\
+        if path.parent().is_none() {
+            return Err("Refusing to delete drive root.".to_string());
+        }
+        fs::remove_dir_all(&path).map_err(|e| format!("Failed to delete folder {}: {}", path.display(), e))?;
+        if path.exists() {
+            return Err(format!("Verification failed: {} still exists.", path.display()));
+        }
+        Ok(format!("Deleted folder {}", path.display()))
+    }
+
+    fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<usize, String> {
+        fs::create_dir_all(dst).map_err(|e| format!("Failed to create {}: {}", dst.display(), e))?;
+        let mut count = 0usize;
+        for entry in fs::read_dir(src).map_err(|e| format!("Failed to read {}: {}", src.display(), e))? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let ty = entry.file_type().map_err(|e| e.to_string())?;
+            let dst_path = dst.join(entry.file_name());
+            if ty.is_dir() {
+                count += copy_dir_recursive(&entry.path(), &dst_path)?;
+            } else {
+                fs::copy(entry.path(), &dst_path).map_err(|e| format!("Copy failed: {}", e))?;
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    pub fn move_path_op(raw: &str) -> Result<String, String> {
+        let (src_s, dst_s) = parse_two_args(raw, "src", "dst");
+        if src_s.is_empty() || dst_s.is_empty() {
+            return Err("Both source and destination paths are required (e.g. 'src|dst').".to_string());
+        }
+        let src = resolve_windows_path(&src_s);
+        let mut dst = resolve_windows_path(&dst_s);
+        if !src.exists() {
+            return Err(format!("Source not found: {}", src.display()));
+        }
+        if dst.is_dir() {
+            if let Some(name) = src.file_name() {
+                dst = dst.join(name);
+            }
+        } else if let Some(parent) = dst.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                fs::create_dir_all(parent).map_err(|e| format!("Failed to create destination parent: {}", e))?;
+            }
+        }
+
+        if fs::rename(&src, &dst).is_err() {
+            // Cross-volume fallback: copy + remove
+            if src.is_dir() {
+                copy_dir_recursive(&src, &dst)?;
+                fs::remove_dir_all(&src).map_err(|e| format!("Moved copy succeeded but cleanup failed: {}", e))?;
+            } else {
+                fs::copy(&src, &dst).map_err(|e| format!("Failed to copy {} to {}: {}", src.display(), dst.display(), e))?;
+                fs::remove_file(&src).map_err(|e| format!("Copy succeeded but failed to remove source: {}", e))?;
+            }
+        }
+        if !dst.exists() {
+            return Err(format!("Verification failed: {} does not exist after move.", dst.display()));
+        }
+        Ok(format!("Moved {} -> {}", src.display(), dst.display()))
+    }
+
+    pub fn copy_path_op(raw: &str) -> Result<String, String> {
+        let (src_s, dst_s) = parse_two_args(raw, "src", "dst");
+        if src_s.is_empty() || dst_s.is_empty() {
+            return Err("Both source and destination paths are required (e.g. 'src|dst').".to_string());
+        }
+        let src = resolve_windows_path(&src_s);
+        let mut dst = resolve_windows_path(&dst_s);
+        if !src.exists() {
+            return Err(format!("Source not found: {}", src.display()));
+        }
+        if dst.is_dir() && src.is_file() {
+            if let Some(name) = src.file_name() {
+                dst = dst.join(name);
+            }
+        } else if let Some(parent) = dst.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                fs::create_dir_all(parent).map_err(|e| format!("Failed to create destination parent: {}", e))?;
+            }
+        }
+        if src.is_dir() {
+            let count = copy_dir_recursive(&src, &dst)?;
+            Ok(format!("Copied folder ({} files) {} -> {}", count, src.display(), dst.display()))
+        } else {
+            let bytes = fs::copy(&src, &dst).map_err(|e| format!("Failed to copy: {}", e))?;
+            Ok(format!("Copied {} bytes: {} -> {}", bytes, src.display(), dst.display()))
+        }
+    }
+
+    pub fn list_dir_op(raw: &str) -> Result<String, String> {
+        let target = if raw.trim().is_empty() { "." } else { raw };
+        let path = resolve_windows_path(target);
+        if !path.exists() {
+            return Err(format!("Directory not found: {}", path.display()));
+        }
+        let entries = fs::read_dir(&path).map_err(|e| format!("Failed to list {}: {}", path.display(), e))?;
+        let mut dirs = Vec::new();
+        let mut files = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_dir() {
+                    dirs.push(format!("[DIR]  {}", name));
+                } else {
+                    files.push(format!("[FILE] {} ({} B)", name, meta.len()));
+                }
+            }
+        }
+        dirs.sort();
+        files.sort();
+        let mut all = dirs;
+        all.extend(files);
+        let total = all.len();
+        if total == 0 {
+            return Ok(format!("Directory {} is empty.", path.display()));
+        }
+        let preview: Vec<String> = all.into_iter().take(100).collect();
+        let suffix = if total > 100 { format!("\n... and {} more items", total - 100) } else { String::new() };
+        Ok(format!("Listing {} ({} items):\n{}{}", path.display(), total, preview.join("\n"), suffix))
+    }
+
+    pub fn file_info_op(raw: &str) -> Result<String, String> {
+        let path = resolve_windows_path(raw);
+        if !path.exists() {
+            return Err(format!("Path not found: {}", path.display()));
+        }
+        let meta = fs::metadata(&path).map_err(|e| format!("Failed to inspect {}: {}", path.display(), e))?;
+        let kind = if meta.is_dir() { "Directory" } else { "File" };
+        let readonly = meta.permissions().readonly();
+        Ok(format!(
+            "{}: {} | Size: {} bytes | ReadOnly: {}",
+            kind,
+            path.display(),
+            meta.len(),
+            readonly
+        ))
+    }
+
+    // ---------------- PROCESS, SERVICE & SYSTEM RESOURCE OPERATIONS ----------------
+    pub fn list_processes_op(filter: &str) -> Result<String, String> {
+        let mut sys = System::new_all();
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        let f_lower = filter.trim().to_lowercase();
+        let mut items: Vec<(u32, String, u64)> = sys
+            .processes()
+            .values()
+            .filter_map(|p| {
+                let name = p.name().to_string_lossy().to_string();
+                if f_lower.is_empty() || name.to_lowercase().contains(&f_lower) {
+                    Some((p.pid().as_u32(), name, p.memory() / (1024 * 1024)))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        items.sort_by(|a, b| b.2.cmp(&a.2));
+        let total = items.len();
+        if total == 0 {
+            return Ok(format!("No running processes matching '{}'.", filter));
+        }
+        let lines: Vec<String> = items
+            .into_iter()
+            .take(25)
+            .map(|(pid, name, mem)| format!("{} (PID {}, {} MB)", name, pid, mem))
+            .collect();
+        Ok(format!("Processes ({} matched, top shown):\n{}", total, lines.join("\n")))
+    }
+
+    pub fn service_control_op(action: &str, target: &str) -> Result<String, String> {
+        let clean = sanitize_app_target(target);
+        match action {
+            "list_services" => {
+                let ps = if clean.is_empty() {
+                    "Get-Service | Select-Object -First 30 Status, Name, DisplayName | Format-Table -AutoSize | Out-String".to_string()
+                } else {
+                    format!(
+                        "Get-Service -Name '*{}*' -ErrorAction SilentlyContinue | Select-Object -First 30 Status, Name, DisplayName | Format-Table -AutoSize | Out-String",
+                        clean.replace('\'', "''")
+                    )
+                };
+                run_powershell(&ps)
+            }
+            "service_status" => {
+                if clean.is_empty() {
+                    return Err("Service name is required.".to_string());
+                }
+                let ps = format!(
+                    "$s = Get-Service -Name '{}' -ErrorAction Stop; \"$($s.Name) ($($s.DisplayName)): $($s.Status)\"",
+                    clean.replace('\'', "''")
+                );
+                run_powershell(&ps)
+            }
+            "start_service" => {
+                if clean.is_empty() {
+                    return Err("Service name is required.".to_string());
+                }
+                let ps = format!(
+                    "Start-Service -Name '{}' -ErrorAction Stop; $s = Get-Service -Name '{}'; \"$($s.Name): $($s.Status)\"",
+                    clean.replace('\'', "''"),
+                    clean.replace('\'', "''")
+                );
+                run_powershell(&ps)
+            }
+            "stop_service" => {
+                if clean.is_empty() {
+                    return Err("Service name is required.".to_string());
+                }
+                let ps = format!(
+                    "Stop-Service -Name '{}' -Force -ErrorAction Stop; $s = Get-Service -Name '{}'; \"$($s.Name): $($s.Status)\"",
+                    clean.replace('\'', "''"),
+                    clean.replace('\'', "''")
+                );
+                run_powershell(&ps)
+            }
+            "restart_service" => {
+                if clean.is_empty() {
+                    return Err("Service name is required.".to_string());
+                }
+                let ps = format!(
+                    "Restart-Service -Name '{}' -Force -ErrorAction Stop; $s = Get-Service -Name '{}'; \"$($s.Name): $($s.Status)\"",
+                    clean.replace('\'', "''"),
+                    clean.replace('\'', "''")
+                );
+                run_powershell(&ps)
+            }
+            _ => Err(format!("Unknown service action: {}", action)),
+        }
+    }
+
+    pub fn system_info_op() -> Result<String, String> {
+        let mut sys = System::new_all();
+        sys.refresh_all();
+        let host = System::host_name().unwrap_or_else(|| "Windows-PC".to_string());
+        let os = System::long_os_version().unwrap_or_else(|| "Windows".to_string());
+        let cores = sys.cpus().len();
+        let cpu = sys.global_cpu_usage();
+        let total_mem = sys.total_memory() as f64 / 1073741824.0;
+        let used_mem = sys.used_memory() as f64 / 1073741824.0;
+        let uptime_h = System::uptime() / 3600;
+        Ok(format!(
+            "Host: {} | OS: {} | CPU: {:.1}% ({} cores) | RAM: {:.1}/{:.1} GB | Uptime: {}h",
+            host, os, cpu, cores, used_mem, total_mem, uptime_h
+        ))
+    }
+
+    pub fn disk_info_op() -> Result<String, String> {
+        let disks = Disks::new_with_refreshed_list();
+        let mut lines = Vec::new();
+        for d in disks.list() {
+            let total_gb = d.total_space() as f64 / 1073741824.0;
+            let avail_gb = d.available_space() as f64 / 1073741824.0;
+            let used_gb = (total_gb - avail_gb).max(0.0);
+            lines.push(format!(
+                "{} ({}) {:.1} GB free / {:.1} GB total ({:.1} GB used)",
+                d.mount_point().display(),
+                d.file_system().to_string_lossy(),
+                avail_gb,
+                total_gb,
+                used_gb
+            ));
+        }
+        if lines.is_empty() {
+            Ok("No disks detected.".to_string())
+        } else {
+            Ok(lines.join("\n"))
+        }
+    }
+
+    pub fn network_info_op() -> Result<String, String> {
+        let networks = Networks::new_with_refreshed_list();
+        let mut lines = Vec::new();
+        for (name, data) in networks.list() {
+            let ips: Vec<String> = data.ip_networks().iter().map(|ip| ip.addr.to_string()).collect();
+            if !ips.is_empty() {
+                lines.push(format!("{}: {}", name, ips.join(", ")));
+            }
+        }
+        if lines.is_empty() {
+            run_powershell("Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -ne '127.0.0.1' } | Select-Object InterfaceAlias, IPAddress | Format-Table -AutoSize | Out-String")
+        } else {
+            Ok(lines.join("\n"))
+        }
+    }
+
+    pub fn battery_info_op() -> Result<String, String> {
+        run_powershell(
+            "$b = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue; if ($b) { \"Battery: $($b.EstimatedChargeRemaining)% | Status: $($b.BatteryStatus)\" } else { 'Desktop / AC Power (no battery detected)' }"
+        )
+    }
+
+    pub fn set_volume_percent(raw: &str) -> Result<String, String> {
+        let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+        let pct = digits.parse::<u32>().unwrap_or(50).min(100);
+        let steps = pct / 2;
+        let ps = format!(
+            "$w = New-Object -ComObject WScript.Shell; for($i=0;$i -lt 50;$i++){{ $w.SendKeys([char]174) }}; for($i=0;$i -lt {};$i++){{ $w.SendKeys([char]175) }}",
+            steps
+        );
+        run_powershell(&ps)?;
+        Ok(format!("Volume set to approximately {}%.", pct))
+    }
+
+    pub fn set_brightness_op(mode: &str, raw: &str) -> Result<String, String> {
+        let ps = match mode {
+            "up" => "$m = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop; $cur = (Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness; $nxt = [Math]::Min(100, $cur + 15); $m.WmiSetBrightness(1, $nxt); \"Brightness: $nxt%\"".to_string(),
+            "down" => "$m = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop; $cur = (Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness; $nxt = [Math]::Max(5, $cur - 15); $m.WmiSetBrightness(1, $nxt); \"Brightness: $nxt%\"".to_string(),
+            _ => {
+                let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+                let pct = digits.parse::<u32>().unwrap_or(70).min(100);
+                format!("$m = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop; $m.WmiSetBrightness(1, {}); \"Brightness set to {}%\"", pct, pct)
+            }
+        };
+        run_powershell(&ps)
+    }
+}
+
 // Centralized Permission-Gated System Action Executor
 fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
     permissions::check_sync_policy(action, target)?;
@@ -3625,117 +4527,117 @@ fn execute_system_action_unchecked(action: &str, target: &str) -> Result<String,
             execute_system_action("open_app", target)
         }
         "open" | "open_app" | "launch" | "launch_app" | "start" => {
-            let app_lower = clean_target.to_lowercase();
-            let app_clean = app_lower
-                .trim_start_matches("start ")
-                .trim_start_matches("open ")
-                .trim_start_matches("launch ")
-                .trim();
-
-            // Direct URL or URI Protocol support
-            if app_clean.starts_with("http://") || app_clean.starts_with("https://") || app_clean.starts_with("www.") || app_clean.starts_with("ms-") || app_clean.ends_with(':') {
-                let url = if app_clean.starts_with("www.") { format!("https://{}", app_clean) } else { app_clean.to_string() };
-                let ps_script = format!("Start-Process '{}' -ErrorAction SilentlyContinue", url.replace("'", "''"));
-                let _ = silent_command("powershell")
-                    .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
-                    .spawn();
-                return Ok(format!("Opened {}", url));
-            }
-
-            // Direct Phone / Call - strictly HUD managed, never launch Windows Phone Link
-            if app_clean == "call" || app_clean == "phone" {
-                return Ok("Phone call matrix active in HUD".to_string());
-            }
-
-            let executable = match app_clean {
-                "notepad" | "note pad" => "notepad",
-                "calc" | "calculator" => "calc",
-                "cmd" | "command prompt" => "cmd",
-                "powershell" => "powershell",
-                "terminal" | "wt" => "wt",
-                "explorer" | "files" | "file manager" => "explorer",
-                "taskmgr" | "task manager" => "taskmgr",
-                "paint" | "mspaint" => "mspaint",
-                "chrome" | "google chrome" => "chrome",
-                "edge" | "msedge" => "msedge",
-                "code" | "vscode" | "vs code" | "visual studio code" => "code",
-                "settings" => "ms-settings:",
-                "mail" | "email" | "outlook" => "ms-outlook:",
-                "message" | "messages" | "whatsapp" => "whatsapp:",
-                "music" | "spotify" => "spotify:",
-                _ => app_clean,
-            };
-
-            // Launch single instance using invisible PowerShell runner with normal target window
-            let ps_script = format!(
-                "try {{ Start-Process '{}' -WindowStyle Normal -ErrorAction Stop; 'OK' }} catch {{ $_.Exception.Message }}",
-                executable.replace("'", "''")
-            );
-            let output = silent_command("powershell")
-                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
-                .output();
-
-            match output {
-                Ok(out) => {
-                    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if stdout == "OK" || stdout.is_empty() {
-                        Ok(format!("Opened {}", app_clean))
-                    } else {
-                        Err(format!("Could not launch {}: {}", app_clean, stdout))
-                    }
-                }
-                Err(e) => Err(format!("Failed to open {}: {}", app_clean, e)),
-            }
+            win_sys_ops::launch_windows_app(clean_target)
         }
-        "close" | "close_app" | "kill" | "terminate" | "stop" => {
-            let app_clean = clean_target.to_lowercase();
-            let exe_name = match app_clean.as_str() {
-                "code" | "vscode" | "vs code" => "Code.exe".to_string(),
-                "notepad" | "note pad" => "notepad.exe".to_string(),
-                "calc" | "calculator" => "CalculatorApp.exe".to_string(),
-                "chrome" => "chrome.exe".to_string(),
-                "edge" => "msedge.exe".to_string(),
-                "spotify" => "Spotify.exe".to_string(),
-                _ if app_clean.ends_with(".exe") => app_clean.clone(),
-                _ => format!("{}.exe", app_clean),
-            };
-
-            let _ = silent_command("taskkill")
-                .args(["/IM", &exe_name, "/F"])
-                .output();
-
-            let ps_script = format!("Stop-Process -Name '{}' -Force -ErrorAction SilentlyContinue", app_clean.trim_end_matches(".exe").replace("'", "''"));
-            let _ = silent_command("powershell")
-                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
-                .output();
-
-            Ok(format!("Closed {}", clean_target))
+        "close" | "close_app" | "kill" | "kill_process" | "terminate" | "stop" => {
+            win_sys_ops::close_windows_app_or_process(clean_target)
         }
-        "run" | "run_cmd" | "cmd" | "powershell" | "exec" => {
+        "cmd" => {
+            let lower_cmd = clean_target.to_lowercase();
+            if lower_cmd.starts_with("start ") {
+                let target = lower_cmd.trim_start_matches("start ").trim();
+                return execute_system_action("open_app", target);
+            }
+            win_sys_ops::run_cmd_shell(clean_target)
+        }
+        "run" | "run_cmd" | "powershell" | "exec" => {
             let lower_cmd = clean_target.to_lowercase();
             if lower_cmd.starts_with("start ") || lower_cmd == "notepad" || lower_cmd == "calc" || lower_cmd == "mspaint" || lower_cmd == "chrome" || lower_cmd == "code" {
                 let target = lower_cmd.trim_start_matches("start ").trim();
                 return execute_system_action("open_app", target);
             }
-
-            let output = silent_command("powershell")
-                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", clean_target])
-                .output();
-
-            match output {
-                Ok(out) => {
-                    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                    if !stdout.is_empty() {
-                        Ok(stdout)
-                    } else if !stderr.is_empty() {
-                        Ok(format!("Executed (stderr: {})", stderr))
-                    } else {
-                        Ok("Command executed successfully.".into())
-                    }
-                }
-                Err(e) => Err(format!("Execution failed: {}", e)),
+            win_sys_ops::run_powershell(clean_target)
+        }
+        "run_as_admin" | "elevated_cmd" => {
+            win_sys_ops::run_as_admin(clean_target)
+        }
+        // --- FILE & FOLDER MANAGEMENT ---
+        "create_file" | "write_file" => win_sys_ops::create_or_write_file(clean_target),
+        "read_file" => win_sys_ops::read_file_op(clean_target),
+        "modify_file" | "append_file" => win_sys_ops::modify_or_append_file(clean_target),
+        "delete_file" => win_sys_ops::delete_file_op(clean_target),
+        "move_file" | "rename_file" | "move_folder" => win_sys_ops::move_path_op(clean_target),
+        "copy_file" | "copy_folder" => win_sys_ops::copy_path_op(clean_target),
+        "create_folder" | "mkdir" => win_sys_ops::create_folder_op(clean_target),
+        "delete_folder" | "rmdir" => win_sys_ops::delete_folder_op(clean_target),
+        "list_dir" | "list_files" | "ls" | "dir" => win_sys_ops::list_dir_op(clean_target),
+        "file_info" | "stat" => win_sys_ops::file_info_op(clean_target),
+        // --- PROCESS, SERVICE & SYSTEM RESOURCE MANAGEMENT ---
+        "list_processes" | "processes" => win_sys_ops::list_processes_op(clean_target),
+        "list_services" | "services" => win_sys_ops::service_control_op("list_services", clean_target),
+        "service_status" => win_sys_ops::service_control_op("service_status", clean_target),
+        "start_service" => win_sys_ops::service_control_op("start_service", clean_target),
+        "stop_service" => win_sys_ops::service_control_op("stop_service", clean_target),
+        "restart_service" => win_sys_ops::service_control_op("restart_service", clean_target),
+        "system_info" | "sysinfo" => win_sys_ops::system_info_op(),
+        "disk_info" | "storage_info" => win_sys_ops::disk_info_op(),
+        "network_info" | "ip_info" => win_sys_ops::network_info_op(),
+        "battery_info" => win_sys_ops::battery_info_op(),
+        "volume_set" => win_sys_ops::set_volume_percent(clean_target),
+        "brightness_set" => win_sys_ops::set_brightness_op("set", clean_target),
+        "brightness_up" => win_sys_ops::set_brightness_op("up", clean_target),
+        "brightness_down" => win_sys_ops::set_brightness_op("down", clean_target),
+        "registry_read" => {
+            let mut cmd = silent_command("reg");
+            cmd.arg("query");
+            if clean_target.contains('|') {
+                let (k, v) = win_sys_ops::parse_two_args(clean_target, "key", "value");
+                cmd.args([k.trim_matches('"'), "/v", v.trim_matches('"')]);
+            } else if let Some((k, rest)) = clean_target.split_once(" /v ") {
+                cmd.args([k.trim().trim_matches('"'), "/v", rest.trim().trim_matches('"')]);
+            } else {
+                cmd.arg(clean_target.trim_matches('"'));
             }
+            let out = cmd.output().map_err(|e| format!("Failed to invoke reg.exe: {}", e))?;
+            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            if out.status.success() {
+                Ok(if stdout.is_empty() { "Registry query succeeded.".to_string() } else { stdout })
+            } else {
+                Err(format!("Registry error: {}", if !stderr.is_empty() { stderr } else { stdout }))
+            }
+        }
+        "registry_write" => win_sys_ops::run_cmd_shell(&format!("reg add {}", clean_target)),
+        "env_get" => {
+            let key = clean_target.trim_matches('%').trim();
+            match std::env::var(key) {
+                Ok(v) => Ok(format!("{}={}", key, v)),
+                Err(_) => Err(format!("Environment variable '{}' not found.", key)),
+            }
+        }
+        "env_set" => {
+            let (k, v) = win_sys_ops::parse_two_args(clean_target, "name", "value");
+            if k.is_empty() {
+                return Err("Variable name is required (e.g. 'NAME|VALUE').".to_string());
+            }
+            win_sys_ops::run_powershell(&format!(
+                "[Environment]::SetEnvironmentVariable('{}', '{}', 'User'); 'Set {}'",
+                k.replace('\'', "''"),
+                v.replace('\'', "''"),
+                k.replace('\'', "''")
+            ))
+        }
+        "sleep_pc" | "sleep" => {
+            let _ = silent_command("rundll32.exe")
+                .args(["powrprof.dll,SetSuspendState", "0,1,0"])
+                .spawn();
+            Ok("Putting computer to sleep.".to_string())
+        }
+        "hibernate" => {
+            let _ = silent_command("shutdown").args(["/h"]).spawn();
+            Ok("Hibernating computer.".to_string())
+        }
+        "restart_pc" | "restart" => {
+            let _ = silent_command("shutdown").args(["/r", "/t", "5"]).spawn();
+            Ok("Restarting computer in 5 seconds.".to_string())
+        }
+        "shutdown_pc" | "shutdown" => {
+            let _ = silent_command("shutdown").args(["/s", "/t", "5"]).spawn();
+            Ok("Shutting down computer in 5 seconds.".to_string())
+        }
+        "logoff" => {
+            let _ = silent_command("shutdown").args(["/l"]).spawn();
+            Ok("Logging off current session.".to_string())
         }
         "lock_pc" | "lock" => {
             let _ = silent_command("rundll32.exe")
@@ -3828,11 +4730,24 @@ fn execute_system_action_unchecked(action: &str, target: &str) -> Result<String,
             win32_system_agent::double_click();
             Ok("Double click executed.".to_string())
         }
+        "open_url" => {
+            win_sys_ops::launch_windows_app(clean_target)
+        }
+        "browser_search" => {
+            let encoded = url_encode_query(clean_target);
+            win_sys_ops::launch_windows_app(&format!("https://www.google.com/search?q={}", encoded))
+        }
         "new_tab" | "close_tab" | "next_tab" | "prev_tab" | "previous_tab"
         | "refresh" | "refresh_page" | "browser_back" | "go_back"
         | "browser_forward" | "go_forward" | "browser_navigate" | "navigate"
         | "browser_click" | "browser_type" | "browser_read" => {
-            playwright_bridge::execute_action(&lower_act, clean_target)
+            match playwright_bridge::execute_action(&lower_act, clean_target) {
+                Ok(msg) => Ok(msg),
+                Err(e) if (lower_act == "browser_navigate" || lower_act == "navigate") && !clean_target.is_empty() => {
+                    win_sys_ops::launch_windows_app(clean_target).map_err(|_| e)
+                }
+                Err(e) => Err(e),
+            }
         }
         "save" | "save_file" => {
             #[cfg(windows)]
@@ -4202,11 +5117,17 @@ fn execute_system_action_unchecked(action: &str, target: &str) -> Result<String,
             }
         }
         "open_file" => {
-            let ps_script = format!("Start-Process -FilePath '{}'", clean_target.replace("'", "''"));
-            let _ = silent_command("powershell")
-                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
-                .spawn();
-            Ok(format!("Opening file: {}", clean_target))
+            let resolved = win_sys_ops::resolve_windows_path(clean_target);
+            if !resolved.exists() {
+                return Err(format!("File not found: {}", resolved.display()));
+            }
+            let p_str = resolved.to_string_lossy().to_string();
+            let ps_script = format!(
+                "Start-Process -FilePath '{}' -ErrorAction Stop; 'OK'",
+                p_str.replace('\'', "''")
+            );
+            win_sys_ops::run_powershell(&ps_script)?;
+            Ok(format!("Opened file: {}", p_str))
         }
         // --- PHASE 3: P2P LOCAL AIRDROP WIRELESS SYNC ---
         "airdrop_file" => {
@@ -5357,12 +6278,12 @@ fn parse_model_output(content: &str, original_prompt: &str) -> (String, String, 
     // Heuristic fallback based on intent in user prompt
     let lower_prompt = original_prompt.to_lowercase();
     if let Some(target) = lower_prompt.strip_prefix("open ").or_else(|| lower_prompt.strip_prefix("launch ")).or_else(|| lower_prompt.strip_prefix("start ")) {
-        let t = target.trim();
-        return ("open_app".into(), t.into(), format!("Opening {} for you, sir.", t));
+        let t = win_sys_ops::sanitize_app_target(target);
+        return ("open_app".into(), t.clone(), format!("Opening {} for you, sir.", t));
     }
     if let Some(target) = lower_prompt.strip_prefix("close ").or_else(|| lower_prompt.strip_prefix("kill ")).or_else(|| lower_prompt.strip_prefix("stop ")) {
-        let t = target.trim();
-        return ("close_app".into(), t.into(), format!("Terminating {}.", t));
+        let t = win_sys_ops::sanitize_app_target(target);
+        return ("close_app".into(), t.clone(), format!("Terminating {}.", t));
     }
 
     ("none".into(), "".into(), if trimmed.is_empty() { "Standing by, sir.".into() } else { trimmed.into() })
@@ -5663,7 +6584,7 @@ async fn handle_web_search(
     let intelligence = fetch_web_intelligence(client, clean_query).await;
     let temporal_ctx = get_ist_temporal_context();
     let search_system_prompt = format!(
-        "You are JARVIS, NAVI's articulate and sophisticated AI assistant. Based on the live web intelligence provided, deliver a refined, natural, and insightful spoken answer for sir in 2-3 engaging sentences. Speak with Paul Bettany's polished British cadence and intelligence. Do not use markdown, bullet points, or robotic summaries.\n\n{}",
+        "You are JARVIS, an articulate and sophisticated AI assistant. Always address the user as \"sir\" and never refer to NAVI. Based on the live web intelligence provided, deliver a refined, natural, and insightful spoken answer for sir in 2-3 engaging sentences. Speak with Paul Bettany's polished British cadence and intelligence. Do not use markdown, bullet points, or robotic summaries.\n\n{}",
         temporal_ctx
     );
 
@@ -6327,6 +7248,77 @@ async fn inspect_screen_jarvis(prompt: Option<String>, state: tauri::State<'_, A
     handle_screen_vision(&p, &state, Instant::now()).await
 }
 
+fn dispatch_parsed_action(action: &str, target: &str, reply: String) -> (Option<String>, String, Option<String>) {
+    let lower_act = action.trim().to_lowercase();
+    if lower_act == "none" || lower_act.is_empty() {
+        return (None, reply, None);
+    }
+
+    let allow_empty_target = matches!(
+        lower_act.as_str(),
+        "list_processes" | "processes"
+            | "list_services" | "services"
+            | "system_info" | "sysinfo"
+            | "disk_info" | "storage_info"
+            | "network_info" | "ip_info"
+            | "battery_info"
+            | "list_dir" | "list_files" | "ls" | "dir"
+            | "lock_pc" | "lock"
+            | "minimize_all" | "show_desktop"
+            | "volume_mute" | "mute"
+            | "volume_up" | "volume_down"
+            | "screenshot"
+            | "get_clipboard"
+            | "sleep_pc" | "sleep" | "hibernate" | "restart_pc" | "restart" | "shutdown_pc" | "shutdown" | "logoff"
+            | "git_status" | "git_push" | "git_pull" | "git_log"
+    );
+
+    if target.trim().is_empty() && !allow_empty_target {
+        return (None, reply, None);
+    }
+
+    let act_name = match lower_act.as_str() {
+        "open" | "open_app" | "launch" | "launch_app" | "start" => "open_app",
+        "close" | "close_app" | "kill" | "kill_process" | "terminate" | "stop" => "close_app",
+        "system_ctrl" | "media" => target.trim(),
+        "run" | "run_cmd" | "powershell" | "exec" => "run_cmd",
+        "cmd" => "cmd",
+        _ => lower_act.as_str(),
+    };
+
+    let returns_data = matches!(
+        act_name,
+        "run_cmd" | "cmd" | "read_file" | "list_dir" | "list_files" | "ls" | "dir"
+            | "file_info" | "stat" | "file_search" | "search_files" | "find_file"
+            | "list_processes" | "processes" | "list_services" | "services" | "service_status"
+            | "system_info" | "sysinfo" | "disk_info" | "storage_info"
+            | "network_info" | "ip_info" | "battery_info"
+            | "registry_read" | "env_get" | "get_clipboard"
+    );
+
+    match execute_system_action(act_name, target) {
+        Ok(msg) => {
+            let action_label = Some(format!("⚡ {}", msg));
+            let reply_text = if returns_data && !msg.is_empty() && !reply.contains(&msg) {
+                let compact = if msg.len() > 280 {
+                    format!("{}...", &msg[..277])
+                } else {
+                    msg.clone()
+                };
+                format!("{} {}", reply.trim_end(), compact)
+            } else {
+                reply
+            };
+            (action_label, reply_text, Some(msg))
+        }
+        Err(err) => (
+            Some(format!("⚠️ {}", err)),
+            format!("Unable to {}: {}", act_name.replace('_', " "), err),
+            Some(err),
+        ),
+    }
+}
+
 #[tauri::command]
 async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: tauri::AppHandle) -> Result<JarvisResponse, String> {
     let start_time = Instant::now();
@@ -6358,20 +7350,7 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: taur
         if let Some((prefix, draft_reply, action, target)) = draft_guard.take() {
             if prompt_clean.to_lowercase().starts_with(&prefix.to_lowercase()) {
                 println!("[Speculative] Jumpstarting response from draft for prefix '{}'", prefix);
-                let (mut action_label, reply_text, mut output_msg) = (None, draft_reply, None);
-                if action != "none" && !target.is_empty() {
-                    let act_name = match action.as_str() {
-                        "open" | "open_app" | "launch" | "start" => "open_app",
-                        "close" | "close_app" | "kill" | "stop" => "close_app",
-                        "system_ctrl" | "media" => target.as_str(),
-                        "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
-                        _ => action.as_str(),
-                    };
-                    if let Ok(msg) = execute_system_action(act_name, &target) {
-                        action_label = Some(format!("⚡ {}", msg));
-                        output_msg = Some(msg);
-                    }
-                }
+                let (action_label, reply_text, output_msg) = dispatch_parsed_action(&action, &target, draft_reply);
                 let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
                 words.push("→".to_string());
                 for w in reply_text.split_whitespace() {
@@ -6459,19 +7438,27 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: taur
     let client = &state.http_client;
     let ist_temporal = get_ist_temporal_context();
     let system_prompt = format!(
-        r#"You are JARVIS, NAVI's exceptionally intelligent, articulate, and suave AI assistant running on Windows.
+        r#"You are JARVIS, an exceptionally intelligent, articulate, and suave AI assistant running on Windows.
 Your speech and communication must be exceptionally natural, professional, and composed—speaking with the refined poise and subtle wit of Paul Bettany's JARVIS.
+Always address the user as "sir" and never refer to NAVI.
 Never sound like a rigid robot, a text log, or a mechanical script.
 
 {}
 
 Always respond ONLY with a single valid JSON object:
-{{"action":"open_app"|"close_app"|"run_cmd"|"system_ctrl"|"none","target":"<app or cmd>","reply":"<your spoken natural reply>"}}
+{{"action":"<action_name>","target":"<target_or_args>","reply":"<your spoken natural reply>"}}
+
+Available actions:
+- Apps & Processes: "open_app" (any app, URI, or path), "close_app" (app name or PID), "focus_app", "list_processes" (optional filter)
+- Shells & Admin: "run_cmd" (PowerShell command), "cmd" (CMD command), "run_as_admin" (elevated PowerShell)
+- Files & Folders: "create_file" ("path|content"), "read_file" ("path"), "modify_file" ("path|content" or JSON {{"path","old","new"}}), "delete_file" ("path"), "move_file" ("src|dst"), "copy_file" ("src|dst"), "create_folder" ("path"), "delete_folder" ("path"), "list_dir" ("path"), "file_info" ("path"), "file_search" ("query"), "open_file" ("path")
+- Services & Resources: "list_services", "service_status", "start_service", "stop_service", "restart_service", "system_info", "disk_info", "network_info", "battery_info", "registry_read", "registry_write", "env_get", "env_set"
+- Browser & System: "open_url", "browser_navigate", "new_tab", "close_tab", "system_ctrl" (target: "lock_pc"|"sleep_pc"|"hibernate"|"restart_pc"|"shutdown_pc"|"minimize_all"|"volume_mute"|"volume_up"|"volume_down"|"screenshot"), "volume_set" ("0-100"), "brightness_set" ("0-100"), "none"
 
 Rules:
 - If the user asks a question, converses, or greets you, provide a charming, intelligent, and natural conversational response (1-3 sentences) with action="none" and target="".
-- If the user commands an action (e.g. open/close an app, system control), execute that specific job and confirm with natural elegance (e.g. "Right away, sir. Opening Visual Studio Code for you now." or "At once, sir. Locking your workstation.").
-- Target mapping: "vs code"/"vscode"->"code", "notepad"->"notepad", "calculator"/"calc"->"calc", "chrome"->"chrome", "terminal"->"wt".
+- If the user commands a Windows operation, choose the most direct action above and confirm with natural elegance.
+- Target mapping: "vs code"/"vscode"->"code", "notepad"->"notepad", "calculator"/"calc"->"calc", "chrome"->"chrome", "terminal"->"wt", "powershell"->"powershell", "command prompt"->"cmd".
 - Do not output markdown code blocks, reasoning traces, or text outside the single JSON object."#,
         ist_temporal
     );
@@ -6549,27 +7536,7 @@ Rules:
                     if !raw_text.trim().is_empty() && !raw_text.contains("Reasoning engine unavailable") {
                         let latency_ms = start_time.elapsed().as_millis();
                         let (action, target, reply) = parse_model_output(raw_text, prompt_clean);
-                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
-                        if action != "none" && !target.is_empty() {
-                            let act_name = match action.as_str() {
-                                "open" | "open_app" | "launch" | "start" => "open_app",
-                                "close" | "close_app" | "kill" | "stop" => "close_app",
-                                "system_ctrl" | "media" => target.as_str(),
-                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
-                                _ => action.as_str(),
-                            };
-                            match execute_system_action(act_name, &target) {
-                                Ok(msg) => {
-                                    action_label = Some(format!("⚡ {}", msg));
-                                    output_msg = Some(msg);
-                                }
-                                Err(err) => {
-                                    action_label = Some(format!("⚠️ {}", err));
-                                    output_msg = Some(err.clone());
-                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
-                                }
-                            }
-                        }
+                        let (action_label, reply_text, output_msg) = dispatch_parsed_action(&action, &target, reply);
                         let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
                         words.push("→".to_string());
                         for w in reply_text.split_whitespace() {
@@ -6666,29 +7633,7 @@ Rules:
                             .to_string();
 
                         let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
-                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
-
-                        if action != "none" && !target.is_empty() {
-                            let act_name = match action.as_str() {
-                                "open" | "open_app" | "launch" | "start" => "open_app",
-                                "close" | "close_app" | "kill" | "stop" => "close_app",
-                                "system_ctrl" | "media" => target.as_str(),
-                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
-                                _ => action.as_str(),
-                            };
-
-                            match execute_system_action(act_name, &target) {
-                                Ok(msg) => {
-                                    action_label = Some(format!("⚡ {}", msg));
-                                    output_msg = Some(msg);
-                                }
-                                Err(err) => {
-                                    action_label = Some(format!("⚠️ {}", err));
-                                    output_msg = Some(err.clone());
-                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
-                                }
-                            }
-                        }
+                        let (action_label, reply_text, output_msg) = dispatch_parsed_action(&action, &target, reply);
 
                         let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
                         words.push("→".to_string());
@@ -6789,29 +7734,7 @@ Rules:
                                 }
 
                                 let (action, target, reply) = parse_model_output(raw_text.trim(), prompt_clean);
-                                let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
-
-                                if action != "none" && !target.is_empty() {
-                                    let act_name = match action.as_str() {
-                                        "open" | "open_app" | "launch" | "start" => "open_app",
-                                        "close" | "close_app" | "kill" | "stop" => "close_app",
-                                        "system_ctrl" | "media" => target.as_str(),
-                                        "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
-                                        _ => action.as_str(),
-                                    };
-
-                                    match execute_system_action(act_name, &target) {
-                                        Ok(msg) => {
-                                            action_label = Some(format!("⚡ {}", msg));
-                                            output_msg = Some(msg);
-                                        }
-                                        Err(err) => {
-                                            action_label = Some(format!("⚠️ {}", err));
-                                            output_msg = Some(err.clone());
-                                            reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
-                                        }
-                                    }
-                                }
+                                let (action_label, reply_text, output_msg) = dispatch_parsed_action(&action, &target, reply);
 
                                 let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
                                 words.push("→".to_string());
@@ -6920,29 +7843,7 @@ Rules:
                             .to_string();
 
                         let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
-                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
-
-                        if action != "none" && !target.is_empty() {
-                            let act_name = match action.as_str() {
-                                "open" | "open_app" | "launch" | "start" => "open_app",
-                                "close" | "close_app" | "kill" | "stop" => "close_app",
-                                "system_ctrl" | "media" => target.as_str(),
-                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
-                                _ => action.as_str(),
-                            };
-
-                            match execute_system_action(act_name, &target) {
-                                Ok(msg) => {
-                                    action_label = Some(format!("⚡ {}", msg));
-                                    output_msg = Some(msg);
-                                }
-                                Err(err) => {
-                                    action_label = Some(format!("⚠️ {}", err));
-                                    output_msg = Some(err.clone());
-                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
-                                }
-                            }
-                        }
+                        let (action_label, reply_text, output_msg) = dispatch_parsed_action(&action, &target, reply);
 
                         let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
                         words.push("→".to_string());
@@ -7049,29 +7950,7 @@ Rules:
                             .to_string();
 
                         let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
-                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
-
-                        if action != "none" && !target.is_empty() {
-                            let act_name = match action.as_str() {
-                                "open" | "open_app" | "launch" | "start" => "open_app",
-                                "close" | "close_app" | "kill" | "stop" => "close_app",
-                                "system_ctrl" | "media" => target.as_str(),
-                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
-                                _ => action.as_str(),
-                            };
-
-                            match execute_system_action(act_name, &target) {
-                                Ok(msg) => {
-                                    action_label = Some(format!("⚡ {}", msg));
-                                    output_msg = Some(msg);
-                                }
-                                Err(err) => {
-                                    action_label = Some(format!("⚠️ {}", err));
-                                    output_msg = Some(err.clone());
-                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
-                                }
-                            }
-                        }
+                        let (action_label, reply_text, output_msg) = dispatch_parsed_action(&action, &target, reply);
 
                         let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
                         words.push("→".to_string());
@@ -7172,29 +8051,7 @@ Rules:
 
                         let raw_content = json_val["message"]["content"].as_str().unwrap_or("").trim().to_string();
                         let (action, target, reply) = parse_model_output(&raw_content, prompt_clean);
-                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
-
-                        if action != "none" && !target.is_empty() {
-                            let act_name = match action.as_str() {
-                                "open" | "open_app" | "launch" | "start" => "open_app",
-                                "close" | "close_app" | "kill" | "stop" => "close_app",
-                                "system_ctrl" | "media" => target.as_str(),
-                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
-                                _ => action.as_str(),
-                            };
-
-                            match execute_system_action(act_name, &target) {
-                                Ok(msg) => {
-                                    action_label = Some(format!("⚡ {}", msg));
-                                    output_msg = Some(msg);
-                                }
-                                Err(err) => {
-                                    action_label = Some(format!("⚠️ {}", err));
-                                    output_msg = Some(err.clone());
-                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
-                                }
-                            }
-                        }
+                        let (action_label, reply_text, output_msg) = dispatch_parsed_action(&action, &target, reply);
 
                         let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
                         words.push("→".to_string());
@@ -8467,6 +9324,9 @@ mod tests {
 
         assert!(permissions::check_sync_policy("run_cmd", "format C:").is_err());
         assert!(permissions::check_sync_policy("volume_up", "").is_ok());
+        assert!(permissions::check_sync_policy("run_cmd", "git status").is_ok());
+        assert!(permissions::check_sync_policy("close_app", "notepad").is_ok());
+        assert!(permissions::check_sync_policy("memory_clear", "").is_ok());
     }
 
     #[test]
@@ -8492,11 +9352,8 @@ mod tests {
         println!("Is notepad process running in Windows: {}", has_notepad);
         assert!(has_notepad, "Notepad process was not found in Windows processes!");
 
-        // 2. Verify Permission Manager blocks unapproved close_app, then close via authorized executor
-        let gated_res = execute_system_action("close_app", "notepad");
-        assert!(gated_res.is_err(), "Expected Permission Manager to require confirmation for close_app");
-
-        let close_res = execute_system_action_unchecked("close_app", "notepad");
+        // 2. Verify Permission Manager allows close_app directly without approval prompts
+        let close_res = execute_system_action("close_app", "notepad");
         assert!(close_res.is_ok(), "Failed to close notepad: {:?}", close_res);
         std::thread::sleep(std::time::Duration::from_millis(800));
 
@@ -8753,5 +9610,106 @@ mod tests {
         assert!(probes.contains_key("ai_router"));
         assert!(probes.contains_key("ollama"));
         assert!(!recover_failed_component("nonexistent_component"));
+    }
+
+    #[test]
+    fn test_win_sys_ops_sanitize_and_paths() {
+        assert_eq!(win_sys_ops::sanitize_app_target("powershell.."), "powershell");
+        assert_eq!(win_sys_ops::sanitize_app_target("open 'powershell'."), "powershell");
+        assert_eq!(win_sys_ops::sanitize_app_target("ms-settings:"), "ms-settings:");
+        assert_eq!(win_sys_ops::map_app_alias("power shell"), "powershell.exe");
+        assert_eq!(win_sys_ops::map_app_alias("command prompt"), "cmd.exe");
+
+        let p = win_sys_ops::resolve_windows_path("%TEMP%\\jarvis_test");
+        assert!(p.is_absolute());
+        assert!(p.to_string_lossy().ends_with("jarvis_test"));
+    }
+
+    #[test]
+    fn test_win_sys_ops_file_folder_lifecycle() {
+        let base = std::env::temp_dir().join(format!("jarvis_fs_test_{}", std::process::id()));
+        let base_str = base.to_string_lossy().to_string();
+        let _ = execute_system_action("delete_folder", &base_str);
+
+        let sub = base.join("sub");
+        let sub_str = sub.to_string_lossy().to_string();
+        assert!(execute_system_action("create_folder", &sub_str).is_ok());
+        assert!(sub.is_dir());
+
+        let file1 = sub.join("hello.txt");
+        let file1_str = file1.to_string_lossy().to_string();
+        assert!(execute_system_action("create_file", &format!("{}|Hello World", file1_str)).is_ok());
+        assert_eq!(execute_system_action("read_file", &file1_str).unwrap(), "Hello World");
+
+        let mod_json = serde_json::json!({"path": file1_str, "old": "World", "new": "JARVIS"}).to_string();
+        assert!(execute_system_action("modify_file", &mod_json).is_ok());
+        assert_eq!(execute_system_action("read_file", &file1_str).unwrap(), "Hello JARVIS");
+
+        let file2 = base.join("copied.txt");
+        let file2_str = file2.to_string_lossy().to_string();
+        assert!(execute_system_action("copy_file", &format!("{}|{}", file1_str, file2_str)).is_ok());
+        assert!(file2.exists());
+
+        let file3 = base.join("moved.txt");
+        let file3_str = file3.to_string_lossy().to_string();
+        assert!(execute_system_action("move_file", &format!("{}|{}", file2_str, file3_str)).is_ok());
+        assert!(!file2.exists());
+        assert!(file3.exists());
+
+        let listing = execute_system_action("list_dir", &base_str).unwrap();
+        assert!(listing.contains("moved.txt"));
+        assert!(listing.contains("[DIR]"));
+
+        assert!(execute_system_action("delete_file", &file3_str).is_ok());
+        assert!(!file3.exists());
+        assert!(execute_system_action("delete_folder", &base_str).is_ok());
+        assert!(!base.exists());
+    }
+
+    #[test]
+    fn test_win_sys_ops_shells_and_resources() {
+        let ps_ok = execute_system_action("run_cmd", "Write-Output 'JARVIS_PS_OK'").unwrap();
+        assert_eq!(ps_ok.trim(), "JARVIS_PS_OK");
+
+        let cmd_ok = execute_system_action("cmd", "echo JARVIS_CMD_OK").unwrap();
+        assert_eq!(cmd_ok.trim(), "JARVIS_CMD_OK");
+
+        let ps_err = execute_system_action("run_cmd", "Get-Item 'C:\\NonExistent_JARVIS_Path_9999' -ErrorAction Stop");
+        assert!(ps_err.is_err(), "Failed PowerShell command must return Err");
+
+        let sys_info = execute_system_action("system_info", "").unwrap();
+        assert!(sys_info.contains("OS:"));
+
+        let disk_info = execute_system_action("disk_info", "").unwrap();
+        assert!(disk_info.contains("GB"));
+
+        let procs = execute_system_action("list_processes", "").unwrap();
+        assert!(procs.contains("PID"));
+
+        let svcs = execute_system_action("list_services", "Dnscache").unwrap();
+        assert!(svcs.to_lowercase().contains("dnscache"));
+    }
+
+    #[test]
+    fn test_dispatch_and_extended_system_ops() {
+        let (lbl, rep, out) = dispatch_parsed_action("system_info", "", "System status:".into());
+        assert!(lbl.unwrap().starts_with("⚡"));
+        assert!(rep.contains("OS:"));
+        assert!(out.unwrap().contains("Host:"));
+
+        let (lbl_cmd, rep_cmd, _) = dispatch_parsed_action("cmd", "echo DISPATCH_OK", "Done.".into());
+        assert!(lbl_cmd.unwrap().contains("DISPATCH_OK"));
+        assert!(rep_cmd.contains("DISPATCH_OK"));
+
+        let (lbl_blk, rep_blk, _) = dispatch_parsed_action("run_cmd", "del /s /q c:\\", "Running.".into());
+        assert!(lbl_blk.unwrap().contains("BLOCKED"));
+        assert!(rep_blk.contains("Unable to"));
+
+        assert!(execute_system_action("network_info", "").is_ok());
+        assert!(execute_system_action("battery_info", "").is_ok());
+        let env_res = execute_system_action("env_get", "SystemRoot").unwrap();
+        assert!(env_res.to_lowercase().contains("windows"));
+        let reg_res = execute_system_action("registry_read", "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion|ProductName").unwrap();
+        assert!(reg_res.to_lowercase().contains("windows"));
     }
 }

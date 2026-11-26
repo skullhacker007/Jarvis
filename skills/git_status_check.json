@@ -1,0 +1,12 @@
+{
+  "id": "git_status_check",
+  "name": "Git Repository Status",
+  "description": "Checks git branch and working tree status.",
+  "triggers": [
+    "git status",
+    "check git",
+    "repo status"
+  ],
+  "action": "run_cmd",
+  "target_template": "git status -sb"
+}

@@ -106,7 +106,9 @@ class TaskPlanner:
             (["close", "kill", "stop", "terminate"], "close_app"),
             (["search", "news", "weather", "look up", "find"], "web_search"),
             (["screen", "see", "window", "what's on"], "inspect_screen"),
-            (["run", "command", "terminal", "powershell", "script"], "run_cmd"),
+            (["run", "command", "terminal", "powershell", "cmd", "script"], "run_cmd"),
+            (["create file", "write file", "read file", "delete file", "move file", "copy file", "folder", "directory"], "file_ops"),
+            (["service", "process", "disk", "system info", "network", "battery"], "system_ops"),
             (["remember", "recall", "memory", "forget"], "memory"),
             (["call", "dial", "phone"], "dial_phone_call"),
         ]

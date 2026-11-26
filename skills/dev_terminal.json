@@ -1,0 +1,12 @@
+{
+  "id": "dev_terminal",
+  "name": "Developer Terminal",
+  "description": "Opens Windows Terminal for development tasks.",
+  "triggers": [
+    "open terminal",
+    "launch terminal",
+    "dev shell"
+  ],
+  "action": "open_app",
+  "target_template": "wt"
+}

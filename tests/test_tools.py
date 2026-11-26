@@ -25,6 +25,21 @@ class TestTools(unittest.TestCase):
             self.assertIn("Quantum Computing", result)
             self.assertIn("https://en.wikipedia.org/wiki/Quantum_computing", result)
 
+    def test_dev_tools_env_doctor(self):
+        from tools.dev_tools import DevTools
+        dt = DevTools()
+        doc = dt.env_doctor()
+        self.assertTrue(doc["venv_exists"])
+        self.assertTrue(doc["git_available"])
+        gs = dt.git_status()
+        self.assertTrue(gs["ok"])
+
+    def test_dev_skills_loaded(self):
+        from core.skills_registry import SkillsRegistry
+        reg = SkillsRegistry(skills_dir="skills")
+        for sid in ("developer_workspace", "git_status_check", "run_tests_suite", "build_jarvis_exe", "dev_terminal"):
+            self.assertIn(sid, reg.skills)
+
 
 if __name__ == "__main__":
     unittest.main()

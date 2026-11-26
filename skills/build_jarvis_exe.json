@@ -1,0 +1,12 @@
+{
+  "id": "build_jarvis_exe",
+  "name": "Rebuild Jarvis Executable",
+  "description": "Synchronizes .venv and rebuilds Jarvis.exe.",
+  "triggers": [
+    "build jarvis",
+    "rebuild exe",
+    "compile jarvis"
+  ],
+  "action": "run_cmd",
+  "target_template": "npm run build:exe"
+}
