@@ -2230,7 +2230,15 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
                             let id = m["id"].as_str().unwrap_or("").to_string();
                             let active = m["active"].as_bool().unwrap_or(true);
                             let lower = id.to_lowercase();
-                            if id.is_empty() || !active || lower.contains("whisper") || lower.contains("tts") || lower.contains("guard") || lower.contains("safeguard") || lower.contains("orpheus") {
+                            if id.is_empty()
+                                || !active
+                                || lower.contains("whisper")
+                                || lower.contains("tts")
+                                || lower.contains("guard")
+                                || lower.contains("safeguard")
+                                || lower.contains("orpheus")
+                                || lower.contains("allam")
+                            {
                                 continue;
                             }
                             let ctx_len = m["context_window"].as_u64().unwrap_or(131_072) as u32;
@@ -2247,12 +2255,15 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
                             });
                         }
                         matched.sort_by_key(|e| {
+                            let l = e.id.to_lowercase();
                             if !groq_configured.is_empty() && e.id == groq_configured {
                                 0
-                            } else if e.id.contains("llama-3.3") || e.id.contains("qwen") {
+                            } else if l.contains("llama-3.3") || l.contains("qwen") || l.contains("120b") {
                                 1
-                            } else {
+                            } else if l.contains("20b") || l.contains("70b") || l.contains("gemini") {
                                 2
+                            } else {
+                                3
                             }
                         });
                         matched.truncate(4);
@@ -6275,6 +6286,112 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
         }
     }
 
+    // 8. Direct App Launch / Close / Shell Execution Fast-Path
+    // Ensures commands like "Open PowerShell", "Launch Chrome", "Close Notepad" execute deterministically
+    // without relying on a small/fast LLM to emit valid tool-calling JSON.
+    let is_compound = lower.contains(" and ") || lower.contains(" then ");
+    if !is_compound {
+        if let Some(raw_target) = lower
+            .strip_prefix("open ")
+            .or_else(|| lower.strip_prefix("launch "))
+            .or_else(|| lower.strip_prefix("start "))
+        {
+            let cleaned_target = raw_target
+                .trim()
+                .trim_start_matches("the ")
+                .trim_start_matches("up ")
+                .trim();
+            let app_target = win_sys_ops::sanitize_app_target(cleaned_target);
+            if !app_target.is_empty()
+                && !app_target.eq_ignore_ascii_case("tab")
+                && !app_target.eq_ignore_ascii_case("new tab")
+                && !app_target.eq_ignore_ascii_case("a tab")
+            {
+                if let Ok(msg) = execute_system_action("open_app", &app_target) {
+                    return Some(JarvisResponse {
+                        reply: format!("Opening {}, sir.", app_target),
+                        action: Some(format!("⚡ {}", msg)),
+                        command: Some(app_target.clone()),
+                        output: Some(msg),
+                        latency_ms: start.elapsed().as_millis(),
+                        prompt_tokens: 3,
+                        eval_tokens: 4,
+                        total_tokens: 7,
+                        tokens_per_sec: 25.0,
+                        model_name: MODEL_NAME.to_string(),
+                        token_words: vec!["open".into(), "→".into(), app_target],
+                    });
+                }
+            }
+        }
+
+        if let Some(raw_target) = lower
+            .strip_prefix("close ")
+            .or_else(|| lower.strip_prefix("kill "))
+            .or_else(|| lower.strip_prefix("terminate "))
+        {
+            let app_target = win_sys_ops::sanitize_app_target(raw_target.trim().trim_start_matches("the ").trim());
+            if !app_target.is_empty() && !app_target.eq_ignore_ascii_case("tab") {
+                if let Ok(msg) = execute_system_action("close_app", &app_target) {
+                    return Some(JarvisResponse {
+                        reply: format!("Closed {}, sir.", app_target),
+                        action: Some(format!("⚡ {}", msg)),
+                        command: Some(app_target.clone()),
+                        output: Some(msg),
+                        latency_ms: start.elapsed().as_millis(),
+                        prompt_tokens: 3,
+                        eval_tokens: 4,
+                        total_tokens: 7,
+                        tokens_per_sec: 25.0,
+                        model_name: MODEL_NAME.to_string(),
+                        token_words: vec!["close".into(), "→".into(), app_target],
+                    });
+                }
+            }
+        }
+
+        if let Some(cmd_body) = lower
+            .strip_prefix("run powershell ")
+            .or_else(|| lower.strip_prefix("execute powershell "))
+        {
+            let cmd_clean = prompt.trim().get(prompt.len().saturating_sub(cmd_body.len())..).unwrap_or(cmd_body).trim();
+            if !cmd_clean.is_empty() {
+                match execute_system_action("run_cmd", cmd_clean) {
+                    Ok(msg) => {
+                        return Some(JarvisResponse {
+                            reply: format!("Executed PowerShell command, sir. {}", msg),
+                            action: Some(format!("⚡ {}", msg)),
+                            command: Some(cmd_clean.to_string()),
+                            output: Some(msg),
+                            latency_ms: start.elapsed().as_millis(),
+                            prompt_tokens: 4,
+                            eval_tokens: 6,
+                            total_tokens: 10,
+                            tokens_per_sec: 25.0,
+                            model_name: MODEL_NAME.to_string(),
+                            token_words: vec!["powershell".into(), "→".into(), cmd_clean.to_string()],
+                        });
+                    }
+                    Err(err) => {
+                        return Some(JarvisResponse {
+                            reply: format!("PowerShell execution failed, sir: {}", err),
+                            action: Some(format!("⚠️ {}", err)),
+                            command: Some(cmd_clean.to_string()),
+                            output: Some(err),
+                            latency_ms: start.elapsed().as_millis(),
+                            prompt_tokens: 4,
+                            eval_tokens: 6,
+                            total_tokens: 10,
+                            tokens_per_sec: 25.0,
+                            model_name: MODEL_NAME.to_string(),
+                            token_words: vec!["powershell".into(), "→".into(), "error".into()],
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     None
 }
 
@@ -6330,9 +6447,49 @@ fn parse_model_output(content: &str, original_prompt: &str) -> (String, String, 
         Some((action, norm_target, reply))
     };
 
+    let infer_from_prompt = |orig: &str| -> Option<(String, String, String)> {
+        let lower_prompt = orig.trim().to_lowercase();
+        if let Some(target) = lower_prompt
+            .strip_prefix("open ")
+            .or_else(|| lower_prompt.strip_prefix("launch "))
+            .or_else(|| lower_prompt.strip_prefix("start "))
+        {
+            let t = win_sys_ops::sanitize_app_target(target.trim().trim_start_matches("the ").trim());
+            if !t.is_empty() {
+                return Some(("open_app".into(), t.clone(), format!("Opening {} for you, sir.", t)));
+            }
+        }
+        if let Some(target) = lower_prompt
+            .strip_prefix("close ")
+            .or_else(|| lower_prompt.strip_prefix("kill "))
+            .or_else(|| lower_prompt.strip_prefix("stop "))
+        {
+            let t = win_sys_ops::sanitize_app_target(target.trim().trim_start_matches("the ").trim());
+            if !t.is_empty() {
+                return Some(("close_app".into(), t.clone(), format!("Terminating {}, sir.", t)));
+            }
+        }
+        None
+    };
+
+    let apply_intent_guard = |parsed: (String, String, String)| -> (String, String, String) {
+        let (act, tgt, rep) = parsed;
+        if act.trim().eq_ignore_ascii_case("none") || act.trim().is_empty() || tgt.trim().is_empty() {
+            if let Some((inferred_act, inferred_tgt, inferred_rep)) = infer_from_prompt(original_prompt) {
+                let final_rep = if rep == "Acknowledged, sir." || rep.trim().is_empty() {
+                    inferred_rep
+                } else {
+                    rep
+                };
+                return (inferred_act, inferred_tgt, final_rep);
+            }
+        }
+        (act, tgt, rep)
+    };
+
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(cleaned) {
         if let Some(res) = extract_json(&val) {
-            return res;
+            return apply_intent_guard(res);
         }
     }
 
@@ -6340,21 +6497,15 @@ fn parse_model_output(content: &str, original_prompt: &str) -> (String, String, 
         if start < end {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&cleaned[start..=end]) {
                 if let Some(res) = extract_json(&val) {
-                    return res;
+                    return apply_intent_guard(res);
                 }
             }
         }
     }
 
     // Heuristic fallback based on intent in user prompt
-    let lower_prompt = original_prompt.to_lowercase();
-    if let Some(target) = lower_prompt.strip_prefix("open ").or_else(|| lower_prompt.strip_prefix("launch ")).or_else(|| lower_prompt.strip_prefix("start ")) {
-        let t = win_sys_ops::sanitize_app_target(target);
-        return ("open_app".into(), t.clone(), format!("Opening {} for you, sir.", t));
-    }
-    if let Some(target) = lower_prompt.strip_prefix("close ").or_else(|| lower_prompt.strip_prefix("kill ")).or_else(|| lower_prompt.strip_prefix("stop ")) {
-        let t = win_sys_ops::sanitize_app_target(target);
-        return ("close_app".into(), t.clone(), format!("Terminating {}.", t));
+    if let Some(res) = infer_from_prompt(original_prompt) {
+        return res;
     }
 
     ("none".into(), "".into(), if trimmed.is_empty() { "Standing by, sir.".into() } else { trimmed.into() })
@@ -7558,6 +7709,21 @@ Rules:
         }
     };
 
+    let capability_bonus = |id: &str| -> f32 {
+        let l = id.to_lowercase();
+        if l.contains("120b") || l.contains("70b") || l.contains("llama-3.3") {
+            3000.0
+        } else if l.contains("qwen3.8") || l.contains("27b") || l.contains("32b") || l.contains("gemini-2.5") || l.contains("gemini-2.0") || l.contains("gemini-3") {
+            2600.0
+        } else if l.contains("20b") || l.contains("qwen") || l.contains("gemini") {
+            2000.0
+        } else if l.contains("8b") || l.contains("7b") || l.contains("2b") || l.contains("3b") || l.contains("allam") {
+            200.0
+        } else {
+            1000.0
+        }
+    };
+
     let mut candidates: Vec<(String, String, String, String, u32, f32)> = discovered
         .into_iter()
         .filter(|m| {
@@ -7568,15 +7734,15 @@ Rules:
                 .get(&m.id)
                 .map(|s| if s.latency_ms > 0 { s.latency_ms } else { m.probe_latency_ms })
                 .unwrap_or(m.probe_latency_ms);
-            lat <= 1000
+            lat <= 1500
         })
         .map(|m| {
             let lat = stats_map
                 .get(&m.id)
                 .map(|s| if s.latency_ms > 0 { s.latency_ms } else { m.probe_latency_ms })
                 .unwrap_or(m.probe_latency_ms);
-            let tier_bonus = if lat <= 200 { 1000.0 } else { 500.0 };
-            let spd = effective_speed(&m.id, &m.provider, &m.status) + tier_bonus - (lat as f32 * 0.1);
+            let tier_bonus = if lat <= 350 { 1000.0 } else { 400.0 };
+            let spd = capability_bonus(&m.id) + effective_speed(&m.id, &m.provider, &m.status) * 0.25 + tier_bonus - (lat as f32 * 0.2);
             let prov = if m.provider.contains("OLLAMA") { "LOCAL OLLAMA".to_string() } else { m.provider };
             (m.id, prov, m.parameter_size, m.quantization, m.context_length, spd)
         })
@@ -8972,12 +9138,27 @@ fn build_filtered_models(
         })
         .collect();
 
-    // Sort: Tier 1 (0-200ms) first, Tier 2 (201-500ms) second, then fastest latency, then tok/s desc
+    // Sort: Capability tier first (avoid weak 7B/8B models hijacking P1), then latency tier, then tok/s desc
+    let model_cap_rank = |id: &str| -> u8 {
+        let l = id.to_lowercase();
+        if l.contains("qwen3.8") || l.contains("27b") || l.contains("32b") || l.contains("70b") || l.contains("llama-3.3") || l.contains("120b") || l.contains("gemini-2.5") || l.contains("gemini-3") {
+            0
+        } else if l.contains("20b") || l.contains("qwen") || l.contains("gemini") {
+            1
+        } else if l.contains("8b") || l.contains("7b") || l.contains("2b") || l.contains("3b") || l.contains("allam") {
+            3
+        } else {
+            2
+        }
+    };
     available_models.sort_by(|a, b| {
-        let a_tier = if a.latency_ms <= 200 { 0u8 } else { 1u8 };
-        let b_tier = if b.latency_ms <= 200 { 0u8 } else { 1u8 };
-        a_tier
-            .cmp(&b_tier)
+        let a_cap = model_cap_rank(&a.id);
+        let b_cap = model_cap_rank(&b.id);
+        let a_tier = if a.latency_ms <= 250 { 0u8 } else { 1u8 };
+        let b_tier = if b.latency_ms <= 250 { 0u8 } else { 1u8 };
+        a_cap
+            .cmp(&b_cap)
+            .then_with(|| a_tier.cmp(&b_tier))
             .then_with(|| a.latency_ms.cmp(&b.latency_ms))
             .then_with(|| b.speed_tok_s.partial_cmp(&a.speed_tok_s).unwrap_or(std::cmp::Ordering::Equal))
     });
@@ -9873,5 +10054,47 @@ mod tests {
         assert_eq!(models[2].id, "prim-model-2");
         assert_eq!(models[3].id, "sec-model-3");
         assert_eq!(models[4].id, "sec-model-1");
+    }
+
+    #[test]
+    fn test_open_powershell_and_model_ranking() {
+        // 1. Even if a weak LLM returns {"action":"none","reply":"Acknowledged, sir."}, intent guard recovers open_app
+        let (act, tgt, rep) = parse_model_output(
+            r#"{"action":"none","target":"","reply":"Acknowledged, sir."}"#,
+            "Open PowerShell",
+        );
+        assert_eq!(act, "open_app");
+        assert_eq!(tgt, "powershell");
+        assert!(!rep.is_empty());
+
+        // 2. Fast-path PowerShell command execution returns real output
+        let fast_ps = check_fast_path("run powershell Write-Output 'FAST_PS_OK'")
+            .expect("Expected fast-path to execute PowerShell command");
+        assert!(fast_ps.output.unwrap_or_default().contains("FAST_PS_OK"));
+
+        // 3. Capable models (qwen3.8-27b, gpt-oss-120b) must rank above tiny 7B/8B models (allam-2-7b)
+        let mk = |id: &str, lat: u128| DiscoveredModelEntry {
+            id: id.to_string(),
+            display_name: id.to_uppercase(),
+            provider: "GROQ LPU".to_string(),
+            status: "ONLINE".to_string(),
+            context_window: "128K".to_string(),
+            context_length: 131_072,
+            parameter_size: "27B".to_string(),
+            quantization: "LPU".to_string(),
+            probe_latency_ms: lat,
+        };
+        let discovered = vec![
+            mk("allam-2-7b", 110),
+            mk("qwen/qwen3.8-27b", 110),
+            mk("openai/gpt-oss-120b", 240),
+        ];
+        let mut stats = HashMap::new();
+        stats.insert("allam-2-7b".to_string(), ModelRuntimeStats { tokens_used: 0, speed_tok_s: 1389.0, latency_ms: 110 });
+        stats.insert("qwen/qwen3.8-27b".to_string(), ModelRuntimeStats { tokens_used: 0, speed_tok_s: 524.0, latency_ms: 110 });
+
+        let (ranked, active_id) = build_filtered_models(&discovered, &stats, "");
+        assert_ne!(active_id, "allam-2-7b");
+        assert_eq!(ranked[0].id, "qwen/qwen3.8-27b");
     }
 }
