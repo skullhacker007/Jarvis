@@ -16,24 +16,14 @@ class TestTools(unittest.TestCase):
         </div>
         """
         tool = WebSearchTool()
-        try:
-            with patch("requests.get") as mock_get:
-                mock_resp = MagicMock()
-                mock_resp.status_code = 200
-                mock_resp.text = sample_html
-                mock_get.return_value = mock_resp
-                result = tool._duckduckgo_search("quantum computing")
-                self.assertIn("Quantum Computing", result)
-                self.assertIn("https://en.wikipedia.org/wiki/Quantum_computing", result)
-        except (ImportError, ModuleNotFoundError):
-            with patch("urllib.request.urlopen") as mock_urlopen:
-                mock_resp = MagicMock()
-                mock_resp.read.return_value = sample_html.encode("utf-8")
-                mock_resp.__enter__.return_value = mock_resp
-                mock_urlopen.return_value = mock_resp
-                result = tool._duckduckgo_search("quantum computing")
-                self.assertIn("Quantum Computing", result)
-                self.assertIn("https://en.wikipedia.org/wiki/Quantum_computing", result)
+        with patch("urllib.request.urlopen") as mock_urlopen, patch.dict("sys.modules", {"duckduckgo_search": None}):
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = sample_html.encode("utf-8")
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+            result = tool._duckduckgo_search("quantum computing")
+            self.assertIn("Quantum Computing", result)
+            self.assertIn("https://en.wikipedia.org/wiki/Quantum_computing", result)
 
 
 if __name__ == "__main__":

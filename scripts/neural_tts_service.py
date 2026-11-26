@@ -2,13 +2,21 @@
 # Primary: Kokoro-82M ONNX (Local 82M Parameter Neural Weights, British Male Cadence)
 # Multilingual Fallback: te-IN-MohanNeural (Telugu), en-GB-RyanNeural (Edge Cloud)
 
+from collections import OrderedDict
 import asyncio
 import io
 import os
+import subprocess
 import sys
+import tempfile
+import time
 from aiohttp import web
 import edge_tts
 import soundfile as sf
+
+# Optimize ONNX / OpenMP thread count for low-latency CPU inference
+os.environ.setdefault("OMP_NUM_THREADS", str(min(4, os.cpu_count() or 4)))
+os.environ.setdefault("ORT_NUM_THREADS", str(min(4, os.cpu_count() or 4)))
 
 # Resolve model asset paths relative to project root
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -81,13 +89,71 @@ EDGE_VOICE_MAP = {
     "us": "en-US-AndrewNeural",
 }
 
+def _is_telugu(text: str) -> bool:
+    return any('\u0c00' <= char <= '\u0c7f' for char in text)
+
+# Short-phrase LRU audio cache (up to 64 entries for <=120 char phrases)
+_TTS_CACHE: OrderedDict[tuple, tuple[bytes, str, str]] = OrderedDict()
+_TTS_CACHE_MAX = 64
+
+# Rolling latency & engine metrics
+_ENGINE_STATS = {
+    "kokoro": {"calls": 0, "failures": 0, "avg_ms": 0.0},
+    "edge": {"calls": 0, "failures": 0, "avg_ms": 0.0},
+    "piper": {"calls": 0, "failures": 0, "avg_ms": 0.0},
+}
+
+def _record_stat(engine: str, elapsed_ms: float, ok: bool):
+    st = _ENGINE_STATS[engine]
+    st["calls"] += 1
+    if not ok:
+        st["failures"] += 1
+        return
+    st["avg_ms"] = round((st["avg_ms"] * 0.8) + (elapsed_ms * 0.2), 1) if st["avg_ms"] > 0 else round(elapsed_ms, 1)
+
 def generate_kokoro_sync(text: str, voice_name: str, speed: float = 1.0) -> bytes:
     """Generate audio synchronously using Kokoro ONNX model and export as WAV bytes."""
     lang = "en-gb" if voice_name.startswith("b") else "en-us"
     samples, sample_rate = kokoro_engine.create(text, voice=voice_name, speed=speed, lang=lang)
     buf = io.BytesIO()
-    sf.write(buf, samples, sample_rate, format="WAV")
+    sf.write(buf, samples, sample_rate, format="WAV", subtype="PCM_16")
     return buf.getvalue()
+
+def generate_piper_sync(text: str) -> bytes:
+    """Offline Piper CLI fallback returning WAV bytes if piper + model are available."""
+    model_path = os.getenv("PIPER_MODEL_PATH", os.path.join(PROJECT_ROOT, "models", "piper", "en_GB-alan-medium.onnx"))
+    if not os.path.exists(model_path):
+        return b""
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+        tmp_wav = tf.name
+    try:
+        proc = subprocess.Popen(
+            ["piper", "--model", model_path, "--output_file", tmp_wav],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        proc.communicate(input=text.encode("utf-8"), timeout=10)
+        if proc.returncode == 0 and os.path.exists(tmp_wav) and os.path.getsize(tmp_wav) > 100:
+            with open(tmp_wav, "rb") as f:
+                return f.read()
+    except Exception:
+        pass
+    finally:
+        try:
+            os.remove(tmp_wav)
+        except OSError:
+            pass
+    return b""
+
+# Warm up Kokoro ONNX graph on startup to eliminate first-turn cold-start latency
+if kokoro_available and kokoro_engine is not None:
+    try:
+        _t0 = time.perf_counter()
+        _ = generate_kokoro_sync("Ready.", DEFAULT_KOKORO_VOICE, 1.0)
+        print(f"[Neural TTS] Kokoro-82M warmed up in {(time.perf_counter() - _t0)*1000:.1f}ms", flush=True)
+    except Exception:
+        pass
 
 async def generate_edge_async(text: str, voice_name: str) -> bytes:
     """Generate audio via Microsoft Edge Neural TTS streaming."""
@@ -98,6 +164,20 @@ async def generate_edge_async(text: str, voice_name: str) -> bytes:
             audio_bytes.extend(chunk["data"])
     return bytes(audio_bytes)
 
+def _build_audio_response(body: bytes, content_type: str, engine_name: str, voice_name: str):
+    return web.Response(
+        body=body,
+        content_type=content_type,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Cache-Control": "no-cache",
+            "X-Jarvis-Engine": engine_name,
+            "X-Jarvis-Voice": voice_name,
+        },
+    )
+
 async def handle_speech(request):
     try:
         data = await request.json()
@@ -106,66 +186,67 @@ async def handle_speech(request):
             return web.Response(status=400, text="Missing input text")
 
         req_voice = str(data.get("voice", "jarvis")).lower().strip()
+        prefer = str(data.get("prefer", "auto")).lower().strip()
         speed = float(data.get("speed", 1.0))
         speed = max(0.6, min(1.8, speed))
 
+        cache_key = (text, req_voice, round(speed, 2))
+        if len(text) <= 120 and cache_key in _TTS_CACHE:
+            cached_bytes, cached_ct, cached_eng = _TTS_CACHE[cache_key]
+            _TTS_CACHE.move_to_end(cache_key)
+            return _build_audio_response(cached_bytes, cached_ct, f"{cached_eng}-Cache", req_voice)
+
         # 1. Automatic Telugu Language Detection (Unicode range 0C00-0C7F)
-        has_telugu = any('\u0c00' <= char <= '\u0c7f' for char in text)
-        if has_telugu or req_voice in ["telugu", "mohan", "te-in-mohanneural"]:
-            target_edge_voice = "te-IN-MohanNeural"
-            audio_bytes = await generate_edge_async(text, target_edge_voice)
-            return web.Response(
-                body=audio_bytes,
-                content_type="audio/mpeg",
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "POST, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type",
-                    "Cache-Control": "no-cache",
-                    "X-Jarvis-Engine": "EdgeNeural-Telugu",
-                }
-            )
+        if _is_telugu(text) or req_voice in ["telugu", "mohan", "te-in-mohanneural"]:
+            t0 = time.perf_counter()
+            audio_bytes = await generate_edge_async(text, "te-IN-MohanNeural")
+            _record_stat("edge", (time.perf_counter() - t0) * 1000, len(audio_bytes) > 0)
+            return _build_audio_response(audio_bytes, "audio/mpeg", "EdgeNeural-Telugu", "te-IN-MohanNeural")
 
-        # 2. Primary Engine: Kokoro-82M Ultra-Realistic Neural Speech
-        if kokoro_available and kokoro_engine is not None:
+        # 2. Intelligent routing: Kokoro-82M (fast & offline) -> Edge-TTS (online) -> Piper (offline fallback)
+        if kokoro_available and kokoro_engine is not None and prefer != "edge":
             target_kokoro_voice = KOKORO_VOICE_MAP.get(req_voice, DEFAULT_KOKORO_VOICE)
+            t0 = time.perf_counter()
             try:
-                # Offload ONNX inference to worker thread to prevent event loop starvation
                 wav_bytes = await asyncio.to_thread(generate_kokoro_sync, text, target_kokoro_voice, speed)
+                elapsed = (time.perf_counter() - t0) * 1000
                 if wav_bytes and len(wav_bytes) > 100:
-                    return web.Response(
-                        body=wav_bytes,
-                        content_type="audio/wav",
-                        headers={
-                            "Access-Control-Allow-Origin": "*",
-                            "Access-Control-Allow-Methods": "POST, OPTIONS",
-                            "Access-Control-Allow-Headers": "Content-Type",
-                            "Cache-Control": "no-cache",
-                            "X-Jarvis-Engine": "Kokoro-82M",
-                            "X-Jarvis-Voice": target_kokoro_voice,
-                        }
-                    )
+                    _record_stat("kokoro", elapsed, True)
+                    if len(text) <= 120:
+                        _TTS_CACHE[cache_key] = (wav_bytes, "audio/wav", "Kokoro-82M")
+                        if len(_TTS_CACHE) > _TTS_CACHE_MAX:
+                            _TTS_CACHE.popitem(last=False)
+                    return _build_audio_response(wav_bytes, "audio/wav", "Kokoro-82M", target_kokoro_voice)
             except Exception as ke:
-                print(f"[Neural TTS Kokoro Error]: {ke}. Falling back to Edge-TTS...", file=sys.stderr, flush=True)
+                _record_stat("kokoro", (time.perf_counter() - t0) * 1000, False)
+                print(f"[Neural TTS Kokoro Error]: {ke}. Failing over...", file=sys.stderr, flush=True)
 
-        # 3. High-Fidelity Edge-TTS Fallback
-        target_edge_voice = EDGE_VOICE_MAP.get(req_voice, DEFAULT_EDGE_VOICE)
-        audio_bytes = await generate_edge_async(text, target_edge_voice)
-        if len(audio_bytes) == 0:
-            return web.Response(status=500, text="Audio generation produced empty buffer")
+        # 3. High-Fidelity Edge-TTS Fallback (online)
+        if prefer != "offline":
+            target_edge_voice = EDGE_VOICE_MAP.get(req_voice, DEFAULT_EDGE_VOICE)
+            t0 = time.perf_counter()
+            try:
+                audio_bytes = await generate_edge_async(text, target_edge_voice)
+                elapsed = (time.perf_counter() - t0) * 1000
+                if len(audio_bytes) > 0:
+                    _record_stat("edge", elapsed, True)
+                    if len(text) <= 120:
+                        _TTS_CACHE[cache_key] = (audio_bytes, "audio/mpeg", "EdgeNeural-Fallback")
+                        if len(_TTS_CACHE) > _TTS_CACHE_MAX:
+                            _TTS_CACHE.popitem(last=False)
+                    return _build_audio_response(audio_bytes, "audio/mpeg", "EdgeNeural-Fallback", target_edge_voice)
+            except Exception as ee:
+                _record_stat("edge", (time.perf_counter() - t0) * 1000, False)
+                print(f"[Neural TTS Edge Error]: {ee}. Trying Piper offline fallback...", file=sys.stderr, flush=True)
 
-        return web.Response(
-            body=audio_bytes,
-            content_type="audio/mpeg",
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-                "Cache-Control": "no-cache",
-                "X-Jarvis-Engine": "EdgeNeural-Fallback",
-                "X-Jarvis-Voice": target_edge_voice,
-            }
-        )
+        # 4. Offline Piper CLI Fallback
+        t0 = time.perf_counter()
+        piper_bytes = await asyncio.to_thread(generate_piper_sync, text)
+        if piper_bytes and len(piper_bytes) > 100:
+            _record_stat("piper", (time.perf_counter() - t0) * 1000, True)
+            return _build_audio_response(piper_bytes, "audio/wav", "Piper-Offline", "piper")
+        _record_stat("piper", (time.perf_counter() - t0) * 1000, False)
+        return web.Response(status=500, text="All TTS engines failed to produce audio")
     except Exception as e:
         print(f"[Neural TTS Error]: {e}", file=sys.stderr, flush=True)
         return web.Response(status=500, text=str(e), headers={"Access-Control-Allow-Origin": "*"})
@@ -184,6 +265,8 @@ async def handle_health(request):
         "kokoro_ready": kokoro_available,
         "default_voice": DEFAULT_KOKORO_VOICE if kokoro_available else DEFAULT_EDGE_VOICE,
         "telugu_support": True,
+        "cache_entries": len(_TTS_CACHE),
+        "engine_stats": _ENGINE_STATS,
         "voices": kokoro_engine.get_voices() if (kokoro_available and kokoro_engine is not None) else list(EDGE_VOICE_MAP.keys())
     }, headers={"Access-Control-Allow-Origin": "*"})
 

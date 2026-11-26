@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
-    "build": "tauri build",
-    "build:exe": "tauri build --no-bundle && node scripts/copy-exe.js"
+    "setup:env": "node scripts/setup-env.js",
+    "build": "node scripts/setup-env.js && tauri build",
+    "build:exe": "node scripts/setup-env.js && tauri build --no-bundle && node scripts/copy-exe.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

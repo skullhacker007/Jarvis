@@ -156,7 +156,8 @@ pub fn classify_action(action: &str, target: &str) -> (RiskLevel, &'static str) 
 fn default_decision(risk: RiskLevel) -> PolicyDecision {
     match risk {
         RiskLevel::Blocked => PolicyDecision::Deny,
-        RiskLevel::High | RiskLevel::Moderate | RiskLevel::Safe => PolicyDecision::Allow,
+        RiskLevel::High => PolicyDecision::Prompt,
+        RiskLevel::Moderate | RiskLevel::Safe => PolicyDecision::Allow,
     }
 }
 

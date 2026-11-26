@@ -8,11 +8,13 @@ import wave
 import numpy as np
 import sounddevice as sd
 import torch
+import aiohttp
 from aiohttp import web
 
 from pipecat.frames.frames import (
     AudioRawFrame,
     Frame,
+    InputAudioRawFrame,
     InterruptionFrame,
     TextFrame,
     UserStartedSpeakingFrame,
@@ -111,7 +113,8 @@ class SileroWakeWordProcessor(FrameProcessor):
             with torch.no_grad():
                 prob = float(self._vad_model(torch.from_numpy(audio_f32), SAMPLE_RATE).item())
 
-            if prob >= 0.5:
+            speech_thresh = 0.45 if self._vad_speaking else 0.58
+            if prob >= speech_thresh:
                 self._silence_frames = 0
                 self._speech_buffer.extend(enhanced_bytes)
                 if not self._vad_speaking:
@@ -122,18 +125,23 @@ class SileroWakeWordProcessor(FrameProcessor):
                         emit_event({"event": "interruption", "reason": "user_barge_in"})
                         await self.push_frame(InterruptionFrame(), direction)
                     await self.push_frame(UserStartedSpeakingFrame(), direction)
-                elif (time.time() - self._last_partial_ts) >= 0.8 and len(self._speech_buffer) >= SAMPLE_RATE * 2 * 0.6:
-                    self._last_partial_ts = time.time()
+                # Cap continuous speech buffer at 15 seconds to prevent unbounded growth
+                if len(self._speech_buffer) >= SAMPLE_RATE * 2 * 15:
+                    utterance = bytes(self._speech_buffer)
+                    self._speech_buffer.clear()
+                    self._vad_speaking = False
+                    emit_event({"event": "vad", "speaking": False})
+                    await self.push_frame(UserStoppedSpeakingFrame(), direction)
                     await self.push_frame(
-                        AudioRawFrame(audio=bytes(self._speech_buffer), sample_rate=SAMPLE_RATE, num_channels=1),
+                        InputAudioRawFrame(audio=utterance, sample_rate=SAMPLE_RATE, num_channels=1),
                         direction,
                     )
             else:
                 if self._vad_speaking:
                     self._speech_buffer.extend(enhanced_bytes)
                     self._silence_frames += 1
-                    # ~540ms silence (17 * 32ms) ends the utterance
-                    if self._silence_frames >= 17:
+                    # ~480ms silence (15 * 32ms) ends the utterance for snappy voice-to-voice turn-taking
+                    if self._silence_frames >= 15:
                         self._vad_speaking = False
                         self._silence_frames = 0
                         emit_event({"event": "vad", "speaking": False})
@@ -142,7 +150,7 @@ class SileroWakeWordProcessor(FrameProcessor):
                             utterance = bytes(self._speech_buffer)
                             self._speech_buffer.clear()
                             await self.push_frame(
-                                AudioRawFrame(audio=utterance, sample_rate=SAMPLE_RATE, num_channels=1),
+                                InputAudioRawFrame(audio=utterance, sample_rate=SAMPLE_RATE, num_channels=1),
                                 direction,
                             )
                         else:
@@ -172,33 +180,95 @@ class EcapaAndSttProcessor(FrameProcessor):
             wf.writeframes(pcm_bytes)
         return buf.getvalue()
 
+    def _load_offline_whisper(self):
+        if self._faster_whisper is not None:
+            return self._faster_whisper
+        from faster_whisper import WhisperModel
+        preferred = os.getenv("OFFLINE_STT_MODEL", "distil-small.en").strip() or "distil-small.en"
+        candidates = []
+        for m in (preferred, "small.en", "tiny.en"):
+            if m not in candidates:
+                candidates.append(m)
+        for model_name in candidates:
+            try:
+                self._faster_whisper = WhisperModel(
+                    model_name,
+                    device="cpu",
+                    compute_type="int8",
+                    cpu_threads=min(4, os.cpu_count() or 4),
+                )
+                self._offline_model_name = model_name
+                emit_event({"event": "offline_stt_loaded", "model": model_name})
+                return self._faster_whisper
+            except Exception as e:
+                emit_event({"event": "offline_stt_load_failed", "model": model_name, "error": str(e)})
+        return None
+
     async def _transcribe(self, pcm_bytes: bytes) -> str:
         groq_key = Config.GROQ_API_KEY or os.getenv("GROQ_API_KEY", "")
+        deepgram_key = Config.DEEPGRAM_API_KEY or os.getenv("DEEPGRAM_API_KEY", "")
         wav_bytes = self._pcm_to_wav_bytes(pcm_bytes)
+
+        def _clean_stt_text(raw: str) -> str:
+            t = (raw or "").strip()
+            # Ignore pure punctuation or common Whisper silence artifacts
+            stripped = "".join(ch for ch in t if ch.isalnum() or ch.isspace()).strip()
+            if not stripped or len(stripped) < 2:
+                return ""
+            if stripped.lower() in {"thank you", "thanks for watching", "you", "bye", "mbc"}:
+                return ""
+            return t
 
         if groq_key:
             try:
-                import httpx
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.post(
+                form = aiohttp.FormData()
+                form.add_field("file", wav_bytes, filename="speech.wav", content_type="audio/wav")
+                form.add_field("model", "whisper-large-v3-turbo")
+                form.add_field("response_format", "json")
+                form.add_field("temperature", "0.0")
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10.0)) as client:
+                    async with client.post(
                         "https://api.groq.com/openai/v1/audio/transcriptions",
                         headers={"Authorization": f"Bearer {groq_key}"},
-                        files={"file": ("speech.wav", wav_bytes, "audio/wav")},
-                        data={"model": "whisper-large-v3-turbo", "response_format": "json", "temperature": "0.0"},
-                    )
-                    if resp.status_code == 200:
-                        return resp.json().get("text", "").strip()
-            except Exception:
-                pass
+                        data=form,
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            return _clean_stt_text(data.get("text", ""))
+                        else:
+                            emit_event({"event": "stt_error", "provider": "groq", "status": resp.status})
+            except Exception as e:
+                emit_event({"event": "stt_error", "provider": "groq", "error": str(e)})
 
-        # Offline Faster-Whisper fallback
+        if deepgram_key:
+            try:
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10.0)) as client:
+                    async with client.post(
+                        "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&language=en",
+                        headers={"Authorization": f"Token {deepgram_key}", "Content-Type": "audio/wav"},
+                        data=wav_bytes,
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            alt = data.get("results", {}).get("channels", [{}])[0].get("alternatives", [{}])[0]
+                            return _clean_stt_text(alt.get("transcript", ""))
+            except Exception as e:
+                emit_event({"event": "stt_error", "provider": "deepgram", "error": str(e)})
+
+        # Offline Faster-Whisper fallback (distil-small.en -> small.en -> tiny.en)
         try:
-            if self._faster_whisper is None:
-                from faster_whisper import WhisperModel
-                self._faster_whisper = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+            model = await asyncio.to_thread(self._load_offline_whisper)
+            if model is None:
+                return ""
             audio_f32 = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-            segments, _ = await asyncio.to_thread(self._faster_whisper.transcribe, audio_f32, beam_size=1)
-            return " ".join(s.text.strip() for s in segments).strip()
+            segments, _ = await asyncio.to_thread(
+                model.transcribe,
+                audio_f32,
+                beam_size=1,
+                vad_filter=True,
+                language="en",
+            )
+            return _clean_stt_text(" ".join(s.text.strip() for s in segments))
         except Exception:
             return ""
 
@@ -289,19 +359,27 @@ async def main():
     async def feed_audio():
         while True:
             raw = await audio_queue.get()
-            await task.queue_frame(AudioRawFrame(audio=raw, sample_rate=SAMPLE_RATE, num_channels=1))
+            await task.queue_frame(InputAudioRawFrame(audio=raw, sample_rate=SAMPLE_RATE, num_channels=1))
 
     await run_control_server(vad_oww, ecapa_stt, verifier)
     emit_event({"status": "ready", "engine": "Pipecat_Silero_OpenWakeWord_ECAPA"})
 
-    with sd.InputStream(
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        dtype="int16",
-        blocksize=VAD_FRAME_SAMPLES,
-        callback=mic_callback,
-    ):
-        await asyncio.gather(runner.run(task), feed_audio())
+    async def _run_pipeline_loop():
+        while True:
+            try:
+                with sd.InputStream(
+                    samplerate=SAMPLE_RATE,
+                    channels=1,
+                    dtype="int16",
+                    blocksize=VAD_FRAME_SAMPLES,
+                    callback=mic_callback,
+                ):
+                    await asyncio.gather(runner.run(task), feed_audio())
+            except Exception as e:
+                emit_event({"event": "audio_stream_error", "error": str(e)})
+                await asyncio.sleep(2.0)
+
+    await _run_pipeline_loop()
 
 
 if __name__ == "__main__":

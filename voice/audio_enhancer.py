@@ -56,8 +56,8 @@ class AudioEnhancer:
         if len(out) == 0:
             return out
 
-        # 1. Echo Cancellation (160-sample / 10 ms sub-frames)
-        if self._aec is not None and len(out) >= self.aec_frame_size:
+        # 1. Echo Cancellation (160-sample / 10 ms sub-frames) — only when playback reference is active
+        if self._aec is not None and self._ref_queue and len(out) >= self.aec_frame_size:
             aec_chunks = []
             rem = len(out) % self.aec_frame_size
             usable = len(out) - rem
@@ -73,19 +73,6 @@ class AudioEnhancer:
                 aec_chunks.append(out[usable:])
             out = np.concatenate(aec_chunks)
 
-        # 2. Neural Noise Suppression (RNNoise)
-        if self._rnnoise is not None:
-            try:
-                denoised_frames = []
-                for _prob, frame in self._rnnoise.denoise_chunk(out.reshape(1, -1)):
-                    denoised_frames.append(np.asarray(frame, dtype=np.int16).reshape(-1))
-                if denoised_frames:
-                    denoised = np.concatenate(denoised_frames)
-                    if len(denoised) >= len(out):
-                        out = denoised[: len(out)]
-                    else:
-                        out = np.pad(denoised, (0, len(out) - len(denoised)))
-            except Exception:
-                pass
-
+        # Note: pyrnnoise is bypassed because its 48kHz-oriented chunk denoiser
+        # attenuates 16kHz 512-sample Silero VAD frames to near-zero.
         return out

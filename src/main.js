@@ -3661,6 +3661,8 @@ const netHistory = Array.from({ length: 35 }, (_, i) => Math.round(16 + Math.sin
 
 // State
 let isVoiceListening = false;
+let isContinuousVoiceActive = false;
+let wakeWordStandbyTimer = null;
 let voiceMutedByUser = false;
 let isSpeakingTTS = false;
 let isProcessingDirective = false;
@@ -5157,13 +5159,32 @@ function setSystemState(state) {
     if (state === "listening") {
       visorMicBtn.classList.add("listening");
       visorMicBtn.classList.remove("muted");
-      if (visorMicText) visorMicText.textContent = "LISTENING";
     } else {
       visorMicBtn.classList.remove("listening");
       if (voiceMutedByUser) {
         visorMicBtn.classList.add("muted");
       }
-      if (visorMicText) visorMicText.textContent = voiceMutedByUser ? "MUTED" : "VOICE READY";
+    }
+  }
+  if (visorMicText) {
+    visorMicText.className = "visor-mic-status";
+    if (!hasPhysicalMic) {
+      visorMicText.textContent = "NO MIC";
+      visorMicText.classList.add("muted");
+    } else if (voiceMutedByUser) {
+      visorMicText.textContent = "MUTED";
+      visorMicText.classList.add("muted");
+    } else if (state === "listening") {
+      visorMicText.textContent = "LISTENING";
+      visorMicText.classList.add("listening");
+    } else if (state === "speaking") {
+      visorMicText.textContent = "SPEAKING";
+      visorMicText.classList.add("speaking");
+    } else if (state === "thinking") {
+      visorMicText.textContent = "THINKING";
+      visorMicText.classList.add("thinking");
+    } else {
+      visorMicText.textContent = "VOICE READY";
     }
   }
 
@@ -5305,6 +5326,7 @@ async function fetchNeuralAudioBuffer(sentenceText, turnId) {
     if (actx.state === "suspended") {
       try { await actx.resume(); } catch (e) {}
     }
+    if (actx.state !== "running") return null;
     return await actx.decodeAudioData(arrayBuffer);
   } catch (err) {
     clearTimeout(timeoutId);
@@ -5336,18 +5358,29 @@ function playAudioBufferNode(audioBuffer, turnId) {
     speechVocalAmp = 0.88;
     setSystemState("speaking");
 
-    source.onended = () => {
+    let settled = false;
+    const finishNode = () => {
+      if (settled) return;
+      settled = true;
       if (currentActiveAudioSource === source) {
         currentActiveAudioSource = null;
       }
       resolve();
     };
+    const safetyMs = Math.max(3000, Math.ceil((audioBuffer?.duration || 2) * 1000) + 1500);
+    const safetyTimer = setTimeout(finishNode, safetyMs);
+
+    source.onended = () => {
+      clearTimeout(safetyTimer);
+      finishNode();
+    };
 
     try {
       source.start(0);
     } catch (err) {
+      clearTimeout(safetyTimer);
       console.warn("[Neural Pipelining] source.start notice:", err);
-      resolve();
+      finishNode();
     }
   });
 }
@@ -6563,6 +6596,11 @@ async function handleVoiceDirective(rawText) {
   const clean = (rawText || "").trim();
   if (!clean) return;
 
+  if (wakeWordStandbyTimer) {
+    clearTimeout(wakeWordStandbyTimer);
+    wakeWordStandbyTimer = null;
+  }
+
   const now = Date.now();
 
   // 1. Acoustic Self-Echo & Feedback Suppression:
@@ -6682,9 +6720,17 @@ async function handleWakeWordEvent(rawText) {
     await handleVoiceDirective(trailing);
   } else {
     openInputBar();
-    const wakeReply = "Yes, sir? Standing by for your directive.";
-    showJarvisFeedback(wakeReply, "wake_word");
-    await speakResponse(wakeReply);
+    showJarvisFeedback("Listening, sir...", "wake_word", true);
+    try { await invoke("set_voice_listening", { active: true }); } catch (e) {}
+    if (wakeWordStandbyTimer) clearTimeout(wakeWordStandbyTimer);
+    wakeWordStandbyTimer = setTimeout(async () => {
+      wakeWordStandbyTimer = null;
+      if (!isProcessingDirective && !isSpeakingTTS && !voiceMutedByUser) {
+        const wakeReply = "Yes, sir? Standing by.";
+        showJarvisFeedback(wakeReply, "wake_word");
+        await speakResponse(wakeReply);
+      }
+    }, 1600);
   }
 }
 
@@ -6709,8 +6755,11 @@ async function startTauriVoiceListener() {
         handleWakeWordEvent(event.payload);
       });
       await listenFn("jarvis://vad_state", (event) => {
-        if (event.payload && !isSpeakingTTS) {
+        if (!isSpeakingTTS && !voiceMutedByUser && isVoiceListening) {
           setSystemState("listening");
+          if (visorMicText) {
+            visorMicText.textContent = event.payload ? "HEARING..." : "LISTENING";
+          }
         }
       });
       await listenFn("jarvis://voice_interruption", () => {
@@ -6774,12 +6823,14 @@ function resumeListeningIfAllowed() {
 async function startContinuousVoiceRecognition() {
   if (voiceMutedByUser) return;
   isVoiceListening = true;
+  isContinuousVoiceActive = true;
   isListening = true;
   setSystemState("listening");
   try { await invoke("set_voice_listening", { active: true }); } catch (e) {}
 }
 
 function stopContinuousVoiceRecognition() {
+  isContinuousVoiceActive = false;
   try { invoke("set_voice_listening", { active: false }).catch(() => {}); } catch (e) {}
   if (visorMicBtn) {
     visorMicBtn.classList.remove("listening");
@@ -6936,6 +6987,9 @@ jarvisNeural.onWakeWord(() => {
   showJarvisFeedback("Listening, sir...", null, false);
   setSystemState("listening");
 });
+
+// Hook Tauri Voice Events immediately on startup
+startTauriVoiceListener();
 
 // Start Real-Time Android Phone Notification Sync
 startPhoneNotificationSync(invoke);

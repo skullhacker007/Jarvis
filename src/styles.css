@@ -1517,6 +1517,49 @@ body {
   height: 15px;
 }
 
+.visor-mic-status {
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--cyan-neon, #38bdf8);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.visor-mic-status.listening {
+  border-color: rgba(52, 211, 153, 0.55);
+  background: rgba(52, 211, 153, 0.14);
+  color: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.28);
+}
+
+.visor-mic-status.speaking {
+  border-color: rgba(56, 189, 248, 0.6);
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+}
+
+.visor-mic-status.thinking {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fbbf24;
+}
+
+.visor-mic-status.muted {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  box-shadow: none;
+}
+
 .visor-input-box {
   flex: 1;
   display: flex;

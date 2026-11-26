@@ -95,3 +95,26 @@ class TaskPlanner:
 
         # Pure conversational or general instruction
         return "none", "", text
+
+    @staticmethod
+    def select_tools_for_intent(intent_text: str, permissions: Optional[Dict[str, str]] = None) -> List[str]:
+        """Selects candidate tools matching user intent while filtering out Denied permissions."""
+        lower = (intent_text or "").lower()
+        candidates = []
+        intent_map = [
+            (["open", "launch", "start"], "open_app"),
+            (["close", "kill", "stop", "terminate"], "close_app"),
+            (["search", "news", "weather", "look up", "find"], "web_search"),
+            (["screen", "see", "window", "what's on"], "inspect_screen"),
+            (["run", "command", "terminal", "powershell", "script"], "run_cmd"),
+            (["remember", "recall", "memory", "forget"], "memory"),
+            (["call", "dial", "phone"], "dial_phone_call"),
+        ]
+        for keywords, tool in intent_map:
+            if any(kw in lower for kw in keywords):
+                candidates.append(tool)
+        if not candidates:
+            candidates = ["assistant_reply"]
+        if permissions:
+            candidates = [t for t in candidates if str(permissions.get(t, "Allow")).lower() != "deny"]
+        return candidates

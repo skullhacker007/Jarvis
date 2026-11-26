@@ -477,21 +477,12 @@ pub mod playwright_bridge {
         if let Some(script_path) = find_file_in_candidates("tools/playwright_browser.py") {
             let s = script_path.to_string_lossy().to_string();
             let mut launched = false;
-            if std::path::Path::new("C:\\Python314\\python.exe").exists() {
-                let mut cmd = silent_command("C:\\Python314\\python.exe");
-                cmd.args([&s, "5006"]);
-                if let Ok(child) = spawn_managed_child(cmd) {
-                    ACTIVE_PLAYWRIGHT_PID.store(child.id(), Ordering::SeqCst);
-                    launched = true;
-                }
-            }
-            if !launched {
-                let mut cmd = silent_command("py");
-                cmd.args(["-3.14", &s, "5006"]);
-                if let Ok(child) = spawn_managed_child(cmd) {
-                    ACTIVE_PLAYWRIGHT_PID.store(child.id(), Ordering::SeqCst);
-                    launched = true;
-                }
+            let py_exe = resolve_project_python();
+            let mut cmd = silent_command(&py_exe);
+            cmd.args([&s, "5006"]);
+            if let Ok(child) = spawn_managed_child(cmd) {
+                ACTIVE_PLAYWRIGHT_PID.store(child.id(), Ordering::SeqCst);
+                launched = true;
             }
             if launched {
                 for _ in 0..16 {
@@ -604,6 +595,18 @@ fn find_file_in_candidates(relative_path: &str) -> Option<std::path::PathBuf> {
         }
     }
     None
+}
+
+fn resolve_project_python() -> String {
+    #[cfg(windows)]
+    let rel_venv = ".venv\\Scripts\\python.exe";
+    #[cfg(not(windows))]
+    let rel_venv = ".venv/bin/python";
+
+    if let Some(venv_py) = find_file_in_candidates(rel_venv) {
+        return venv_py.to_string_lossy().to_string();
+    }
+    "python".to_string()
 }
 
 fn parse_key_from_env_str(content: &str, key_name: &str) -> Option<String> {
@@ -5285,7 +5288,15 @@ fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
 
 // Parses JSON or extracts commands from model's thinking output
 fn parse_model_output(content: &str, original_prompt: &str) -> (String, String, String) {
-    let trimmed = content.trim();
+    let mut stripped = content.trim().to_string();
+    while let Some(ts) = stripped.find("<think>") {
+        if let Some(te) = stripped[ts..].find("</think>") {
+            stripped.replace_range(ts..ts + te + "</think>".len(), "");
+        } else {
+            break;
+        }
+    }
+    let trimmed = stripped.trim();
 
     let cleaned = trimmed
         .trim_start_matches("```json")
@@ -7291,32 +7302,12 @@ fn start_neural_tts_worker() {
     }
 
     let script_path = get_tts_worker_path();
-    // 1. Try Python 3.14 via Windows py launcher (configured with kokoro-onnx)
-    let mut cmd_py = silent_command("py");
-    cmd_py.args(["-3.14", &script_path, "5000"]);
-    if let Ok(child) = spawn_managed_child(cmd_py) {
-        ACTIVE_TTS_WORKER_PID.store(child.id(), Ordering::SeqCst);
-        println!("[Neural TTS] Studio voice engine launched with py -3.14 PID {}", child.id());
-        return;
-    }
-
-    // 2. Direct Python 3.14 path fallback
-    if std::path::Path::new("C:\\Python314\\python.exe").exists() {
-        let mut cmd_py314 = silent_command("C:\\Python314\\python.exe");
-        cmd_py314.args([&script_path, "5000"]);
-        if let Ok(child) = spawn_managed_child(cmd_py314) {
-            ACTIVE_TTS_WORKER_PID.store(child.id(), Ordering::SeqCst);
-            println!("[Neural TTS] Studio voice engine launched with C:\\Python314\\python.exe PID {}", child.id());
-            return;
-        }
-    }
-
-    // 3. System python fallback
-    let mut cmd = silent_command("python");
+    let py_exe = resolve_project_python();
+    let mut cmd = silent_command(&py_exe);
     cmd.args([&script_path, "5000"]);
     if let Ok(child) = spawn_managed_child(cmd) {
         ACTIVE_TTS_WORKER_PID.store(child.id(), Ordering::SeqCst);
-        println!("[Neural TTS] Studio voice engine launched with PID {}", child.id());
+        println!("[Neural TTS] Studio voice engine launched ({}) PID {}", py_exe, child.id());
     }
 }
 
@@ -7332,43 +7323,265 @@ fn start_ai_router_worker() {
         return;
     };
     let script_path = script_buf.to_string_lossy().to_string();
-    let cmd = if std::path::Path::new("C:\\Python314\\python.exe").exists() {
-        let mut c = silent_command("C:\\Python314\\python.exe");
-        c.args([&script_path, "--serve", "5008"]);
-        c
-    } else {
-        let mut c = silent_command("py");
-        c.args(["-3.14", &script_path, "--serve", "5008"]);
-        c
-    };
+    let py_exe = resolve_project_python();
+    let mut cmd = silent_command(&py_exe);
+    cmd.args([&script_path, "--serve", "5008"]);
     if let Ok(child) = spawn_managed_child(cmd) {
         ACTIVE_AI_ROUTER_PID.store(child.id(), Ordering::SeqCst);
         println!("[Unified AI Router] Launched with PID {}", child.id());
     }
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct ServiceHealthInfo {
+    pub name: String,
+    pub status: String,
+    pub pid: u32,
+    pub restarts: u32,
+    pub last_error: Option<String>,
+    pub last_healthy_ts: u64,
+}
+
+static SERVICE_HEALTH_REGISTRY: std::sync::OnceLock<Mutex<HashMap<String, ServiceHealthInfo>>> = std::sync::OnceLock::new();
+
+fn update_service_health(name: &str, status: &str, pid: u32, increment_restart: bool, last_error: Option<String>) {
+    let reg = SERVICE_HEALTH_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut guard) = reg.lock() {
+        let now_ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let entry = guard.entry(name.to_string()).or_insert_with(|| ServiceHealthInfo {
+            name: name.to_string(),
+            status: status.to_string(),
+            pid,
+            restarts: 0,
+            last_error: None,
+            last_healthy_ts: 0,
+        });
+        entry.status = status.to_string();
+        entry.pid = pid;
+        if increment_restart {
+            entry.restarts = entry.restarts.saturating_add(1);
+        }
+        if status == "healthy" {
+            entry.last_healthy_ts = now_ts;
+            entry.last_error = None;
+        } else if last_error.is_some() {
+            entry.last_error = last_error;
+        }
+    }
+}
+
+#[tauri::command]
+fn get_service_health_status() -> Vec<ServiceHealthInfo> {
+    let reg = SERVICE_HEALTH_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(guard) = reg.lock() {
+        guard.values().cloned().collect()
+    } else {
+        Vec::new()
+    }
+}
+
+fn recover_http_service(
+    name: &str,
+    pid_atom: &AtomicU32,
+    starter: fn(),
+    reason: String,
+) {
+    let old_pid = pid_atom.swap(0, Ordering::SeqCst);
+    if old_pid > 0 {
+        let mut k = silent_command("taskkill");
+        let _ = k.args(["/F", "/T", "/PID", &old_pid.to_string()]).output();
+    }
+    update_service_health(name, "restarting", 0, true, Some(reason));
+    starter();
+}
+
+fn recover_failed_component(name: &str) -> bool {
+    match name {
+        "neural_tts" => {
+            recover_http_service(
+                "neural_tts",
+                &ACTIVE_TTS_WORKER_PID,
+                start_neural_tts_worker,
+                "Auto-diagnostics triggered neural_tts recovery".to_string(),
+            );
+            true
+        }
+        "ai_router" => {
+            recover_http_service(
+                "ai_router",
+                &ACTIVE_AI_ROUTER_PID,
+                start_ai_router_worker,
+                "Auto-diagnostics triggered ai_router recovery".to_string(),
+            );
+            true
+        }
+        "pipecat_voice" => {
+            let old_pid = ACTIVE_PIPECAT_WORKER_PID.swap(0, Ordering::SeqCst);
+            if old_pid > 0 {
+                let mut k = silent_command("taskkill");
+                let _ = k.args(["/F", "/T", "/PID", &old_pid.to_string()]).output();
+            }
+            update_service_health(
+                "pipecat_voice",
+                "restarting",
+                0,
+                true,
+                Some("Auto-diagnostics killed stale pipecat_voice for supervisor respawn".to_string()),
+            );
+            true
+        }
+        "ollama" => {
+            let cmd = silent_command("ollama");
+            let mut c = cmd;
+            c.arg("serve");
+            spawn_managed_child(c).is_ok()
+        }
+        _ => false,
+    }
+}
+
+#[tauri::command]
+fn run_system_diagnostics(auto_recover: Option<bool>) -> serde_json::Value {
+    let should_recover = auto_recover.unwrap_or(true);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(900))
+        .build()
+        .ok();
+    let probes = [
+        ("neural_tts", "http://127.0.0.1:5000/health", "Check scripts/neural_tts_service.py on port 5000."),
+        ("pipecat_voice", "http://127.0.0.1:5007/health", "Check voice/pipecat_voice_agent.py and microphone."),
+        ("ai_router", "http://127.0.0.1:5008/health", "Check core/llm_client.py --serve 5008."),
+        ("ollama", "http://127.0.0.1:11434/api/tags", "Start Ollama service for offline LLM fallback."),
+    ];
+    let mut probe_results = serde_json::Map::new();
+    let mut recovered_components = Vec::new();
+    for (name, url, hint) in probes {
+        let mut entry = match client.as_ref().and_then(|c| c.get(url).send().ok()) {
+            Some(resp) if resp.status().is_success() => {
+                let body = resp.json::<serde_json::Value>().ok();
+                serde_json::json!({ "status": "healthy", "details": body })
+            }
+            Some(resp) => serde_json::json!({
+                "status": "degraded",
+                "http_status": resp.status().as_u16(),
+                "remediation": hint
+            }),
+            None => serde_json::json!({
+                "status": "unreachable",
+                "remediation": hint
+            }),
+        };
+
+        let status_str = entry.get("status").and_then(|s| s.as_str()).unwrap_or("");
+        if should_recover && (status_str == "unreachable" || status_str == "degraded") {
+            let triggered = recover_failed_component(name);
+            if triggered {
+                recovered_components.push(name.to_string());
+            }
+            if let Some(obj) = entry.as_object_mut() {
+                obj.insert("recovery_attempted".to_string(), serde_json::json!(triggered));
+            }
+        }
+        probe_results.insert(name.to_string(), entry);
+    }
+    let services = get_service_health_status();
+    serde_json::json!({
+        "auto_recover": should_recover,
+        "recovered_components": recovered_components,
+        "supervisor_services": services,
+        "endpoint_probes": probe_results
+    })
+}
+
+fn supervise_http_worker(
+    name: &'static str,
+    health_url: &'static str,
+    pid_atom: &'static AtomicU32,
+    starter: fn(),
+    app_handle: tauri::AppHandle,
+) {
+    use tauri::Emitter;
+    starter();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(1200))
+        .build()
+        .ok();
+    let mut consecutive_failures: u32 = 0;
+    let mut backoff_secs: u64 = 2;
+
+    loop {
+        std::thread::sleep(Duration::from_secs(5));
+        let is_healthy = client
+            .as_ref()
+            .and_then(|c| c.get(health_url).send().ok())
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+
+        if is_healthy {
+            let was_unhealthy = consecutive_failures > 0;
+            consecutive_failures = 0;
+            backoff_secs = 2;
+            update_service_health(name, "healthy", pid_atom.load(Ordering::SeqCst), false, None);
+            if was_unhealthy {
+                let _ = app_handle.emit("jarvis://service_health", serde_json::json!({
+                    "service": name,
+                    "status": "healthy"
+                }));
+            }
+            continue;
+        }
+
+        consecutive_failures = consecutive_failures.saturating_add(1);
+        update_service_health(
+            name,
+            "degraded",
+            pid_atom.load(Ordering::SeqCst),
+            false,
+            Some(format!("Health check failed ({})", consecutive_failures)),
+        );
+
+        if consecutive_failures >= 2 {
+            let _ = app_handle.emit("jarvis://service_health", serde_json::json!({
+                "service": name,
+                "status": "restarting"
+            }));
+            std::thread::sleep(Duration::from_secs(backoff_secs));
+            recover_http_service(
+                name,
+                pid_atom,
+                starter,
+                format!("Restarting after {} failed health checks", consecutive_failures),
+            );
+            consecutive_failures = 0;
+            backoff_secs = (backoff_secs * 2).min(30);
+        }
+    }
+}
+
 fn start_pipecat_voice_worker(app_handle: tauri::AppHandle) {
     use tauri::Emitter;
+    let mut backoff_secs: u64 = 2;
     loop {
         let Some(script_path) = get_pipecat_worker_path() else {
+            update_service_health("pipecat_voice", "missing_script", 0, false, Some("voice/pipecat_voice_agent.py not found".to_string()));
             std::thread::sleep(Duration::from_secs(3));
             continue;
         };
 
-        let mut cmd = if std::path::Path::new("C:\\Python314\\python.exe").exists() {
-            let mut c = silent_command("C:\\Python314\\python.exe");
-            c.arg(&script_path);
-            c
-        } else {
-            let mut c = silent_command("py");
-            c.args(["-3.14", &script_path]);
-            c
-        };
+        let py_exe = resolve_project_python();
+        let mut cmd = silent_command(&py_exe);
+        cmd.arg(&script_path);
 
         cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+        let launch_time = std::time::Instant::now();
 
         if let Ok(mut child) = spawn_managed_child(cmd) {
-            ACTIVE_PIPECAT_WORKER_PID.store(child.id(), Ordering::SeqCst);
+            let child_pid = child.id();
+            ACTIVE_PIPECAT_WORKER_PID.store(child_pid, Ordering::SeqCst);
+            update_service_health("pipecat_voice", "healthy", child_pid, false, None);
             if let Some(stdout) = child.stdout.take() {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines() {
@@ -7422,9 +7635,26 @@ fn start_pipecat_voice_worker(app_handle: tauri::AppHandle) {
                 }
             }
             let _ = child.wait();
+            ACTIVE_PIPECAT_WORKER_PID.store(0, Ordering::SeqCst);
         }
 
-        std::thread::sleep(Duration::from_secs(2));
+        if launch_time.elapsed() > Duration::from_secs(30) {
+            backoff_secs = 2;
+        } else {
+            backoff_secs = (backoff_secs * 2).min(30);
+        }
+        update_service_health(
+            "pipecat_voice",
+            "restarting",
+            0,
+            true,
+            Some(format!("Voice worker exited; restarting in {}s", backoff_secs)),
+        );
+        let _ = app_handle.emit("jarvis://service_health", serde_json::json!({
+            "service": "pipecat_voice",
+            "status": "restarting"
+        }));
+        std::thread::sleep(Duration::from_secs(backoff_secs));
     }
 }
 
@@ -7474,7 +7704,7 @@ fn set_voice_listening(active: bool) -> Result<bool, String> {
     SPEECH_LISTENER_ACTIVE.store(active, Ordering::SeqCst);
     std::thread::spawn(move || {
         if let Ok(client) = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_millis(300))
+            .timeout(Duration::from_millis(1000))
             .build()
         {
             let _ = client
@@ -8125,14 +8355,28 @@ pub fn run() {
                 start_pipecat_voice_worker(voice_app_handle);
             });
 
-            // Spawn studio neural voice synthesis service
-            std::thread::spawn(|| {
-                start_neural_tts_worker();
+            // Spawn studio neural voice synthesis service with auto-recovery supervisor
+            let tts_app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                supervise_http_worker(
+                    "neural_tts",
+                    "http://127.0.0.1:5000/health",
+                    &ACTIVE_TTS_WORKER_PID,
+                    start_neural_tts_worker,
+                    tts_app_handle,
+                );
             });
 
-            // Spawn consolidated Python AI Router service
-            std::thread::spawn(|| {
-                start_ai_router_worker();
+            // Spawn consolidated Python AI Router service with auto-recovery supervisor
+            let ai_app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                supervise_http_worker(
+                    "ai_router",
+                    "http://127.0.0.1:5008/health",
+                    &ACTIVE_AI_ROUTER_PID,
+                    start_ai_router_worker,
+                    ai_app_handle,
+                );
             });
 
             // Initialize Windows DPAPI Key Vault and sync existing credentials
@@ -8184,7 +8428,9 @@ pub fn run() {
             permissions::get_permission_policies,
             permissions::set_permission_policy,
             permissions::resolve_permission_request,
-            enroll_speaker_voiceprint
+            enroll_speaker_voiceprint,
+            get_service_health_status,
+            run_system_diagnostics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -8457,5 +8703,55 @@ mod tests {
                 FreeLibrary(h_mod);
             }
         }
+    }
+
+    #[test]
+    fn test_http_worker_crash_recovery() {
+        static TEST_STARTER_CALLS: AtomicU32 = AtomicU32::new(0);
+        static TEST_PID: AtomicU32 = AtomicU32::new(0);
+        fn mock_starter() {
+            TEST_STARTER_CALLS.fetch_add(1, Ordering::SeqCst);
+            TEST_PID.store(42424, Ordering::SeqCst);
+        }
+
+        TEST_STARTER_CALLS.store(0, Ordering::SeqCst);
+        TEST_PID.store(0, Ordering::SeqCst);
+
+        recover_http_service(
+            "test_voice_svc",
+            &TEST_PID,
+            mock_starter,
+            "Simulated crash recovery".to_string(),
+        );
+
+        assert_eq!(TEST_STARTER_CALLS.load(Ordering::SeqCst), 1);
+        assert_eq!(TEST_PID.load(Ordering::SeqCst), 42424);
+
+        let services = get_service_health_status();
+        let entry = services.iter().find(|s| s.name == "test_voice_svc").expect("Missing test_voice_svc");
+        assert_eq!(entry.status, "restarting");
+        assert!(entry.restarts >= 1);
+    }
+
+    #[test]
+    fn test_resolve_project_python_prefers_venv() {
+        let py = resolve_project_python();
+        assert!(!py.contains("C:\\Python314"), "Should not hardcode C:\\Python314: {}", py);
+        if std::path::Path::new(".venv\\Scripts\\python.exe").exists()
+            || std::path::Path::new("..\\.venv\\Scripts\\python.exe").exists()
+        {
+            assert!(py.contains(".venv"), "Expected .venv python, got: {}", py);
+        }
+    }
+
+    #[test]
+    fn test_component_auto_diagnostics_report() {
+        let diag = run_system_diagnostics(Some(false));
+        let probes = diag.get("endpoint_probes").and_then(|v| v.as_object()).expect("Missing endpoint_probes");
+        assert!(probes.contains_key("neural_tts"));
+        assert!(probes.contains_key("pipecat_voice"));
+        assert!(probes.contains_key("ai_router"));
+        assert!(probes.contains_key("ollama"));
+        assert!(!recover_failed_component("nonexistent_component"));
     }
 }

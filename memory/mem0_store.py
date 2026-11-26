@@ -1,7 +1,28 @@
+import json
 import logging
+import math
+import os
+import re
+from collections import Counter
+from pathlib import Path
 from config import Config
 
 logger = logging.getLogger("NAVI_Mem0")
+
+def _tokenize(text: str) -> Counter:
+    words = re.findall(r"[a-z0-9_]{2,}", (text or "").lower())
+    return Counter(words)
+
+def _cosine_sim(c1: Counter, c2: Counter) -> float:
+    if not c1 or not c2:
+        return 0.0
+    common = set(c1.keys()) & set(c2.keys())
+    if not common:
+        return 0.0
+    dot = sum(c1[k] * c2[k] for k in common)
+    norm1 = math.sqrt(sum(v * v for v in c1.values()))
+    norm2 = math.sqrt(sum(v * v for v in c2.values()))
+    return dot / (norm1 * norm2) if norm1 and norm2 else 0.0
 
 class Mem0MemoryStore:
     """
@@ -13,6 +34,8 @@ class Mem0MemoryStore:
     def __init__(self, user_id: str = "default_user"):
         self.user_id = user_id
         self.memory = None
+        self.local_store_path = Path(os.path.expanduser("~")) / ".jarvis" / "local_vectors.jsonl"
+        self.local_store_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_client()
 
     def _init_client(self):
@@ -82,6 +105,7 @@ class Mem0MemoryStore:
             return False
 
         meta = metadata or {}
+        self._save_local_vector(clean, meta)
         if not self.memory:
             self._buffer_offline("memory", {"category": meta.get("category", "general"), "content": clean})
             logger.info(f"Buffered memory note to offline queue: '{clean[:40]}...'")
@@ -96,14 +120,53 @@ class Mem0MemoryStore:
             return True
 
     def search_memories(self, query: str, limit: int = 5) -> list:
-        """Retrieves relevant facts and context for a query."""
-        if not self.memory:
-            return []
+        """Retrieves relevant facts and context for a query, with local vector fallback."""
+        if self.memory:
+            try:
+                results = self.memory.search(query, user_id=self.user_id, limit=limit)
+                if results:
+                    return results
+            except Exception as e:
+                logger.error(f"Mem0 search failed ({e}). Falling back to local vector store.")
+        return self._search_local_vectors(query, limit=limit)
+
+    def _save_local_vector(self, text: str, metadata: dict):
         try:
-            results = self.memory.search(query, user_id=self.user_id, limit=limit)
-            return results or []
+            record = {"user_id": self.user_id, "memory": text, "metadata": metadata}
+            with open(self.local_store_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception as e:
-            logger.error(f"Mem0 search failed: {e}")
+            logger.debug(f"Local vector save skipped: {e}")
+
+    def _search_local_vectors(self, query: str, limit: int = 5) -> list:
+        if not self.local_store_path.exists():
+            return []
+        q_vec = _tokenize(query)
+        scored = []
+        try:
+            with open(self.local_store_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if rec.get("user_id") != self.user_id:
+                        continue
+                    score = _cosine_sim(q_vec, _tokenize(rec.get("memory", "")))
+                    if score > 0.0:
+                        scored.append({
+                            "memory": rec["memory"],
+                            "score": round(score, 4),
+                            "metadata": rec.get("metadata", {}),
+                            "source": "local_vector_fallback",
+                        })
+            scored.sort(key=lambda x: x["score"], reverse=True)
+            return scored[:limit]
+        except Exception as e:
+            logger.error(f"Local vector search failed: {e}")
             return []
 
     def _buffer_offline(self, record_type: str, data: dict):

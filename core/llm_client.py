@@ -78,6 +78,11 @@ class LLMRouter:
             "nvidia": 25.0,
             "gemini": 15.0,
         }
+        # API availability, failure, and fallback telemetry
+        self.provider_stats = {
+            p: {"calls": 0, "successes": 0, "failures": 0, "fallbacks": 0, "last_error": None, "last_ok_ts": 0.0}
+            for p in ("groq", "nvidia", "gemini", "ollama")
+        }
 
         if not self.groq_client and not self.gemini_client and not self.nvidia_client:
             logger.warning("No cloud LLM keys found. Operating in local Ollama fallback mode.")
@@ -224,7 +229,93 @@ class LLMRouter:
         async for chunk in self._stream_ollama(sanitized_prompt, system_instruction, history=compressed_history):
             yield chunk
 
+    @staticmethod
+    def validate_tool_call(raw_text: str, allowed_tools: list = None) -> tuple[bool, dict | None, str]:
+        """
+        Validates and extracts a structured tool-call JSON object from LLM output.
+        Strips markdown code fences and checks required fields ('action' or 'tool' and 'target'/'args').
+        """
+        import json
+        text = (raw_text or "").strip()
+        if not text:
+            return False, None, "Empty model output"
+
+        # Strip ```json ... ``` fences commonly emitted by local Ollama models
+        fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE)
+        if fence_match:
+            text = fence_match.group(1).strip()
+        else:
+            # Extract outermost JSON object if wrapped in prose
+            brace_match = re.search(r"\{[\s\S]*\}", text)
+            if brace_match:
+                text = brace_match.group(0).strip()
+
+        try:
+            parsed = json.loads(text)
+        except Exception as e:
+            return False, None, f"Invalid JSON: {e}"
+
+        if not isinstance(parsed, dict):
+            return False, None, "Tool call must be a JSON object"
+
+        tool_name = parsed.get("action") or parsed.get("tool") or parsed.get("name")
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return False, None, "Missing non-empty 'action'/'tool' string"
+
+        tool_name = tool_name.strip()
+        if allowed_tools is not None and tool_name not in allowed_tools:
+            return False, None, f"Tool '{tool_name}' is not in allowed_tools: {allowed_tools}"
+
+        args = parsed.get("args", parsed.get("arguments"))
+        if args is not None and not isinstance(args, dict):
+            return False, None, "'args'/'arguments' must be a JSON object when provided"
+
+        normalized = {
+            "action": tool_name,
+            "target": str(parsed.get("target", "")),
+            "args": args or {},
+        }
+        return True, normalized, ""
+
+    async def generate_validated_tool_call(
+        self,
+        prompt: str,
+        allowed_tools: list = None,
+        max_retries: int = 2,
+    ) -> dict:
+        """
+        Generates a tool call and validates/retries if offline Ollama emits malformed JSON.
+        """
+        schema_hint = (
+            "Respond ONLY with valid JSON: "
+            '{"action": "<tool_name>", "target": "<string>", "args": {}}'
+        )
+        if allowed_tools:
+            schema_hint += f". Allowed tools: {allowed_tools}"
+
+        current_prompt = f"{prompt}\n\n{schema_hint}"
+        last_err = ""
+        for attempt in range(max_retries + 1):
+            chunks = []
+            async for tok in self.stream_reply(
+                current_prompt,
+                system_instruction_override="You are a strict JSON tool-calling engine. Output ONLY raw JSON.",
+            ):
+                chunks.append(tok)
+            raw = "".join(chunks)
+            ok, parsed, err = self.validate_tool_call(raw, allowed_tools=allowed_tools)
+            if ok:
+                return {"ok": True, "tool_call": parsed, "attempts": attempt + 1}
+            last_err = err
+            logger.warning(f"Tool-call validation failed (attempt {attempt + 1}): {err}")
+            current_prompt = (
+                f"Your previous output was invalid ({err}). "
+                f"Original request: {prompt}\n{schema_hint}"
+            )
+        return {"ok": False, "error": last_err, "attempts": max_retries + 1}
+
     async def _stream_ollama(self, prompt: str, system_instruction: str, history: list = None) -> AsyncGenerator[str, None]:
+        self.provider_stats["ollama"]["calls"] += 1
         try:
             client = ollama.AsyncClient(host=Config.OLLAMA_BASE_URL)
             messages = [{"role": "system", "content": system_instruction}]
@@ -240,8 +331,12 @@ class LLMRouter:
                 content = part.get("message", {}).get("content", "")
                 if content:
                     yield content
+            self.provider_stats["ollama"]["successes"] += 1
+            self.provider_stats["ollama"]["last_ok_ts"] = time.time()
         except Exception as e:
             safe_err = self.redact_secrets(str(e))
+            self.provider_stats["ollama"]["failures"] += 1
+            self.provider_stats["ollama"]["last_error"] = safe_err
             logger.critical(f"All 3 LLM Tiers failed (NVIDIA, Gemini, Ollama): {safe_err}")
             yield "Reasoning engine unavailable. Please check system logs."
 
@@ -253,7 +348,17 @@ async def serve_ai_router(port: int = 5008):
     router = LLMRouter()
 
     async def handle_health(_req):
-        return web.json_response({"status": "ok", "service": "unified-llm-router"})
+        now = time.time()
+        circuits = {
+            k: max(0.0, round(v - now, 1))
+            for k, v in router.circuit_cooldown_until.items()
+        }
+        return web.json_response({
+            "status": "ok",
+            "service": "unified-llm-router",
+            "circuits_cooldown_sec": circuits,
+            "provider_stats": router.provider_stats,
+        })
 
     async def handle_chat(req):
         data = await req.json()
@@ -267,9 +372,20 @@ async def serve_ai_router(port: int = 5008):
             chunks.append(tok)
         return web.json_response({"ok": True, "reply": "".join(chunks)})
 
+    async def handle_chat_tool(req):
+        data = await req.json()
+        prompt = str(data.get("prompt", "")).strip()
+        allowed_tools = data.get("allowed_tools")
+        max_retries = int(data.get("max_retries", 2))
+        if not prompt:
+            return web.json_response({"ok": False, "error": "Empty prompt"}, status=400)
+        res = await router.generate_validated_tool_call(prompt, allowed_tools=allowed_tools, max_retries=max_retries)
+        return web.json_response(res, status=200 if res.get("ok") else 422)
+
     app = web.Application()
     app.router.add_get("/health", handle_health)
     app.router.add_post("/chat", handle_chat)
+    app.router.add_post("/chat_tool", handle_chat_tool)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", port)
