@@ -3989,7 +3989,7 @@ function renderAvailableModelsRoster(models) {
     }
     const emptyEl = document.createElement("div");
     emptyEl.className = "model-item";
-    emptyEl.innerHTML = `<div class="model-item-top"><span class="model-name">No models &le; 500ms</span></div>`;
+    emptyEl.innerHTML = `<div class="model-item-top"><span class="model-name">No models &le; 1000ms</span></div>`;
     modelsList.appendChild(emptyEl);
     return;
   }

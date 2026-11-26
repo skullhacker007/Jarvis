@@ -319,7 +319,7 @@ async fn self_heal_code_execution(code: &str, command_hint: &str) -> Result<Stri
 
                 let groq_key = get_groq_api_key();
                 if !groq_key.is_empty() {
-                    let client = reqwest::Client::new();
+                    let client = get_shared_discovery_client();
                     let payload = serde_json::json!({
                         "model": "qwen/qwen3.8-27b",
                         "messages": [
@@ -628,13 +628,22 @@ fn parse_key_from_env_str(content: &str, key_name: &str) -> Option<String> {
 }
 
 fn get_env_or_file_key(key_name: &str) -> Option<String> {
+    // 1. Project .env.local takes top precedence so user edits always apply immediately
+    for candidate in get_candidate_paths(".env.local") {
+        if let Ok(content) = std::fs::read_to_string(&candidate) {
+            if let Some(val) = parse_key_from_env_str(&content, key_name) {
+                return Some(val);
+            }
+        }
+    }
+    // 2. Process environment variables
     if let Ok(k) = std::env::var(key_name) {
         let t = k.trim().trim_matches('\'').trim_matches('"');
         if !t.is_empty() {
             return Some(t.to_string());
         }
     }
-    // Also check Windows DPAPI vault (case-insensitive)
+    // 3. Windows DPAPI vault (case-insensitive)
     let vault = load_vault_map();
     for (k, val) in &vault {
         if k.eq_ignore_ascii_case(key_name) {
@@ -644,12 +653,11 @@ fn get_env_or_file_key(key_name: &str) -> Option<String> {
             }
         }
     }
-    for file_name in [".env.local", ".env"] {
-        for candidate in get_candidate_paths(file_name) {
-            if let Ok(content) = std::fs::read_to_string(&candidate) {
-                if let Some(val) = parse_key_from_env_str(&content, key_name) {
-                    return Some(val);
-                }
+    // 4. Fallback .env and compile-time embedded .env.local
+    for candidate in get_candidate_paths(".env") {
+        if let Ok(content) = std::fs::read_to_string(&candidate) {
+            if let Some(val) = parse_key_from_env_str(&content, key_name) {
+                return Some(val);
             }
         }
     }
@@ -2034,6 +2042,17 @@ struct CachedModelCatalog {
 }
 
 static MODEL_CATALOG_CACHE: std::sync::OnceLock<tokio::sync::Mutex<CachedModelCatalog>> = std::sync::OnceLock::new();
+static SHARED_DISCOVERY_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+
+fn get_shared_discovery_client() -> &'static reqwest::Client {
+    SHARED_DISCOVERY_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .pool_max_idle_per_host(8)
+            .tcp_keepalive(Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
 
 fn get_catalog_cache() -> &'static tokio::sync::Mutex<CachedModelCatalog> {
     MODEL_CATALOG_CACHE.get_or_init(|| tokio::sync::Mutex::new(CachedModelCatalog::default()))
@@ -2084,7 +2103,7 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
         }
     }
 
-    let client = reqwest::Client::new();
+    let client = get_shared_discovery_client();
     let gemini_key = get_gemini_api_key();
     let nvidia_key = get_nvidia_api_key();
     let groq_key = get_groq_api_key();
@@ -2092,7 +2111,7 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
     let nvidia_configured = get_nvidia_model();
     let nvidia_base = get_nvidia_base_url();
     let ollama_base = get_ollama_base_url();
-    let ollama_configured = get_ollama_model_name();
+    let _ollama_configured = get_ollama_model_name();
     let is_remote_ollama = !ollama_base.contains("127.0.0.1") && !ollama_base.contains("localhost");
 
     let gemini_fut = async {
@@ -2321,6 +2340,103 @@ async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntr
     combined.extend(nv_list);
     combined.extend(grq_list);
     combined.extend(oll_list);
+
+    // Fair, uniform live inference probe across ALL discovered models (per-provider sequential on warmed TLS, providers in parallel)
+    let mut provider_groups: HashMap<String, Vec<(usize, String)>> = HashMap::new();
+    for (idx, entry) in combined.iter().enumerate() {
+        provider_groups
+            .entry(entry.provider.clone())
+            .or_default()
+            .push((idx, entry.id.clone()));
+    }
+
+    let mut probe_set = tokio::task::JoinSet::new();
+    for (prov, items) in provider_groups {
+        let gem_k = gemini_key.clone();
+        let nv_k = nvidia_key.clone();
+        let nv_b = nvidia_base.clone();
+        let grq_k = groq_key.clone();
+        let oll_b = ollama_base.clone();
+        probe_set.spawn(async move {
+            let c = get_shared_discovery_client();
+            let mut results = Vec::with_capacity(items.len());
+            for (idx, id) in items {
+                let t0 = Instant::now();
+                let ok = if prov == "GROQ LPU" {
+                    let body = serde_json::json!({
+                        "model": id,
+                        "messages": [{"role": "user", "content": "Reply OK"}],
+                        "max_tokens": 4
+                    });
+                    c.post("https://api.groq.com/openai/v1/chat/completions")
+                        .header("Authorization", format!("Bearer {}", grq_k))
+                        .timeout(Duration::from_millis(1200))
+                        .json(&body)
+                        .send()
+                        .await
+                        .map(|r| r.status().is_success())
+                        .unwrap_or(false)
+                } else if prov == "GOOGLE GEMINI" {
+                    let url = format!(
+                        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                        id, gem_k
+                    );
+                    let body = serde_json::json!({
+                        "contents": [{"parts": [{"text": "Reply OK"}]}],
+                        "generationConfig": {"maxOutputTokens": 4}
+                    });
+                    c.post(&url)
+                        .timeout(Duration::from_millis(1200))
+                        .json(&body)
+                        .send()
+                        .await
+                        .map(|r| r.status().is_success())
+                        .unwrap_or(false)
+                } else if prov == "NVIDIA NIM" {
+                    let url = format!("{}/chat/completions", nv_b.trim_end_matches('/'));
+                    let body = serde_json::json!({
+                        "model": id,
+                        "messages": [{"role": "user", "content": "Reply OK"}],
+                        "max_tokens": 4
+                    });
+                    c.post(&url)
+                        .header("Authorization", format!("Bearer {}", nv_k))
+                        .timeout(Duration::from_millis(1200))
+                        .json(&body)
+                        .send()
+                        .await
+                        .map(|r| r.status().is_success())
+                        .unwrap_or(false)
+                } else {
+                    let url = format!("{}/api/generate", oll_b.trim_end_matches('/'));
+                    let body = serde_json::json!({
+                        "model": id,
+                        "prompt": "Reply OK",
+                        "stream": false,
+                        "options": {"num_predict": 4}
+                    });
+                    add_navi_headers(c.post(&url).timeout(Duration::from_millis(1200)).json(&body))
+                        .send()
+                        .await
+                        .map(|r| r.status().is_success())
+                        .unwrap_or(false)
+                };
+                let elapsed = t0.elapsed().as_millis();
+                results.push((idx, ok, elapsed));
+            }
+            results
+        });
+    }
+
+    while let Some(res) = probe_set.join_next().await {
+        if let Ok(group_results) = res {
+            for (idx, ok, elapsed) in group_results {
+                if let Some(entry) = combined.get_mut(idx) {
+                    entry.probe_latency_ms = if ok { elapsed } else { 9999 };
+                }
+            }
+        }
+    }
 
     if !combined.is_empty() {
         let mut guard = get_catalog_cache().lock().await;
@@ -2708,7 +2824,7 @@ async fn pull_ollama_model(model_name: String) -> Result<String, String> {
     }
     let base_url = get_ollama_base_url();
     let pull_url = format!("{}/api/pull", base_url);
-    let client = reqwest::Client::new();
+    let client = get_shared_discovery_client();
     let payload = serde_json::json!({
         "name": clean,
         "stream": false
@@ -6732,7 +6848,7 @@ async fn handle_screen_vision(
     let ram_bmp: Option<Vec<u8>> = None;
 
     let groq_key = get_groq_api_key();
-    let client = reqwest::Client::new();
+    let client = get_shared_discovery_client();
 
     let ist_temporal = get_ist_temporal_context();
     let vision_system_prompt = format!(
@@ -6955,7 +7071,7 @@ async fn handle_developer_code(
     }
 
     // 2. Query Developer Agent: Priority 1 is GPU Model (e.g. Qwen3-Coder 30B on Kaggle GPU / Ollama)
-    let client = reqwest::Client::new();
+    let client = get_shared_discovery_client();
     let mut generated_code = String::new();
     let ollama_mod = get_ollama_model_name();
     let mut used_model = format!("{} (GPU)", ollama_mod.to_uppercase());
@@ -7171,7 +7287,7 @@ async fn transcribe_audio_groq(audio_base64: String, mime_type: Option<String>) 
         .text("response_format", "json")
         .text("temperature", "0.0");
 
-    let client = reqwest::Client::new();
+    let client = get_shared_discovery_client();
     let res = client
         .post("https://api.groq.com/openai/v1/audio/transcriptions")
         .header("Authorization", format!("Bearer {}", groq_key))
@@ -7452,7 +7568,7 @@ Rules:
                 .get(&m.id)
                 .map(|s| if s.latency_ms > 0 { s.latency_ms } else { m.probe_latency_ms })
                 .unwrap_or(m.probe_latency_ms);
-            lat <= 500
+            lat <= 1000
         })
         .map(|m| {
             let lat = stats_map
@@ -8703,7 +8819,7 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
     let configured_model = get_ollama_model_name();
 
     // Query Ollama /api/ps with NAVI headers
-    let client = reqwest::Client::new();
+    let client = get_shared_discovery_client();
     let req = client.get(get_ollama_ps_url()).timeout(Duration::from_millis(500));
     let req = add_navi_headers(req);
 
@@ -8835,8 +8951,8 @@ fn build_filtered_models(
             } else {
                 d.probe_latency_ms
             };
-            // Strict speed gate: only allow models <= 500ms (0-200ms primary, 201-500ms secondary)
-            if effective_latency > 500 {
+            // Strict speed gate: only allow models <= 1000ms (0-200ms primary, 201-1000ms secondary)
+            if effective_latency > 1000 {
                 return None;
             }
             Some(AvailableModelInfo {
@@ -8894,6 +9010,12 @@ fn build_filtered_models(
 #[tauri::command]
 async fn refresh_ai_models(state: tauri::State<'_, AppState>) -> Result<Vec<AvailableModelInfo>, String> {
     let discovered = discover_models_dynamic(true).await;
+    if let Ok(mut stats) = state.model_stats.lock() {
+        for d in &discovered {
+            let entry = stats.entry(d.id.clone()).or_default();
+            entry.latency_ms = d.probe_latency_ms;
+        }
+    }
     let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
     let current_active_id = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_default();
     let (available_models, resolved_active_id) = build_filtered_models(&discovered, &stats_map, &current_active_id);
@@ -9169,7 +9291,7 @@ pub fn run() {
 
             // Auto-preload model into memory as soon as app opens
             tauri::async_runtime::spawn(async {
-                let client = reqwest::Client::new();
+                let client = get_shared_discovery_client();
                 let req = client.post(get_ollama_chat_url());
                 let req = add_navi_headers(req);
                 let _ = req
@@ -9730,19 +9852,19 @@ mod tests {
             probe_latency_ms: lat,
         };
         let discovered = vec![
-            mk("slow-model", "GROQ LPU", "ONLINE", 650),
+            mk("slow-model", "GROQ LPU", "ONLINE", 1250),
             mk("offline-model", "LOCAL OLLAMA", "OFFLINE", 50),
-            mk("sec-model-1", "GOOGLE GEMINI", "ONLINE", 320),
+            mk("sec-model-1", "GOOGLE GEMINI", "ONLINE", 720),
             mk("prim-model-1", "GROQ LPU", "ONLINE", 120),
             mk("prim-model-2", "GROQ LPU", "ONLINE", 180),
-            mk("sec-model-2", "GOOGLE GEMINI", "ONLINE", 450),
+            mk("sec-model-2", "GOOGLE GEMINI", "ONLINE", 950),
             mk("prim-model-3", "NVIDIA NIM", "ONLINE", 95),
-            mk("sec-model-3", "LOCAL OLLAMA", "ONLINE", 250),
+            mk("sec-model-3", "LOCAL OLLAMA", "ONLINE", 450),
         ];
         let stats = HashMap::new();
         let (models, active_id) = build_filtered_models(&discovered, &stats, "");
         assert_eq!(models.len(), 5, "Should cap at top 5 fast models");
-        assert!(models.iter().all(|m| m.latency_ms <= 500 && m.status != "OFFLINE"));
+        assert!(models.iter().all(|m| m.latency_ms <= 1000 && m.status != "OFFLINE"));
         assert!(!models.iter().any(|m| m.id == "slow-model" || m.id == "offline-model"));
         assert_eq!(models[0].id, "prim-model-3");
         assert_eq!(active_id, "prim-model-3");
