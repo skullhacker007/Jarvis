@@ -1,3 +1,5 @@
+mod permissions;
+
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use std::collections::HashMap;
@@ -14,8 +16,10 @@ static QR_PAIR_STATUS: Mutex<Option<PhoneSyncStatus>> = Mutex::new(None);
 static LATEST_VOICE_TRANSCRIPTION: Mutex<Option<String>> = Mutex::new(None);
 static VOICE_NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
 static SPEECH_LISTENER_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
-static ACTIVE_SPEECH_WORKER_PID: AtomicU32 = AtomicU32::new(0);
+static ACTIVE_PIPECAT_WORKER_PID: AtomicU32 = AtomicU32::new(0);
+static ACTIVE_PLAYWRIGHT_PID: AtomicU32 = AtomicU32::new(0);
 static ACTIVE_TTS_WORKER_PID: AtomicU32 = AtomicU32::new(0);
+static ACTIVE_AI_ROUTER_PID: AtomicU32 = AtomicU32::new(0);
 static SPECULATIVE_DRAFT: Mutex<Option<(String, String, String, String)>> = Mutex::new(None);
 
 const GROQ_CHAT_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
@@ -24,7 +28,6 @@ const MODEL_NAME: &str = "meta/llama-3.3-70b-instruct";
 // Compile-time embedded configurations for 100% standalone single-binary portability
 const EMBEDDED_ENV: &str = include_str!("../../.env.local");
 const EMBEDDED_PHONE_CONFIG: &str = include_str!("../../phone_config.json");
-const EMBEDDED_SPEECH_WORKER: &str = include_str!("../../scripts/speech_worker.ps1");
 const EMBEDDED_TTS_WORKER: &str = include_str!("../../scripts/neural_tts_service.py");
 
 // =============================================================
@@ -133,6 +136,24 @@ pub mod jarvis_memory {
 
         memories.push(record);
         save_memories(&memories)?;
+        // Mirror to unified offline_sync_queue.jsonl so Python Mem0/SyncQueue shares one source of truth
+        if let Some(queue_path) = super::find_file_in_candidates("data/cache/offline_sync_queue.jsonl")
+            .or_else(|| Some(std::path::PathBuf::from("data/cache/offline_sync_queue.jsonl")))
+        {
+            if let Some(parent) = queue_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&queue_path) {
+                use std::io::Write;
+                let entry = serde_json::json!({
+                    "type": "memory",
+                    "text": clean,
+                    "metadata": { "category": category.trim().to_lowercase() },
+                    "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
+                });
+                let _ = writeln!(f, "{}", entry);
+            }
+        }
         Ok(format!("Stored in vector memory: '{}'", clean))
     }
 
@@ -433,47 +454,98 @@ pub mod local_file_search {
 }
 
 // =============================================================
-// PHASE 3: VOICEPRINT BIOMETRIC AUTH MODULE
+// PLAYWRIGHT BROWSER AUTOMATION BRIDGE (PORT 5006)
 // =============================================================
-pub mod voiceprint_auth {
-    use serde::{Deserialize, Serialize};
+pub mod playwright_bridge {
+    use super::*;
 
-    #[derive(Serialize, Deserialize, Clone, Debug)]
-    pub struct VoiceprintSample {
-        pub pitch_mean: f32,
-        pub spectral_centroid: f32,
-        pub zero_crossing_rate: f32,
-        pub energy_rms: f32,
+    pub fn ensure_service_running() -> bool {
+        let client = match reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(500))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        if let Ok(resp) = client.get("http://127.0.0.1:5006/health").send() {
+            if resp.status().is_success() {
+                return true;
+            }
+        }
+
+        if let Some(script_path) = find_file_in_candidates("tools/playwright_browser.py") {
+            let s = script_path.to_string_lossy().to_string();
+            let mut launched = false;
+            if std::path::Path::new("C:\\Python314\\python.exe").exists() {
+                let mut cmd = silent_command("C:\\Python314\\python.exe");
+                cmd.args([&s, "5006"]);
+                if let Ok(child) = spawn_managed_child(cmd) {
+                    ACTIVE_PLAYWRIGHT_PID.store(child.id(), Ordering::SeqCst);
+                    launched = true;
+                }
+            }
+            if !launched {
+                let mut cmd = silent_command("py");
+                cmd.args(["-3.14", &s, "5006"]);
+                if let Ok(child) = spawn_managed_child(cmd) {
+                    ACTIVE_PLAYWRIGHT_PID.store(child.id(), Ordering::SeqCst);
+                    launched = true;
+                }
+            }
+            if launched {
+                for _ in 0..16 {
+                    std::thread::sleep(Duration::from_millis(250));
+                    if let Ok(resp) = client.get("http://127.0.0.1:5006/health").send() {
+                        if resp.status().is_success() {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
-    const OWNER_PITCH_MIN: f32 = 85.0;
-    const OWNER_PITCH_MAX: f32 = 230.0;
-    const OWNER_MIN_ENERGY: f32 = 0.04;
-
-    pub fn verify(sample_json: &str) -> (bool, f32, String) {
-        if let Ok(sample) = serde_json::from_str::<VoiceprintSample>(sample_json) {
-            let mut confidence = 0.88f32;
-
-            if sample.pitch_mean >= OWNER_PITCH_MIN && sample.pitch_mean <= OWNER_PITCH_MAX {
-                confidence += 0.08;
-            } else if sample.pitch_mean > 0.0 {
-                confidence -= 0.25;
-            }
-
-            if sample.energy_rms > OWNER_MIN_ENERGY {
-                confidence += 0.04;
-            }
-
-            let is_match = confidence >= 0.75;
-            let status = if is_match {
-                "AUTHENTICATED: Voiceprint verified for CHOWDARY (Access Level 5)".to_string()
+    pub fn execute_action(action: &str, target: &str) -> Result<String, String> {
+        if !ensure_service_running() {
+            return Err("Playwright browser service unavailable.".to_string());
+        }
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(20))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let payload = serde_json::json!({
+            "action": action,
+            "target": target
+        });
+        let resp = client
+            .post("http://127.0.0.1:5006/action")
+            .json(&payload)
+            .send()
+            .map_err(|e| format!("Playwright request failed: {}", e))?;
+        let body: serde_json::Value = resp
+            .json()
+            .map_err(|e| format!("Playwright parse error: {}", e))?;
+        if body["ok"].as_bool().unwrap_or(false) {
+            if let Some(content) = body["content"].as_str() {
+                Ok(format!(
+                    "{} ({}): {}",
+                    body["title"].as_str().unwrap_or("Page"),
+                    body["url"].as_str().unwrap_or(""),
+                    content
+                ))
             } else {
-                "ACCESS DENIED: Voiceprint profile mismatch".to_string()
-            };
-
-            (is_match, (confidence * 100.0).min(99.0), status)
+                Ok(body["message"]
+                    .as_str()
+                    .unwrap_or("Playwright action completed.")
+                    .to_string())
+            }
         } else {
-            (true, 92.0, "AUTHENTICATED: Voiceprint Verified for Registered Owner".to_string())
+            Err(body["error"]
+                .as_str()
+                .unwrap_or("Playwright action failed.")
+                .to_string())
         }
     }
 }
@@ -635,7 +707,7 @@ fn get_ollama_model_name() -> String {
 fn get_ai_provider() -> String {
     get_env_or_file_key("AI_PROVIDER")
         .map(|p| p.to_lowercase())
-        .unwrap_or_else(|| "nvidia".to_string())
+        .unwrap_or_else(|| "groq".to_string())
 }
 
 fn get_navi_api_token() -> Option<String> {
@@ -1914,10 +1986,10 @@ impl Default for ModelMetrics {
             quantization: "FP16 LPU".to_string(),
             context_length: 131072,
             memory_mb: 0.0,
-            eval_tokens_per_sec: 267.0,
+            eval_tokens_per_sec: 0.0,
             last_eval_count: 0,
             last_prompt_eval_count: 0,
-            last_latency_ms: 267,
+            last_latency_ms: 0,
             is_loaded: true,
         }
     }
@@ -1935,6 +2007,369 @@ pub struct AvailableModelInfo {
     pub speed_tok_s: f32,
     pub latency_ms: u128,
     pub is_active: bool,
+    pub parameter_size: String,
+    pub quantization: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct DiscoveredModelEntry {
+    pub id: String,
+    pub display_name: String,
+    pub provider: String,
+    pub status: String,
+    pub context_window: String,
+    pub context_length: u32,
+    pub parameter_size: String,
+    pub quantization: String,
+}
+
+#[derive(Default)]
+struct CachedModelCatalog {
+    models: Vec<DiscoveredModelEntry>,
+    last_fetched: Option<std::time::Instant>,
+}
+
+static MODEL_CATALOG_CACHE: std::sync::OnceLock<tokio::sync::Mutex<CachedModelCatalog>> = std::sync::OnceLock::new();
+
+fn get_catalog_cache() -> &'static tokio::sync::Mutex<CachedModelCatalog> {
+    MODEL_CATALOG_CACHE.get_or_init(|| tokio::sync::Mutex::new(CachedModelCatalog::default()))
+}
+
+async fn invalidate_model_catalog_cache() {
+    let mut guard = get_catalog_cache().lock().await;
+    guard.last_fetched = None;
+}
+
+fn format_context_window(tokens: u64) -> String {
+    if tokens >= 1_000_000 {
+        format!("{}M", ((tokens as f64) / 1_048_576.0).round().max(1.0) as u64)
+    } else if tokens >= 1024 {
+        format!("{}K", ((tokens as f64) / 1024.0).round() as u64)
+    } else if tokens > 0 {
+        tokens.to_string()
+    } else {
+        "--".to_string()
+    }
+}
+
+fn infer_param_size(id: &str) -> String {
+    let lower = id.to_lowercase();
+    for token in lower.split(|c: char| c == ':' || c == '-' || c == '/' || c == '_') {
+        if token.ends_with('b') && token.len() >= 2 && token[..token.len() - 1].chars().all(|ch| ch.is_ascii_digit() || ch == '.') {
+            return token.to_uppercase();
+        }
+    }
+    if lower.contains("flash") {
+        "Flash".to_string()
+    } else if lower.contains("pro") {
+        "Pro".to_string()
+    } else {
+        "Dynamic".to_string()
+    }
+}
+
+async fn discover_models_dynamic(force_refresh: bool) -> Vec<DiscoveredModelEntry> {
+    {
+        let guard = get_catalog_cache().lock().await;
+        if !force_refresh {
+            if let Some(ts) = guard.last_fetched {
+                if ts.elapsed() < Duration::from_secs(30) && !guard.models.is_empty() {
+                    return guard.models.clone();
+                }
+            }
+        }
+    }
+
+    let client = reqwest::Client::new();
+    let gemini_key = get_gemini_api_key();
+    let nvidia_key = get_nvidia_api_key();
+    let groq_key = get_groq_api_key();
+    let gemini_configured = get_gemini_model();
+    let nvidia_configured = get_nvidia_model();
+    let nvidia_base = get_nvidia_base_url();
+    let ollama_base = get_ollama_base_url();
+    let ollama_configured = get_ollama_model_name();
+    let is_remote_ollama = !ollama_base.contains("127.0.0.1") && !ollama_base.contains("localhost");
+
+    let gemini_fut = async {
+        let mut out = Vec::new();
+        if gemini_key.is_empty() {
+            return out;
+        }
+        let url = format!("https://generativelanguage.googleapis.com/v1beta/models?key={}", gemini_key);
+        let mut online = false;
+        if let Ok(res) = client.get(&url).timeout(Duration::from_millis(1200)).send().await {
+            if res.status().is_success() {
+                online = true;
+                if let Ok(json) = res.json::<serde_json::Value>().await {
+                    if let Some(arr) = json["models"].as_array() {
+                        // Prefer configured model first, then latest flash/pro generateContent models
+                        let mut matched: Vec<DiscoveredModelEntry> = Vec::new();
+                        for m in arr {
+                            let raw_name = m["name"].as_str().unwrap_or("");
+                            let id = raw_name.strip_prefix("models/").unwrap_or(raw_name).to_string();
+                            let methods = m["supportedGenerationMethods"].as_array();
+                            let supports_gen = methods
+                                .map(|ms| ms.iter().any(|v| v.as_str() == Some("generateContent")))
+                                .unwrap_or(false);
+                            if !supports_gen || id.is_empty() {
+                                continue;
+                            }
+                            let is_conf = id == gemini_configured;
+                            let is_relevant = is_conf || (id.contains("gemini") && (id.contains("flash") || id.contains("pro")) && !id.contains("vision") && !id.contains("exp") && !id.contains("tuning"));
+                            if !is_relevant {
+                                continue;
+                            }
+                            let ctx_len = m["inputTokenLimit"].as_u64().unwrap_or(1_048_576) as u32;
+                            let disp = m["displayName"].as_str().unwrap_or(&id).to_uppercase();
+                            matched.push(DiscoveredModelEntry {
+                                id: id.clone(),
+                                display_name: disp,
+                                provider: "GOOGLE GEMINI".to_string(),
+                                status: "ONLINE".to_string(),
+                                context_window: format_context_window(ctx_len as u64),
+                                context_length: ctx_len,
+                                parameter_size: infer_param_size(&id),
+                                quantization: "Cloud".to_string(),
+                            });
+                        }
+                        // Put configured model first, keep up to 3 Gemini models
+                        matched.sort_by_key(|e| if e.id == gemini_configured { 0 } else { 1 });
+                        matched.truncate(3);
+                        out.extend(matched);
+                    }
+                }
+            }
+        }
+        if out.is_empty() {
+            out.push(DiscoveredModelEntry {
+                id: gemini_configured.clone(),
+                display_name: gemini_configured.to_uppercase(),
+                provider: "GOOGLE GEMINI".to_string(),
+                status: if online { "ONLINE".to_string() } else { "OFFLINE".to_string() },
+                context_window: "1M".to_string(),
+                context_length: 1_048_576,
+                parameter_size: infer_param_size(&gemini_configured),
+                quantization: "Cloud".to_string(),
+            });
+        }
+        out
+    };
+
+    let nvidia_fut = async {
+        let mut out = Vec::new();
+        if nvidia_key.is_empty() {
+            return out;
+        }
+        let url = format!("{}/models", nvidia_base.trim_end_matches('/'));
+        let mut online = false;
+        if let Ok(res) = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", nvidia_key))
+            .timeout(Duration::from_millis(1200))
+            .send()
+            .await
+        {
+            if res.status().is_success() {
+                online = true;
+                if let Ok(json) = res.json::<serde_json::Value>().await {
+                    if let Some(arr) = json["data"].as_array() {
+                        if let Some(found) = arr.iter().find(|m| m["id"].as_str() == Some(nvidia_configured.as_str())) {
+                            let id = found["id"].as_str().unwrap_or(&nvidia_configured).to_string();
+                            let ctx_len = found["context_length"].as_u64().unwrap_or(131_072) as u32;
+                            out.push(DiscoveredModelEntry {
+                                id: id.clone(),
+                                display_name: format!("{} (NVIDIA NIM)", id.split('/').last().unwrap_or(&id).to_uppercase()),
+                                provider: "NVIDIA NIM".to_string(),
+                                status: "ONLINE".to_string(),
+                                context_window: format_context_window(ctx_len as u64),
+                                context_length: ctx_len,
+                                parameter_size: infer_param_size(&id),
+                                quantization: "FP8/16".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        if out.is_empty() {
+            out.push(DiscoveredModelEntry {
+                id: nvidia_configured.clone(),
+                display_name: format!("{} (NVIDIA NIM)", nvidia_configured.split('/').last().unwrap_or(&nvidia_configured).to_uppercase()),
+                provider: "NVIDIA NIM".to_string(),
+                status: if online { "ONLINE".to_string() } else { "OFFLINE".to_string() },
+                context_window: "128K".to_string(),
+                context_length: 131_072,
+                parameter_size: infer_param_size(&nvidia_configured),
+                quantization: "FP8/16".to_string(),
+            });
+        }
+        out
+    };
+
+    let groq_fut = async {
+        let mut out = Vec::new();
+        if groq_key.is_empty() {
+            return out;
+        }
+        let url = "https://api.groq.com/openai/v1/models";
+        let mut online = false;
+        if let Ok(res) = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", groq_key))
+            .timeout(Duration::from_millis(1200))
+            .send()
+            .await
+        {
+            if res.status().is_success() {
+                online = true;
+                if let Ok(json) = res.json::<serde_json::Value>().await {
+                    if let Some(arr) = json["data"].as_array() {
+                        let groq_configured = get_env_or_file_key("GROQ_MODEL").unwrap_or_default();
+                        let mut matched: Vec<DiscoveredModelEntry> = Vec::new();
+                        for m in arr {
+                            let id = m["id"].as_str().unwrap_or("").to_string();
+                            let active = m["active"].as_bool().unwrap_or(true);
+                            let lower = id.to_lowercase();
+                            if id.is_empty() || !active || lower.contains("whisper") || lower.contains("tts") || lower.contains("guard") || lower.contains("safeguard") {
+                                continue;
+                            }
+                            let ctx_len = m["context_window"].as_u64().unwrap_or(131_072) as u32;
+                            matched.push(DiscoveredModelEntry {
+                                id: id.clone(),
+                                display_name: format!("{} (GROQ LPU)", id.split('/').last().unwrap_or(&id).to_uppercase()),
+                                provider: "GROQ LPU".to_string(),
+                                status: "ONLINE".to_string(),
+                                context_window: format_context_window(ctx_len as u64),
+                                context_length: ctx_len,
+                                parameter_size: infer_param_size(&id),
+                                quantization: "LPU".to_string(),
+                            });
+                        }
+                        matched.sort_by_key(|e| {
+                            if !groq_configured.is_empty() && e.id == groq_configured {
+                                0
+                            } else if e.id.contains("llama-3.3") || e.id.contains("qwen") {
+                                1
+                            } else {
+                                2
+                            }
+                        });
+                        matched.truncate(3);
+                        out.extend(matched);
+                    }
+                }
+            }
+        }
+        if out.is_empty() && !online {
+            let fallback_id = get_env_or_file_key("GROQ_MODEL").unwrap_or_else(|| "llama-3.3-70b-versatile".to_string());
+            out.push(DiscoveredModelEntry {
+                id: fallback_id.clone(),
+                display_name: format!("{} (GROQ LPU)", fallback_id.to_uppercase()),
+                provider: "GROQ LPU".to_string(),
+                status: "OFFLINE".to_string(),
+                context_window: "128K".to_string(),
+                context_length: 131_072,
+                parameter_size: infer_param_size(&fallback_id),
+                quantization: "LPU".to_string(),
+            });
+        }
+        out
+    };
+
+    let ollama_fut = async {
+        let mut out = Vec::new();
+        let tags_url = format!("{}/api/tags", ollama_base);
+        let ps_url = format!("{}/api/ps", ollama_base);
+
+        let tags_req = add_navi_headers(client.get(&tags_url).timeout(Duration::from_millis(800)));
+        let ps_req = add_navi_headers(client.get(&ps_url).timeout(Duration::from_millis(600)));
+
+        let (tags_res, ps_res) = tokio::join!(tags_req.send(), ps_req.send());
+
+        let mut loaded_names: Vec<String> = Vec::new();
+        if let Ok(res) = ps_res {
+            if let Ok(ps_json) = res.json::<serde_json::Value>().await {
+                if let Some(arr) = ps_json["models"].as_array() {
+                    for m in arr {
+                        if let Some(n) = m["name"].as_str() {
+                            loaded_names.push(n.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        let provider_label = if is_remote_ollama { "REMOTE OLLAMA" } else { "LOCAL OLLAMA" };
+        if let Ok(res) = tags_res {
+            if res.status().is_success() {
+                if let Ok(tags_json) = res.json::<serde_json::Value>().await {
+                    if let Some(arr) = tags_json["models"].as_array() {
+                        for m in arr {
+                            let name = m["name"].as_str().unwrap_or("").to_string();
+                            if name.is_empty() {
+                                continue;
+                            }
+                            let param_size = m["details"]["parameter_size"]
+                                .as_str()
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| infer_param_size(&name));
+                            let quant = m["details"]["quantization_level"]
+                                .as_str()
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| "GGUF".to_string());
+                            let is_loaded = loaded_names.iter().any(|ln| ln == &name);
+                            let status = if is_loaded {
+                                "ONLINE (LOADED)".to_string()
+                            } else if is_remote_ollama {
+                                "ONLINE (GPU)".to_string()
+                            } else {
+                                "ONLINE (LOCAL)".to_string()
+                            };
+                            out.push(DiscoveredModelEntry {
+                                id: name.clone(),
+                                display_name: format!("{} ({})", name.to_uppercase(), if is_remote_ollama { "REMOTE" } else { "LOCAL" }),
+                                provider: provider_label.to_string(),
+                                status,
+                                context_window: "128K".to_string(),
+                                context_length: 131_072,
+                                parameter_size: param_size,
+                                quantization: quant,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        if out.is_empty() {
+            out.push(DiscoveredModelEntry {
+                id: ollama_configured.clone(),
+                display_name: format!("{} (OFFLINE)", ollama_configured.to_uppercase()),
+                provider: provider_label.to_string(),
+                status: "OFFLINE".to_string(),
+                context_window: "128K".to_string(),
+                context_length: 131_072,
+                parameter_size: infer_param_size(&ollama_configured),
+                quantization: "Q4_K_M".to_string(),
+            });
+        }
+        out
+    };
+
+    let (gem_list, nv_list, grq_list, oll_list) = tokio::join!(gemini_fut, nvidia_fut, groq_fut, ollama_fut);
+    let mut combined = Vec::new();
+    combined.extend(gem_list);
+    combined.extend(nv_list);
+    combined.extend(grq_list);
+    combined.extend(oll_list);
+
+    {
+        let mut guard = get_catalog_cache().lock().await;
+        guard.models = combined.clone();
+        guard.last_fetched = Some(std::time::Instant::now());
+    }
+    combined
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1950,6 +2385,7 @@ pub struct AppState {
     pub model_metrics: Mutex<ModelMetrics>,
     pub model_stats: Mutex<HashMap<String, ModelRuntimeStats>>,
     pub active_model_id: Mutex<String>,
+    pub http_client: reqwest::Client,
 }
 
 #[cfg(windows)]
@@ -2323,6 +2759,7 @@ async fn pull_ollama_model(model_name: String) -> Result<String, String> {
     let req = add_navi_headers(req);
     let res = req.send().await.map_err(|e| e.to_string())?;
     if res.status().is_success() {
+        invalidate_model_catalog_cache().await;
         Ok(format!("Model '{}' successfully pulled into local Ollama matrix.", clean))
     } else {
         Err(format!("Ollama pull failed with HTTP status {}", res.status()))
@@ -3164,8 +3601,13 @@ pub struct JarvisResponse {
     pub token_words: Vec<String>,
 }
 
-// Windows System Action Executor with Administrator Permissions
+// Centralized Permission-Gated System Action Executor
 fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
+    permissions::check_sync_policy(action, target)?;
+    execute_system_action_unchecked(action, target)
+}
+
+fn execute_system_action_unchecked(action: &str, target: &str) -> Result<String, String> {
     let clean_target = target.trim();
     let lower_act = action.to_lowercase();
     match lower_act.as_str() {
@@ -3383,78 +3825,11 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
             win32_system_agent::double_click();
             Ok("Double click executed.".to_string())
         }
-        "new_tab" => {
-            #[cfg(windows)]
-            {
-                let tgt = if !clean_target.is_empty() { Some(clean_target) } else { None };
-                if let Some(t) = tgt {
-                    if !win32_system_agent::restore_external_focus(Some(t)) {
-                        let _ = execute_system_action("open_app", t);
-                        std::thread::sleep(std::time::Duration::from_millis(500));
-                        win32_system_agent::restore_external_focus(Some(t));
-                    }
-                } else {
-                    win32_system_agent::restore_external_focus(None);
-                }
-                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x54);
-            }
-            Ok("Opened new browser tab.".to_string())
-        }
-        "close_tab" => {
-            #[cfg(windows)]
-            {
-                win32_system_agent::restore_external_focus(None);
-                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x57);
-            }
-            Ok("Closed active tab.".to_string())
-        }
-        "reopen_tab" => {
-            #[cfg(windows)]
-            {
-                win32_system_agent::restore_external_focus(None);
-                win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x54);
-            }
-            Ok("Reopened closed tab.".to_string())
-        }
-        "next_tab" => {
-            #[cfg(windows)]
-            {
-                win32_system_agent::restore_external_focus(None);
-                win32_system_agent::send_key_combo_2(win32_system_agent::VK_CONTROL, 0x09);
-            }
-            Ok("Switched to next tab.".to_string())
-        }
-        "prev_tab" | "previous_tab" => {
-            #[cfg(windows)]
-            {
-                win32_system_agent::restore_external_focus(None);
-                win32_system_agent::send_key_combo_3(win32_system_agent::VK_CONTROL, win32_system_agent::VK_SHIFT, 0x09);
-            }
-            Ok("Switched to previous tab.".to_string())
-        }
-        "refresh" | "refresh_page" => {
-            #[cfg(windows)]
-            {
-                win32_system_agent::restore_external_focus(None);
-                win32_system_agent::send_single_key(win32_system_agent::VK_F5);
-            }
-            Ok("Refreshed page.".to_string())
-        }
-        "browser_back" | "go_back" => {
-            #[cfg(windows)]
-            {
-                win32_system_agent::restore_external_focus(None);
-                win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_LEFT);
-            }
-            Ok("Navigated back.".to_string())
-        }
-        "browser_forward" | "go_forward" => {
-            #[cfg(windows)]
-            {
-                win32_system_agent::restore_external_focus(None);
-                win32_system_agent::send_key_combo_2(win32_system_agent::VK_MENU, win32_system_agent::VK_RIGHT);
-            }
-            Ok("Navigated forward.".to_string())
+        "new_tab" | "close_tab" | "next_tab" | "prev_tab" | "previous_tab"
+        | "refresh" | "refresh_page" | "browser_back" | "go_back"
+        | "browser_forward" | "go_forward" | "browser_navigate" | "navigate"
+        | "browser_click" | "browser_type" | "browser_read" => {
+            playwright_bridge::execute_action(&lower_act, clean_target)
         }
         "save" | "save_file" => {
             #[cfg(windows)]
@@ -3834,10 +4209,9 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
         "airdrop_file" => {
             airdrop_file_to_phone(clean_target)
         }
-        // --- PHASE 3: VOICEPRINT BIOMETRIC AUTH ---
+        // --- ECAPA-TDNN SPEAKER VERIFICATION ---
         "verify_voiceprint" => {
-            let (is_match, conf, report) = voiceprint_auth::verify(clean_target);
-            Ok(format!("{} (Confidence: {:.1}%, Verified: {})", report, conf, is_match))
+            Ok("ECAPA-TDNN speaker verification is active on the Pipecat voice stream.".to_string())
         }
         // --- PHASE 3: PRESENCE & GLANCE LOCK ---
         "presence_lock" | "lock_on_absence" => {
@@ -3862,6 +4236,10 @@ fn execute_system_action(action: &str, target: &str) -> Result<String, String> {
 fn check_fast_path(prompt: &str) -> Option<JarvisResponse> {
     let lower = prompt.to_lowercase().trim().to_string();
     let start = Instant::now();
+
+    if let Some(temporal_res) = try_local_temporal_fast_path(&lower, start) {
+        return Some(temporal_res);
+    }
 
     if lower == "lock pc" || lower == "lock screen" || lower == "lock my computer" {
         let _ = execute_system_action("lock_pc", "");
@@ -5027,19 +5405,26 @@ fn get_foreground_window_title() -> String {
     "Desktop".to_string()
 }
 
-async fn fetch_web_intelligence(query: &str) -> String {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(3500))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+fn url_encode_query(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for b in input.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
 
-    let mut snippets = Vec::new();
+async fn fetch_web_intelligence(client: &reqwest::Client, query: &str) -> String {
     let clean_query = query
         .trim()
+        .trim_end_matches(&['?', '.', '!', '"', '\''][..])
         .trim_start_matches("search for")
         .trim_start_matches("search")
         .trim_start_matches("google")
+        .trim_start_matches("look up")
         .trim_start_matches("who is")
         .trim_start_matches("who was")
         .trim_start_matches("what is")
@@ -5047,106 +5432,228 @@ async fn fetch_web_intelligence(query: &str) -> String {
         .trim_start_matches("tell me about")
         .trim();
 
-    // 1. Google News RSS for live/current events
-    let encoded_query = clean_query.replace(' ', "+");
+    if clean_query.is_empty() {
+        return String::new();
+    }
+
+    let encoded_query = url_encode_query(clean_query);
     let news_url = format!("https://news.google.com/rss/search?q={}", encoded_query);
-    if let Ok(res) = client.get(&news_url).send().await {
-        if let Ok(text) = res.text().await {
-            for item in text.split("<item>").skip(1).take(3) {
-                if let Some(start) = item.find("<title>") {
-                    if let Some(end) = item.find("</title>") {
-                        let title = &item[start + 7..end];
-                        let clean_title = title.replace("&quot;", "\"").replace("&amp;", "&");
-                        snippets.push(format!("• {}", clean_title));
+    let wiki_topic = url_encode_query(&clean_query.replace(' ', "_"));
+    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", wiki_topic);
+
+    // Fetch Google News RSS and Wikipedia Summary in parallel with tight 2s timeout
+    let news_fut = async {
+        let mut items = Vec::new();
+        if let Ok(res) = client.get(&news_url).timeout(Duration::from_millis(2000)).send().await {
+            if let Ok(text) = res.text().await {
+                for item in text.split("<item>").skip(1).take(3) {
+                    if let (Some(start), Some(end)) = (item.find("<title>"), item.find("</title>")) {
+                        if end > start + 7 {
+                            let title = &item[start + 7..end];
+                            let clean_title = title.replace("&quot;", "\"").replace("&amp;", "&");
+                            items.push(format!("• {}", clean_title));
+                        }
                     }
                 }
             }
         }
-    }
+        items
+    };
 
-    // 2. Wikipedia Summary API
-    let wiki_topic = clean_query.replace(' ', "_");
-    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", wiki_topic);
-    if let Ok(res) = client.get(&wiki_url).send().await {
-        if let Ok(json_val) = res.json::<serde_json::Value>().await {
-            if let Some(extract) = json_val.get("extract").and_then(|v| v.as_str()) {
-                if !extract.is_empty() {
-                    let short_extract = if extract.len() > 300 { &extract[..300] } else { extract };
-                    snippets.push(format!("Wikipedia Overview: {}", short_extract));
+    let wiki_fut = async {
+        if let Ok(res) = client.get(&wiki_url).timeout(Duration::from_millis(2000)).send().await {
+            if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                if let Some(extract) = json_val.get("extract").and_then(|v| v.as_str()) {
+                    if !extract.is_empty() {
+                        let short_extract: String = extract.chars().take(320).collect();
+                        return Some(format!("Wikipedia Overview: {}", short_extract));
+                    }
                 }
             }
         }
+        None
+    };
+
+    let (mut snippets, wiki_opt) = tokio::join!(news_fut, wiki_fut);
+    if let Some(w) = wiki_opt {
+        snippets.push(w);
     }
 
     snippets.join("\n")
 }
 
-fn get_ist_temporal_context() -> String {
-    let now = std::time::SystemTime::now();
-    let epoch_secs = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-    // UTC+5:30 offset is 19800 seconds
-    let ist_secs = epoch_secs + 19800;
-
-    let total_days = (ist_secs / 86400) as i64;
-    let day_seconds = (ist_secs % 86400) as u32;
-    let hour = day_seconds / 3600;
-    let minute = (day_seconds % 3600) / 60;
-    let second = day_seconds % 60;
-
-    // Day of week: 1970-01-01 was Thursday (4)
-    let weekday_num = ((total_days + 4) % 7 + 7) % 7;
-    let days_of_week = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    let day_name = days_of_week[weekday_num as usize];
-
-    // Gregorian date computation (civil days algorithm)
-    let z = total_days + 719468;
-    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
-    let doe = (z - era * 146097) as u32;
-    let yoe = (doe - doe / 1024 + doe / 1168 - doe / 146096) / 365;
-    let mut y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    if m <= 2 {
-        y += 1;
+/// Returns (year, month 1..12, day 1..31, day_of_week 0=Sun..6=Sat, hour 0..23, minute, second)
+/// directly from the OS local clock without hardcoding a timezone.
+fn get_os_local_datetime() -> (i64, u32, u32, usize, u32, u32, u32) {
+    #[cfg(windows)]
+    {
+        #[repr(C)]
+        struct SystemTimeWin {
+            w_year: u16,
+            w_month: u16,
+            w_day_of_week: u16,
+            w_day: u16,
+            w_hour: u16,
+            w_minute: u16,
+            w_second: u16,
+            _w_milliseconds: u16,
+        }
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetLocalTime(lp_system_time: *mut SystemTimeWin);
+        }
+        let mut st = SystemTimeWin {
+            w_year: 0,
+            w_month: 0,
+            w_day_of_week: 0,
+            w_day: 0,
+            w_hour: 0,
+            w_minute: 0,
+            w_second: 0,
+            _w_milliseconds: 0,
+        };
+        unsafe { GetLocalTime(&mut st) };
+        return (
+            st.w_year as i64,
+            st.w_month as u32,
+            st.w_day as u32,
+            (st.w_day_of_week as usize) % 7,
+            st.w_hour as u32,
+            st.w_minute as u32,
+            st.w_second as u32,
+        );
     }
 
+    #[cfg(not(windows))]
+    {
+        let now = std::time::SystemTime::now();
+        let epoch_secs = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+        let total_days = epoch_secs.div_euclid(86400);
+        let day_seconds = epoch_secs.rem_euclid(86400) as u32;
+        let hour = day_seconds / 3600;
+        let minute = (day_seconds % 3600) / 60;
+        let second = day_seconds % 60;
+        let weekday_num = ((total_days + 4).rem_euclid(7)) as usize;
+
+        let z = total_days + 719468;
+        let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+        let doe = (z - era * 146097) as u32;
+        let yoe = (doe - doe / 1024 + doe / 1168 - doe / 146096) / 365;
+        let mut y = yoe as i64 + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        if m <= 2 {
+            y += 1;
+        }
+        (y, m, d, weekday_num, hour, minute, second)
+    }
+}
+
+fn try_local_temporal_fast_path(lower: &str, start: Instant) -> Option<JarvisResponse> {
+    let normalized: String = lower
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let words: Vec<&str> = normalized.split_whitespace().collect();
+    if words.is_empty() || words.len() > 7 {
+        return None;
+    }
+
+    let asks_date = words.iter().any(|w| matches!(*w, "date" | "day" | "today" | "todays"))
+        && !words.iter().any(|w| matches!(*w, "update" | "birthday" | "release" | "due" | "expiry" | "search" | "google"));
+    let asks_time = words.iter().any(|w| matches!(*w, "time" | "clock"))
+        && !words.iter().any(|w| matches!(*w, "timer" | "stopwatch" | "uptime" | "runtime" | "timezone" | "search" | "google"));
+
+    if !asks_date && !asks_time {
+        return None;
+    }
+
+    let (y, m, d, weekday_num, hour, minute, second) = get_os_local_datetime();
+    let days_of_week = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     let months = [
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December",
     ];
-    let month_name = months[(m - 1) as usize];
-
+    let day_name = days_of_week[weekday_num % 7];
+    let month_name = months[(m.saturating_sub(1) as usize).min(11)];
     let am_pm = if hour >= 12 { "PM" } else { "AM" };
     let hour_12 = if hour == 0 { 12 } else if hour > 12 { hour - 12 } else { hour };
 
+    let reply = if asks_date && !asks_time {
+        format!("Today is {}, {} {}, {}, sir.", day_name, month_name, d, y)
+    } else if asks_time && !asks_date {
+        format!("The local time is currently {}:{:02} {}, sir.", hour_12, minute, am_pm)
+    } else {
+        format!(
+            "Today is {}, {} {}, {}, and the local time is {}:{:02}:{:02} {}, sir.",
+            day_name, month_name, d, y, hour_12, minute, second, am_pm
+        )
+    };
+
+    let token_words: Vec<String> = reply.split_whitespace().map(|s| s.to_string()).collect();
+    Some(JarvisResponse {
+        reply,
+        action: Some(if asks_date { "📅 Local Date".into() } else { "🕒 Local Time".into() }),
+        command: Some("OS Local Clock".into()),
+        output: None,
+        latency_ms: start.elapsed().as_millis(),
+        prompt_tokens: words.len() as u32,
+        eval_tokens: token_words.len() as u32,
+        total_tokens: (words.len() + token_words.len()) as u32,
+        tokens_per_sec: 1000.0,
+        model_name: "OS Local Clock (0ms)".to_string(),
+        token_words,
+    })
+}
+
+fn get_ist_temporal_context() -> String {
+    let (y, m, d, weekday_num, hour, minute, second) = get_os_local_datetime();
+    let days_of_week = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    let months = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ];
+    let day_name = days_of_week[weekday_num % 7];
+    let month_name = months[(m.saturating_sub(1) as usize).min(11)];
+    let am_pm = if hour >= 12 { "PM" } else { "AM" };
+    let hour_12 = if hour == 0 { 12 } else if hour > 12 { hour - 12 } else { hour };
+    let location_line = get_env_or_file_key("JARVIS_USER_LOCATION")
+        .filter(|s| !s.trim().is_empty())
+        .map(|loc| format!("\n- User Location: {}", loc))
+        .unwrap_or_default();
+
     format!(
-        "Current Time & Location Context:\n- Timezone: UTC+05:30 (India Standard Time - IST)\n- Current Date: {} {}, {}\n- Current Day: {}\n- Current Time: {:02}:{:02}:{:02} {} ({:02}:{:02} IST)\n- User Location: Tirupati, Andhra Pradesh, India (PIN: 517505)\nWhen asked about time, date, or location, accurately use this exact IST time and Tirupati location.",
-        month_name, d, y, day_name, hour_12, minute, second, am_pm, hour, minute
+        "Current Local System Context:\n- Current Date: {} {}, {}\n- Current Day: {}\n- Current Local Time: {:02}:{:02}:{:02} {} ({:02}:{:02}){}\nWhen asked about time or date, accurately use this exact local system date and time.",
+        month_name, d, y, day_name, hour_12, minute, second, am_pm, hour, minute, location_line
     )
 }
 
 async fn handle_web_search(
     query: &str,
-    _state: &tauri::State<'_, AppState>,
+    state: &tauri::State<'_, AppState>,
     start_time: Instant,
 ) -> Result<JarvisResponse, String> {
     let clean_query = query
         .trim()
+        .trim_end_matches(&['?', '.', '!'][..])
         .trim_start_matches("search for")
         .trim_start_matches("search")
         .trim_start_matches("google")
+        .trim_start_matches("look up")
         .trim();
 
-    let intelligence = fetch_web_intelligence(clean_query).await;
-    let groq_key = get_groq_api_key();
-    let client = reqwest::Client::new();
-
-    let ist_temporal = get_ist_temporal_context();
+    let client = &state.http_client;
+    let intelligence = fetch_web_intelligence(client, clean_query).await;
+    let temporal_ctx = get_ist_temporal_context();
     let search_system_prompt = format!(
         "You are JARVIS, NAVI's articulate and sophisticated AI assistant. Based on the live web intelligence provided, deliver a refined, natural, and insightful spoken answer for sir in 2-3 engaging sentences. Speak with Paul Bettany's polished British cadence and intelligence. Do not use markdown, bullet points, or robotic summaries.\n\n{}",
-        ist_temporal
+        temporal_ctx
     );
 
     let user_msg = if intelligence.is_empty() {
@@ -5155,41 +5662,135 @@ async fn handle_web_search(
         format!("Live Web Context:\n{}\n\nUser Question: {}", intelligence, clean_query)
     };
 
-    let payload = serde_json::json!({
-        "model": "qwen/qwen3.8-27b",
-        "messages": [
-            { "role": "system", "content": search_system_prompt },
-            { "role": "user", "content": user_msg }
-        ],
-        "temperature": 0.35,
-        "max_tokens": 160
-    });
-
-    let mut reply = format!("Retrieved web results for {}.", clean_query);
+    let mut reply = String::new();
     let mut eval_tokens = 20u32;
     let mut prompt_tokens = 60u32;
+    let mut used_model = "Web Intelligence".to_string();
 
-    if !groq_key.is_empty() {
+    // 1. Try Gemini Flash first (fast cloud synthesis)
+    let gemini_key = get_gemini_api_key();
+    if !gemini_key.is_empty() {
+        let gemini_model = get_gemini_model();
+        let gemini_url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            gemini_model, gemini_key
+        );
+        let gemini_payload = serde_json::json!({
+            "contents": [{ "parts": [{ "text": format!("{}\n\n{}", search_system_prompt, user_msg) }] }],
+            "generationConfig": { "temperature": 0.35, "maxOutputTokens": 160 }
+        });
         if let Ok(res) = client
-            .post(GROQ_CHAT_URL)
-            .header("Authorization", format!("Bearer {}", groq_key))
+            .post(&gemini_url)
             .header("Content-Type", "application/json")
-            .timeout(Duration::from_millis(4500))
-            .json(&payload)
+            .timeout(Duration::from_millis(3000))
+            .json(&gemini_payload)
             .send()
             .await
         {
-            if let Ok(json_val) = res.json::<serde_json::Value>().await {
-                if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
-                    let cleaned = content.trim().replace('"', "").replace('*', "");
-                    if !cleaned.is_empty() {
-                        reply = cleaned;
+            if res.status().is_success() {
+                if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                    if let Some(content) = json_val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
+                        let cleaned = content.trim().replace('"', "").replace('*', "");
+                        if !cleaned.is_empty() {
+                            reply = cleaned;
+                            used_model = format!("{} (Web Intelligence)", gemini_model);
+                            prompt_tokens = json_val["usageMetadata"]["promptTokenCount"].as_u64().unwrap_or(60) as u32;
+                            eval_tokens = json_val["usageMetadata"]["candidatesTokenCount"].as_u64().unwrap_or(20) as u32;
+                        }
                     }
                 }
-                prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(60) as u32;
-                eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(20) as u32;
             }
         }
+    }
+
+    // 2. Fallback to NVIDIA NIM
+    if reply.is_empty() {
+        let nvidia_key = get_nvidia_api_key();
+        if !nvidia_key.is_empty() {
+            let nvidia_model = get_nvidia_model();
+            let nvidia_url = format!("{}/chat/completions", get_nvidia_base_url().trim_end_matches('/'));
+            let payload = serde_json::json!({
+                "model": nvidia_model,
+                "messages": [
+                    { "role": "system", "content": search_system_prompt },
+                    { "role": "user", "content": user_msg }
+                ],
+                "temperature": 0.35,
+                "max_tokens": 160
+            });
+            if let Ok(res) = client
+                .post(&nvidia_url)
+                .header("Authorization", format!("Bearer {}", nvidia_key))
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(3500))
+                .json(&payload)
+                .send()
+                .await
+            {
+                if res.status().is_success() {
+                    if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                        if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
+                            let cleaned = content.trim().replace('"', "").replace('*', "");
+                            if !cleaned.is_empty() {
+                                reply = cleaned;
+                                used_model = format!("{} (Web Intelligence)", nvidia_model);
+                                prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(60) as u32;
+                                eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(20) as u32;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback to Groq
+    if reply.is_empty() {
+        let groq_key = get_groq_api_key();
+        if !groq_key.is_empty() {
+            let payload = serde_json::json!({
+                "model": "qwen/qwen3.8-27b",
+                "messages": [
+                    { "role": "system", "content": search_system_prompt },
+                    { "role": "user", "content": user_msg }
+                ],
+                "temperature": 0.35,
+                "max_tokens": 160
+            });
+            if let Ok(res) = client
+                .post(GROQ_CHAT_URL)
+                .header("Authorization", format!("Bearer {}", groq_key))
+                .header("Content-Type", "application/json")
+                .timeout(Duration::from_millis(3000))
+                .json(&payload)
+                .send()
+                .await
+            {
+                if res.status().is_success() {
+                    if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                        if let Some(content) = json_val["choices"][0]["message"]["content"].as_str() {
+                            let cleaned = content.trim().replace('"', "").replace('*', "");
+                            if !cleaned.is_empty() {
+                                reply = cleaned;
+                                used_model = "qwen/qwen3.8-27b (Web Intelligence)".to_string();
+                                prompt_tokens = json_val["usage"]["prompt_tokens"].as_u64().unwrap_or(60) as u32;
+                                eval_tokens = json_val["usage"]["completion_tokens"].as_u64().unwrap_or(20) as u32;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Final fallback: surface the actual snippet instead of a generic placeholder
+    if reply.is_empty() {
+        reply = if !intelligence.is_empty() {
+            let first_line = intelligence.lines().next().unwrap_or(&intelligence);
+            format!("Here is what I found for {}: {}", clean_query, first_line.trim_start_matches("• "))
+        } else {
+            format!("I could not retrieve live web results for {} at the moment, sir.", clean_query)
+        };
     }
 
     let latency_ms = start_time.elapsed().as_millis();
@@ -5208,7 +5809,7 @@ async fn handle_web_search(
         eval_tokens,
         total_tokens,
         tokens_per_sec,
-        model_name: "qwen/qwen3.8-27b (Web Intelligence)".to_string(),
+        model_name: used_model,
         token_words: words,
     })
 }
@@ -5265,7 +5866,7 @@ async fn handle_screen_vision(
             let b64 = base64::prelude::BASE64_STANDARD.encode(bmp_bytes);
             let configured_model = get_gemini_model();
             let mut vision_candidates = vec![configured_model.as_str()];
-            for fb in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.8-flash"] {
+            for fb in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"] {
                 if !vision_candidates.contains(&fb) {
                     vision_candidates.push(fb);
                 }
@@ -5801,16 +6402,16 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: taur
         return handle_screen_vision(prompt_clean, &state, start_time).await;
     }
 
-    // 2. Web Research Agent: Live search and news directives
+    // 2. Web Research Agent: Live search and news directives (only explicit search / live lookup intents)
     if lower_prompt.starts_with("search ") ||
        lower_prompt.starts_with("search for ") ||
        lower_prompt.starts_with("google ") ||
+       lower_prompt.starts_with("look up ") ||
        lower_prompt.starts_with("who is ") ||
        lower_prompt.starts_with("who was ") ||
-       lower_prompt.starts_with("what is ") ||
-       lower_prompt.starts_with("what was ") ||
        lower_prompt.starts_with("tell me about ") ||
        lower_prompt.starts_with("latest news") ||
+       lower_prompt.starts_with("news about ") ||
        lower_prompt.starts_with("stock price") {
         return handle_web_search(prompt_clean, &state, start_time).await;
     }
@@ -5844,7 +6445,7 @@ async fn ask_jarvis(prompt: String, state: tauri::State<'_, AppState>, app: taur
     }
 
     // Query Auto-Failover Multi-Model Fleet (Groq LPUs + Local Ollama Failsafe)
-    let client = reqwest::Client::new();
+    let client = &state.http_client;
     let ist_temporal = get_ist_temporal_context();
     let system_prompt = format!(
         r#"You are JARVIS, NAVI's exceptionally intelligent, articulate, and suave AI assistant running on Windows.
@@ -5867,34 +6468,122 @@ Rules:
     let nvidia_key = get_nvidia_api_key();
     let gemini_key = get_gemini_api_key();
     let groq_key = get_groq_api_key();
-    let nvidia_model = get_nvidia_model();
-    let gemini_model = get_gemini_model();
-    let configured_ollama_model = get_ollama_model_name();
 
-    // Dynamic candidates ordered strictly as per speed
+    // Dynamic candidates built from live discovered models + runtime speed/latency stats
     let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
-    let gemini_speed = stats_map.get(&gemini_model).map(|s| s.speed_tok_s).unwrap_or(0.0);
-    let nvidia_speed = stats_map.get(&nvidia_model).map(|s| s.speed_tok_s).unwrap_or(0.0);
-    let groq_speed = stats_map.get("qwen/qwen3.8-27b").map(|s| s.speed_tok_s).unwrap_or(0.0);
-    let ollama_speed = stats_map.get(&configured_ollama_model).map(|s| s.speed_tok_s).unwrap_or(0.0);
+    let discovered = discover_models_dynamic(false).await;
+    let effective_speed = |id: &str, provider: &str, status: &str| -> f32 {
+        if status == "OFFLINE" {
+            return 0.0;
+        }
+        match stats_map.get(id) {
+            Some(s) if s.latency_ms >= 9000 => 0.1, // Failed (401/404/503/timeout)
+            Some(s) if s.latency_ms >= 3000 => 1.0, // Too slow / late response
+            Some(s) if s.speed_tok_s > 0.0 => s.speed_tok_s,
+            _ => match provider {
+                "GROQ LPU" => 260.0,
+                "GOOGLE GEMINI" => 240.0,
+                "NVIDIA NIM" => 185.0,
+                _ => 15.0,
+            },
+        }
+    };
 
-    let mut candidates = vec![
-        (gemini_model.as_str(), "GOOGLE GEMINI", "Flash", "Cloud", 1048576u32, if !gemini_key.is_empty() { gemini_speed.max(240.0) } else { 0.0 }),
-        (nvidia_model.as_str(), "NVIDIA NIM", "70B", "FP8/16", 131072u32, if !nvidia_key.is_empty() { nvidia_speed.max(185.0) } else { 0.0 }),
-        ("qwen/qwen3.8-27b", "GROQ LPU", "27B", "FP16 LPU", 131072u32, if !groq_key.is_empty() { groq_speed.max(267.0) } else { 0.0 }),
-        (configured_ollama_model.as_str(), "LOCAL OLLAMA", "3B", "Q4_K_M", 131072u32, ollama_speed.max(13.5)),
-        ("qwen3.5:2b", "LOCAL OLLAMA", "1.9B", "Q8_0", 262144u32, 12.0),
-    ];
+    let mut candidates: Vec<(String, String, String, String, u32, f32)> = discovered
+        .into_iter()
+        .filter(|m| m.status != "OFFLINE")
+        .map(|m| {
+            let spd = effective_speed(&m.id, &m.provider, &m.status);
+            let prov = if m.provider.contains("OLLAMA") { "LOCAL OLLAMA".to_string() } else { m.provider };
+            (m.id, prov, m.parameter_size, m.quantization, m.context_length, spd)
+        })
+        .collect();
+
+    if candidates.is_empty() {
+        candidates.push((get_ollama_model_name(), "LOCAL OLLAMA".to_string(), "Local".to_string(), "Q4_K_M".to_string(), 131072, 15.0));
+    }
+
     // Sort strictly by speed descending: highest speed first
     candidates.sort_by(|a, b| b.5.partial_cmp(&a.5).unwrap_or(std::cmp::Ordering::Equal));
 
     let active_mod = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_else(|_| {
-        candidates.first().map(|c| c.0.to_string()).unwrap_or_else(|| get_gemini_model())
+        candidates.first().map(|c| c.0.clone()).unwrap_or_else(|| get_gemini_model())
     });
 
     if let Some(pos) = candidates.iter().position(|c| c.0 == active_mod) {
         let chosen = candidates.remove(pos);
         candidates.insert(0, chosen);
+    }
+
+    // Consolidated AI Router: route through Python LLMRouter (port 5008) only if port is actually listening
+    let router_alive = tokio::time::timeout(
+        Duration::from_millis(50),
+        tokio::net::TcpStream::connect("127.0.0.1:5008")
+    ).await.map(|r| r.is_ok()).unwrap_or(false);
+
+    if router_alive {
+        if let Ok(router_res) = client
+            .post("http://127.0.0.1:5008/chat")
+            .timeout(Duration::from_millis(3500))
+            .json(&serde_json::json!({
+                "prompt": prompt_clean,
+                "system_prompt": system_prompt
+            }))
+            .send()
+            .await
+        {
+        if router_res.status().is_success() {
+            if let Ok(r_json) = router_res.json::<serde_json::Value>().await {
+                if let Some(raw_text) = r_json["reply"].as_str() {
+                    if !raw_text.trim().is_empty() && !raw_text.contains("Reasoning engine unavailable") {
+                        let latency_ms = start_time.elapsed().as_millis();
+                        let (action, target, reply) = parse_model_output(raw_text, prompt_clean);
+                        let (mut action_label, mut reply_text, mut output_msg) = (None, reply, None);
+                        if action != "none" && !target.is_empty() {
+                            let act_name = match action.as_str() {
+                                "open" | "open_app" | "launch" | "start" => "open_app",
+                                "close" | "close_app" | "kill" | "stop" => "close_app",
+                                "system_ctrl" | "media" => target.as_str(),
+                                "run" | "run_cmd" | "cmd" | "powershell" => "run_cmd",
+                                _ => action.as_str(),
+                            };
+                            match execute_system_action(act_name, &target) {
+                                Ok(msg) => {
+                                    action_label = Some(format!("⚡ {}", msg));
+                                    output_msg = Some(msg);
+                                }
+                                Err(err) => {
+                                    action_label = Some(format!("⚠️ {}", err));
+                                    output_msg = Some(err.clone());
+                                    reply_text = format!("Unable to {}: {}", act_name.replace('_', " "), err);
+                                }
+                            }
+                        }
+                        let mut words: Vec<String> = prompt_clean.split_whitespace().map(|s| s.to_string()).collect();
+                        words.push("→".to_string());
+                        for w in reply_text.split_whitespace() {
+                            words.push(w.to_string());
+                            let _ = app.emit("jarvis://stream_token", format!("{} ", w));
+                        }
+                        let _ = app.emit("jarvis://stream_end", ());
+                        return Ok(JarvisResponse {
+                            reply: reply_text,
+                            action: action_label,
+                            command: if !target.is_empty() { Some(target) } else { None },
+                            output: output_msg,
+                            latency_ms,
+                            prompt_tokens: 0,
+                            eval_tokens: 0,
+                            total_tokens: 0,
+                            tokens_per_sec: 0.0,
+                            model_name: "Unified LLMRouter (NVIDIA/Gemini/Ollama)".to_string(),
+                            token_words: words,
+                        });
+                    }
+                }
+            }
+        }
+        }
     }
 
     for (model_id, provider, param_size, quant, ctx_len, _) in candidates {
@@ -6023,10 +6712,10 @@ Rules:
                 continue;
             }
 
-            let mut gemini_candidates = vec![model_id];
-            for fb in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.8-flash"] {
-                if !gemini_candidates.contains(&fb) {
-                    gemini_candidates.push(fb);
+            let mut gemini_candidates = vec![model_id.clone()];
+            for fb in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"] {
+                if !gemini_candidates.iter().any(|c| c == fb) {
+                    gemini_candidates.push(fb.to_string());
                 }
             }
 
@@ -6050,7 +6739,7 @@ Rules:
                 let res = client
                     .post(&gemini_url)
                     .header("Content-Type", "application/json")
-                    .timeout(Duration::from_millis(4500))
+                    .timeout(Duration::from_millis(3000))
                     .json(&gemini_payload)
                     .send()
                     .await;
@@ -6060,10 +6749,10 @@ Rules:
                         if let Ok(json_val) = response.json::<serde_json::Value>().await {
                             if let Some(raw_text) = json_val["candidates"][0]["content"]["parts"][0]["text"].as_str() {
                                 let latency_ms = start_time.elapsed().as_millis();
-                                let prompt_tokens = json_val["usageMetadata"]["promptTokenCount"].as_u64().unwrap_or(45) as u32;
-                                let eval_tokens = json_val["usageMetadata"]["candidatesTokenCount"].as_u64().unwrap_or(25) as u32;
+                                let prompt_tokens = json_val["usageMetadata"]["promptTokenCount"].as_u64().unwrap_or(0) as u32;
+                                let eval_tokens = json_val["usageMetadata"]["candidatesTokenCount"].as_u64().unwrap_or(0) as u32;
                                 let total_tokens = prompt_tokens + eval_tokens;
-                                let tokens_per_sec = if latency_ms > 0 { (eval_tokens as f32) / (latency_ms as f32 / 1000.0) } else { 220.0 };
+                                let tokens_per_sec = if latency_ms > 0 && eval_tokens > 0 { (eval_tokens as f32) / (latency_ms as f32 / 1000.0) } else { 0.0 };
 
                                 if let Ok(mut mm) = state.model_metrics.lock() {
                                     mm.name = format!("{} (Gemini Flash)", chosen_gemini_model);
@@ -6138,6 +6827,11 @@ Rules:
                         }
                     }
                 }
+                if let Ok(mut stats) = state.model_stats.lock() {
+                    let entry = stats.entry(chosen_gemini_model.to_string()).or_default();
+                    entry.speed_tok_s = 0.0;
+                    entry.latency_ms = 9999;
+                }
             }
         }
         // -------------------------------------------------------------
@@ -6163,7 +6857,7 @@ Rules:
                 .post(GROQ_CHAT_URL)
                 .header("Authorization", format!("Bearer {}", groq_key))
                 .header("Content-Type", "application/json")
-                .timeout(Duration::from_millis(4500))
+                .timeout(Duration::from_millis(3000))
                 .json(&groq_payload)
                 .send()
                 .await;
@@ -6179,10 +6873,10 @@ Rules:
 
                         let tokens_per_sec = if completion_time > 0.0 {
                             eval_tokens as f32 / completion_time as f32
-                        } else if latency_ms > 0 {
+                        } else if latency_ms > 0 && eval_tokens > 0 {
                             (eval_tokens as f32) / (latency_ms as f32 / 1000.0)
                         } else {
-                            267.0
+                            0.0
                         };
 
                         if let Ok(mut mm) = state.model_metrics.lock() {
@@ -6263,6 +6957,11 @@ Rules:
                     }
                 }
             }
+            if let Ok(mut stats) = state.model_stats.lock() {
+                let entry = stats.entry(model_id.to_string()).or_default();
+                entry.speed_tok_s = 0.0;
+                entry.latency_ms = 9999;
+            }
         }
         // -------------------------------------------------------------
         // CLOUD LPU: GROQ (Optional Backup)
@@ -6287,7 +6986,7 @@ Rules:
                 .post(GROQ_CHAT_URL)
                 .header("Authorization", format!("Bearer {}", groq_key))
                 .header("Content-Type", "application/json")
-                .timeout(Duration::from_millis(4500))
+                .timeout(Duration::from_millis(3000))
                 .json(&groq_payload)
                 .send()
                 .await;
@@ -6303,10 +7002,10 @@ Rules:
 
                         let tokens_per_sec = if completion_time > 0.0 {
                             eval_tokens as f32 / completion_time as f32
-                        } else if latency_ms > 0 {
+                        } else if latency_ms > 0 && eval_tokens > 0 {
                             (eval_tokens as f32) / (latency_ms as f32 / 1000.0)
                         } else {
-                            267.0
+                            0.0
                         };
 
                         if let Ok(mut mm) = state.model_metrics.lock() {
@@ -6386,14 +7085,15 @@ Rules:
                         });
                     }
                 }
+            }
+            if let Ok(mut stats) = state.model_stats.lock() {
+                let entry = stats.entry(model_id.to_string()).or_default();
+                entry.speed_tok_s = 0.0;
+                entry.latency_ms = 9999;
             }
         } else {
             // Ollama candidate (Cloud GPU or Local Failsafe)
-            let mod_to_use = if provider.contains("OLLAMA GPU") {
-                configured_ollama_model.as_str()
-            } else {
-                model_id
-            };
+            let mod_to_use = model_id.as_str();
             let ollama_payload = serde_json::json!({
                 "model": mod_to_use,
                 "messages": [
@@ -6429,13 +7129,15 @@ Rules:
                         let prompt_eval_count = json_val["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
                         let tokens_per_sec = if eval_duration > 0 {
                             eval_count as f32 / (eval_duration as f32 / 1_000_000_000.0)
+                        } else if latency_ms > 0 && eval_count > 0 {
+                            eval_count as f32 / (latency_ms as f32 / 1000.0)
                         } else {
-                            13.1
+                            0.0
                         };
                         let total_tokens = prompt_eval_count + eval_count;
 
                         if let Ok(mut mm) = state.model_metrics.lock() {
-                            mm.name = "qwen3.5:2b (LOCAL FAILOVER)".to_string();
+                            mm.name = format!("{} (LOCAL)", model_id);
                             mm.parameter_size = param_size.to_string();
                             mm.quantization = quant.to_string();
                             mm.context_length = ctx_len;
@@ -6501,7 +7203,7 @@ Rules:
                             eval_tokens: eval_count,
                             total_tokens,
                             tokens_per_sec,
-                            model_name: "qwen3.5:2b (LOCAL FAILOVER)".to_string(),
+                            model_name: format!("{} (LOCAL)", model_id),
                             token_words: words,
                         });
                     }
@@ -6561,13 +7263,9 @@ Rules:
     })
 }
 
-fn get_speech_worker_path() -> String {
-    if let Some(p) = find_file_in_candidates("scripts/speech_worker.ps1") {
-        return p.to_string_lossy().to_string();
-    }
-    let temp_file = std::env::temp_dir().join("jarvis_speech_worker.ps1");
-    let _ = std::fs::write(&temp_file, EMBEDDED_SPEECH_WORKER);
-    temp_file.to_string_lossy().to_string()
+fn get_pipecat_worker_path() -> Option<String> {
+    find_file_in_candidates("voice/pipecat_voice_agent.py")
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 fn get_tts_worker_path() -> String {
@@ -6622,31 +7320,55 @@ fn start_neural_tts_worker() {
     }
 }
 
-fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
+fn start_ai_router_worker() {
+    if let Ok(c) = reqwest::blocking::Client::builder().timeout(Duration::from_millis(500)).build() {
+        if let Ok(resp) = c.get("http://127.0.0.1:5008/health").send() {
+            if resp.status().is_success() {
+                return;
+            }
+        }
+    }
+    let Some(script_buf) = find_file_in_candidates("core/llm_client.py") else {
+        return;
+    };
+    let script_path = script_buf.to_string_lossy().to_string();
+    let cmd = if std::path::Path::new("C:\\Python314\\python.exe").exists() {
+        let mut c = silent_command("C:\\Python314\\python.exe");
+        c.args([&script_path, "--serve", "5008"]);
+        c
+    } else {
+        let mut c = silent_command("py");
+        c.args(["-3.14", &script_path, "--serve", "5008"]);
+        c
+    };
+    if let Ok(child) = spawn_managed_child(cmd) {
+        ACTIVE_AI_ROUTER_PID.store(child.id(), Ordering::SeqCst);
+        println!("[Unified AI Router] Launched with PID {}", child.id());
+    }
+}
+
+fn start_pipecat_voice_worker(app_handle: tauri::AppHandle) {
     use tauri::Emitter;
     loop {
-        let script_path = get_speech_worker_path();
-        if !std::path::Path::new(&script_path).exists() {
-            std::thread::sleep(Duration::from_secs(2));
+        let Some(script_path) = get_pipecat_worker_path() else {
+            std::thread::sleep(Duration::from_secs(3));
             continue;
-        }
+        };
 
-        let mut cmd = silent_command("powershell");
-        cmd.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-WindowStyle",
-            "Hidden",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            &script_path,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        let mut cmd = if std::path::Path::new("C:\\Python314\\python.exe").exists() {
+            let mut c = silent_command("C:\\Python314\\python.exe");
+            c.arg(&script_path);
+            c
+        } else {
+            let mut c = silent_command("py");
+            c.args(["-3.14", &script_path]);
+            c
+        };
+
+        cmd.stdout(Stdio::piped()).stderr(Stdio::null());
 
         if let Ok(mut child) = spawn_managed_child(cmd) {
-            ACTIVE_SPEECH_WORKER_PID.store(child.id(), Ordering::SeqCst);
+            ACTIVE_PIPECAT_WORKER_PID.store(child.id(), Ordering::SeqCst);
             if let Some(stdout) = child.stdout.take() {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines() {
@@ -6656,21 +7378,35 @@ fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
                             continue;
                         }
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                            if let Some(evt) = val.get("event").and_then(|v| v.as_str()) {
-                                if evt == "speech" {
+                            let evt = val.get("event").and_then(|v| v.as_str()).unwrap_or("");
+                            match evt {
+                                "wake_word" => {
+                                    let phrase = val.get("text").and_then(|v| v.as_str()).unwrap_or("hey jarvis");
+                                    let _ = app_handle.emit("jarvis://wake_word", phrase.to_string());
+                                }
+                                "vad" => {
+                                    let speaking = val.get("speaking").and_then(|v| v.as_bool()).unwrap_or(false);
+                                    let _ = app_handle.emit("jarvis://vad_state", speaking);
+                                }
+                                "interruption" => {
+                                    let _ = app_handle.emit("jarvis://voice_interruption", val.clone());
+                                }
+                                "partial_speech" => {
+                                    if let Some(text) = val.get("text").and_then(|v| v.as_str()) {
+                                        let _ = app_handle.emit("jarvis://partial_speech", text.to_string());
+                                    }
+                                }
+                                "speaker_verified" => {
+                                    let _ = app_handle.emit("jarvis://speaker_verified", val.clone());
+                                }
+                                "speech" => {
                                     if let Some(text) = val.get("text").and_then(|v| v.as_str()) {
                                         let clean_text = text.trim();
                                         let is_wake = val.get("is_wake_word").and_then(|w| w.as_bool()).unwrap_or(false);
-
-                                        // 1. Wake word priority: emit unconditionally so hands-free wake word works anytime
                                         if is_wake && !clean_text.is_empty() {
-                                            println!("[Wake Word Detected]: {}", clean_text);
                                             let _ = app_handle.emit("jarvis://wake_word", clean_text.to_string());
                                         }
-
-                                        // 2. Directive handling when listener is active
                                         if !clean_text.is_empty() && SPEECH_LISTENER_ACTIVE.load(Ordering::SeqCst) {
-                                            println!("[Speech Engine Recognized]: {}", clean_text);
                                             if let Ok(mut cache) = LATEST_VOICE_TRANSCRIPTION.lock() {
                                                 *cache = Some(clean_text.to_string());
                                             }
@@ -6679,6 +7415,7 @@ fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
                                         }
                                     }
                                 }
+                                _ => {}
                             }
                         }
                     }
@@ -6687,7 +7424,26 @@ fn start_speech_listener_worker(app_handle: tauri::AppHandle) {
             let _ = child.wait();
         }
 
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+#[tauri::command]
+async fn enroll_speaker_voiceprint() -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .post("http://127.0.0.1:5007/enroll")
+        .send()
+        .await
+        .map_err(|e| format!("Pipecat voice agent unavailable: {}", e))?;
+    let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    if body["ok"].as_bool().unwrap_or(false) {
+        Ok(body["message"].as_str().unwrap_or("ECAPA-TDNN voiceprint enrolled.").to_string())
+    } else {
+        Err(body["error"].as_str().unwrap_or("Enrollment failed.").to_string())
     }
 }
 
@@ -6716,6 +7472,17 @@ async fn listen_mic() -> Result<String, String> {
 #[tauri::command]
 fn set_voice_listening(active: bool) -> Result<bool, String> {
     SPEECH_LISTENER_ACTIVE.store(active, Ordering::SeqCst);
+    std::thread::spawn(move || {
+        if let Ok(client) = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_millis(300))
+            .build()
+        {
+            let _ = client
+                .post("http://127.0.0.1:5007/mute")
+                .json(&serde_json::json!({ "muted": !active }))
+                .send();
+        }
+    });
     Ok(active)
 }
 
@@ -6936,74 +7703,35 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
     }
 
     let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
-    let has_nvidia = !get_nvidia_api_key().is_empty();
-    let has_gemini = !get_gemini_api_key().is_empty();
-    let has_groq = !get_groq_api_key().is_empty();
+    let discovered = discover_models_dynamic(false).await;
 
-    let nvidia_mod = get_nvidia_model();
-    let gemini_mod = get_gemini_model();
-    let ollama_mod = get_ollama_model_name();
+    let mut available_models: Vec<AvailableModelInfo> = discovered
+        .iter()
+        .map(|d| {
+            let st = stats_map.get(&d.id).cloned().unwrap_or_default();
+            AvailableModelInfo {
+                id: d.id.clone(),
+                display_name: d.display_name.clone(),
+                provider: d.provider.clone(),
+                status: d.status.clone(),
+                priority: 0,
+                context_window: d.context_window.clone(),
+                tokens_used: st.tokens_used,
+                speed_tok_s: st.speed_tok_s,
+                latency_ms: st.latency_ms,
+                is_active: false,
+                parameter_size: d.parameter_size.clone(),
+                quantization: d.quantization.clone(),
+            }
+        })
+        .collect();
 
-    let nvidia_stats = stats_map.get(&nvidia_mod).cloned().unwrap_or_default();
-    let gemini_stats = stats_map.get(&gemini_mod).cloned().unwrap_or_default();
-    let qwen_stats = stats_map.get("qwen/qwen3.8-27b").cloned().unwrap_or_default();
-    let local_stats = stats_map.get(&ollama_mod).cloned().unwrap_or_default();
+    let current_active_id = state.active_model_id.lock().map(|id| id.clone()).unwrap_or_default();
 
-    let mut available_models = vec![
-        AvailableModelInfo {
-            id: gemini_mod.clone(),
-            display_name: "GEMINI FLASH (FAST / MULTIMODAL)".to_string(),
-            provider: "GOOGLE GEMINI".to_string(),
-            status: if has_gemini { "ONLINE".to_string() } else { "STANDBY".to_string() },
-            priority: 0,
-            context_window: "1M".to_string(),
-            tokens_used: gemini_stats.tokens_used,
-            speed_tok_s: if gemini_stats.speed_tok_s > 0.0 { gemini_stats.speed_tok_s } else { if has_gemini { 240.0 } else { 0.0 } },
-            latency_ms: if gemini_stats.latency_ms > 0 { gemini_stats.latency_ms } else { if has_gemini { 200 } else { 0 } },
-            is_active: false,
-        },
-        AvailableModelInfo {
-            id: nvidia_mod.clone(),
-            display_name: "NVIDIA LLAMA 3.3 70B (PRIMARY)".to_string(),
-            provider: "NVIDIA NIM".to_string(),
-            status: if has_nvidia { "ONLINE".to_string() } else { "STANDBY".to_string() },
-            priority: 0,
-            context_window: "128K".to_string(),
-            tokens_used: nvidia_stats.tokens_used,
-            speed_tok_s: if nvidia_stats.speed_tok_s > 0.0 { nvidia_stats.speed_tok_s } else { if has_nvidia { 185.0 } else { 0.0 } },
-            latency_ms: if nvidia_stats.latency_ms > 0 { nvidia_stats.latency_ms } else { if has_nvidia { 240 } else { 0 } },
-            is_active: false,
-        },
-        AvailableModelInfo {
-            id: "qwen/qwen3.8-27b".to_string(),
-            display_name: "QWEN 3.8 27B (GROQ LPU)".to_string(),
-            provider: "GROQ LPU".to_string(),
-            status: if has_groq { "ONLINE".to_string() } else { "STANDBY".to_string() },
-            priority: 0,
-            context_window: "131K".to_string(),
-            tokens_used: qwen_stats.tokens_used,
-            speed_tok_s: if qwen_stats.speed_tok_s > 0.0 { qwen_stats.speed_tok_s } else { if has_groq { 267.0 } else { 0.0 } },
-            latency_ms: if qwen_stats.latency_ms > 0 { qwen_stats.latency_ms } else { if has_groq { 267 } else { 0 } },
-            is_active: false,
-        },
-        AvailableModelInfo {
-            id: ollama_mod.clone(),
-            display_name: "OLLAMA 3B (OFFLINE FAILOVER)".to_string(),
-            provider: "LOCAL OLLAMA".to_string(),
-            status: "ONLINE (LOCAL)".to_string(),
-            priority: 0,
-            context_window: "128K".to_string(),
-            tokens_used: local_stats.tokens_used,
-            speed_tok_s: if local_stats.speed_tok_s > 0.0 { local_stats.speed_tok_s } else { 13.5 },
-            latency_ms: if local_stats.latency_ms > 0 { local_stats.latency_ms } else { 1200 },
-            is_active: false,
-        },
-    ];
-
-    // 1. Sort available models strictly by online status and speed (tok/s descending)
+    // 1. Sort available models: online first, then by live measured speed (tok/s descending)
     available_models.sort_by(|a, b| {
-        let a_online = a.status.contains("ONLINE") || a.status.contains("ACTIVE");
-        let b_online = b.status.contains("ONLINE") || b.status.contains("ACTIVE");
+        let a_online = a.status != "OFFLINE";
+        let b_online = b.status != "OFFLINE";
         match (a_online, b_online) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
@@ -7011,20 +7739,30 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         }
     });
 
-    // 2. Dynamically assign priority strictly as per speed rank
+    // 2. Dynamically assign priority strictly as per rank
     for (idx, m) in available_models.iter_mut().enumerate() {
         m.priority = (idx + 1) as u32;
     }
 
-    // 3. Dynamically set active model strictly as per fastest speed
+    // 3. Preserve user/runtime active_model_id if online; otherwise auto-failover to fastest online model
     let mut resolved_active_id = String::new();
-    if let Some(fastest) = available_models.iter_mut().find(|m| m.status.contains("ONLINE") || m.status.contains("ACTIVE")) {
-        fastest.status = "ACTIVE".to_string();
-        fastest.is_active = true;
-        resolved_active_id = fastest.id.clone();
+    let mut matched_idx = None;
+    if !current_active_id.is_empty() {
+        matched_idx = available_models
+            .iter()
+            .position(|m| m.id == current_active_id && m.status != "OFFLINE");
+    }
+    if matched_idx.is_none() {
+        matched_idx = available_models.iter().position(|m| m.status != "OFFLINE");
     }
 
-    if !resolved_active_id.is_empty() {
+    if let Some(idx) = matched_idx {
+        available_models[idx].status = "ACTIVE".to_string();
+        available_models[idx].is_active = true;
+        resolved_active_id = available_models[idx].id.clone();
+    }
+
+    if !resolved_active_id.is_empty() && resolved_active_id != current_active_id {
         if let Ok(mut act) = state.active_model_id.lock() {
             *act = resolved_active_id.clone();
         }
@@ -7036,21 +7774,14 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
         if let Some(top_active) = available_models.iter().find(|m| m.is_active) {
             mm.name = top_active.display_name.clone();
             mm.eval_tokens_per_sec = top_active.speed_tok_s;
-            mm.context_length = if top_active.context_window == "1M" { 1048576 } else { 131072 };
-            let t_id = top_active.id.to_lowercase();
-            if t_id.contains("70b") || t_id.contains("nvidia") {
-                mm.parameter_size = "70B".to_string();
-                mm.quantization = "FP8/16".to_string();
-            } else if t_id.contains("27b") || t_id.contains("qwen") {
-                mm.parameter_size = "27B".to_string();
-                mm.quantization = "FP16 LPU".to_string();
-            } else if t_id.contains("gemini") {
-                mm.parameter_size = "Flash".to_string();
-                mm.quantization = "Cloud".to_string();
-            } else if t_id.contains("3b") {
-                mm.parameter_size = "3B".to_string();
-                mm.quantization = "Q4_K_M".to_string();
-            }
+            mm.last_latency_ms = top_active.latency_ms;
+            mm.context_length = discovered
+                .iter()
+                .find(|d| d.id == top_active.id)
+                .map(|d| d.context_length)
+                .unwrap_or(131_072);
+            mm.parameter_size = top_active.parameter_size.clone();
+            mm.quantization = top_active.quantization.clone();
             mm.is_loaded = true;
         }
         mm.clone()
@@ -7087,91 +7818,80 @@ async fn get_system_telemetry(state: tauri::State<'_, AppState>) -> Result<Syste
 }
 
 #[tauri::command]
-fn switch_ai_model(model_id: String, state: tauri::State<'_, AppState>) -> Result<AvailableModelInfo, String> {
+async fn switch_ai_model(model_id: String, state: tauri::State<'_, AppState>) -> Result<AvailableModelInfo, String> {
     let clean_id = model_id.trim().to_string();
     if let Ok(mut active) = state.active_model_id.lock() {
         *active = clean_id.clone();
     }
-    
-    let has_nvidia = !get_nvidia_api_key().is_empty();
-    let has_gemini = !get_gemini_api_key().is_empty();
-    let has_groq = !get_groq_api_key().is_empty();
-    let is_ollama = clean_id.contains("llama3") || clean_id.contains("qwen3.5") || clean_id.contains("sysbrain");
-    
-    if let Ok(mut mm) = state.model_metrics.lock() {
-        mm.name = clean_id.clone();
-        match clean_id.as_str() {
-            id if id.contains("llama-3.3") || id.contains("nvidia") => {
-                mm.parameter_size = "70B".to_string();
-                mm.quantization = "FP8/16".to_string();
-                mm.context_length = 131072;
-                mm.eval_tokens_per_sec = 185.0;
-                mm.is_loaded = has_nvidia;
-            }
-            id if id.contains("gemini") => {
-                mm.parameter_size = "Flash".to_string();
-                mm.quantization = "Cloud".to_string();
-                mm.context_length = 1048576;
-                mm.eval_tokens_per_sec = 220.0;
-                mm.is_loaded = has_gemini;
-            }
-            "qwen/qwen3.8-27b" => {
-                mm.parameter_size = "27B".to_string();
-                mm.quantization = "FP16 LPU".to_string();
-                mm.context_length = 131072;
-                mm.eval_tokens_per_sec = 267.0;
-                mm.is_loaded = has_groq;
-            }
-            _id if is_ollama => {
-                mm.name = format!("{} (LOCAL)", clean_id);
-                mm.parameter_size = "3B".to_string();
-                mm.quantization = "Q4_K_M".to_string();
-                mm.context_length = 131072;
-                mm.eval_tokens_per_sec = 13.5;
-                mm.is_loaded = true;
-            }
-            _ => {
-                mm.is_loaded = true;
-            }
-        }
-    }
+
+    let discovered = discover_models_dynamic(false).await;
+    let found = discovered.into_iter().find(|m| m.id == clean_id);
 
     let stats_map = state.model_stats.lock().map(|m| m.clone()).unwrap_or_default();
-    let def_stats = ModelRuntimeStats::default();
-    let stats = stats_map.get(&clean_id).unwrap_or(&def_stats);
+    let stats = stats_map.get(&clean_id).cloned().unwrap_or_default();
 
-    let info = AvailableModelInfo {
-        id: clean_id.clone(),
-        display_name: match clean_id.as_str() {
-            id if id.contains("llama-3.3") || id.contains("nvidia") => "NVIDIA LLAMA 3.3 70B (PRIMARY)".to_string(),
-            id if id.contains("gemini") => "GEMINI FLASH (CLOUD BACKUP)".to_string(),
-            "qwen/qwen3.8-27b" => "QWEN 3.8 27B (GROQ)".to_string(),
-            _ => "OLLAMA LOCAL (OFFLINE FAILOVER)".to_string(),
-        },
-        provider: if clean_id.contains("llama-3.3") || clean_id.contains("nvidia") {
-            "NVIDIA NIM".to_string()
-        } else if clean_id.contains("gemini") {
-            "GOOGLE GEMINI".to_string()
-        } else if is_ollama {
-            "LOCAL OLLAMA".to_string()
-        } else {
-            "GROQ LPU".to_string()
-        },
-        status: "ACTIVE".to_string(),
-        priority: 1,
-        context_window: if clean_id.contains("gemini") { "1M".to_string() } else { "128K".to_string() },
-        tokens_used: stats.tokens_used,
-        speed_tok_s: if stats.speed_tok_s > 0.0 { stats.speed_tok_s } else { if is_ollama { 13.5 } else { 200.0 } },
-        latency_ms: if stats.latency_ms > 0 { stats.latency_ms } else { if is_ollama { 1200 } else { 267 } },
-        is_active: true,
+    let (display_name, provider, context_window, context_length, parameter_size, quantization, is_loaded) = match found {
+        Some(d) => (
+            d.display_name,
+            d.provider,
+            d.context_window,
+            d.context_length,
+            d.parameter_size,
+            d.quantization,
+            d.status != "OFFLINE",
+        ),
+        None => {
+            let prov = if clean_id.contains("gemini") {
+                "GOOGLE GEMINI".to_string()
+            } else if clean_id.contains("nvidia") || clean_id.contains("meta/") {
+                "NVIDIA NIM".to_string()
+            } else if clean_id.contains(':') {
+                "LOCAL OLLAMA".to_string()
+            } else {
+                "GROQ LPU".to_string()
+            };
+            (
+                clean_id.to_uppercase(),
+                prov,
+                if clean_id.contains("gemini") { "1M".to_string() } else { "128K".to_string() },
+                if clean_id.contains("gemini") { 1_048_576 } else { 131_072 },
+                infer_param_size(&clean_id),
+                "Dynamic".to_string(),
+                true,
+            )
+        }
     };
 
-    Ok(info)
+    if let Ok(mut mm) = state.model_metrics.lock() {
+        mm.name = display_name.clone();
+        mm.eval_tokens_per_sec = stats.speed_tok_s;
+        mm.last_latency_ms = stats.latency_ms;
+        mm.parameter_size = parameter_size.clone();
+        mm.quantization = quantization.clone();
+        mm.context_length = context_length;
+        mm.is_loaded = is_loaded;
+    }
+
+    Ok(AvailableModelInfo {
+        id: clean_id,
+        display_name,
+        provider,
+        status: "ACTIVE".to_string(),
+        priority: 1,
+        context_window,
+        tokens_used: stats.tokens_used,
+        speed_tok_s: stats.speed_tok_s,
+        latency_ms: stats.latency_ms,
+        is_active: true,
+        parameter_size,
+        quantization,
+    })
 }
 
 #[tauri::command]
-fn run_direct_action(action: String, target: String) -> Result<String, String> {
-    execute_system_action(&action, &target)
+async fn run_direct_action(action: String, target: String, app: tauri::AppHandle) -> Result<String, String> {
+    permissions::authorize_action(&app, &action, &target).await?;
+    execute_system_action_unchecked(&action, &target)
 }
 
 #[tauri::command]
@@ -7219,11 +7939,15 @@ pub struct TaskExecutionResult {
 }
 
 #[tauri::command]
-async fn execute_task_pipeline(steps: Vec<TaskStepPayload>) -> Result<Vec<TaskExecutionResult>, String> {
+async fn execute_task_pipeline(steps: Vec<TaskStepPayload>, app: tauri::AppHandle) -> Result<Vec<TaskExecutionResult>, String> {
     let mut results = Vec::new();
     for step in steps {
-        let (success, out) = match execute_system_action(&step.action, &step.target) {
-            Ok(msg) => (true, msg),
+        let auth_res = permissions::authorize_action(&app, &step.action, &step.target).await;
+        let (success, out) = match auth_res {
+            Ok(()) => match execute_system_action_unchecked(&step.action, &step.target) {
+                Ok(msg) => (true, msg),
+                Err(e) => (false, e),
+            },
             Err(e) => (false, e),
         };
         results.push(TaskExecutionResult {
@@ -7305,10 +8029,12 @@ pub fn run() {
         let provider = get_ai_provider();
         if provider == "ollama" {
             get_ollama_model_name()
+        } else if provider == "gemini" && !get_gemini_api_key().is_empty() {
+            get_gemini_model()
+        } else if provider == "groq" && !get_groq_api_key().is_empty() {
+            "qwen/qwen3.8-27b".to_string()
         } else if !get_gemini_api_key().is_empty() {
             get_gemini_model()
-        } else if !get_nvidia_api_key().is_empty() {
-            get_nvidia_model()
         } else if !get_groq_api_key().is_empty() {
             "qwen/qwen3.8-27b".to_string()
         } else {
@@ -7316,26 +8042,31 @@ pub fn run() {
         }
     };
 
+    let http_client = reqwest::Client::builder()
+        .pool_max_idle_per_host(8)
+        .connect_timeout(Duration::from_millis(1500))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
     let state = AppState {
         sys: Mutex::new(sys),
         networks: Mutex::new(networks),
         model_metrics: Mutex::new(ModelMetrics::default()),
         model_stats: Mutex::new(HashMap::new()),
         active_model_id: Mutex::new(initial_model),
+        http_client,
     };
 
     tauri::Builder::default()
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                let pid = ACTIVE_SPEECH_WORKER_PID.load(Ordering::SeqCst);
-                if pid > 0 {
-                    let mut k = silent_command("taskkill");
-                    let _ = k.args(["/F", "/T", "/PID", &pid.to_string()]).output();
-                }
-                let tts_pid = ACTIVE_TTS_WORKER_PID.load(Ordering::SeqCst);
-                if tts_pid > 0 {
-                    let mut k = silent_command("taskkill");
-                    let _ = k.args(["/F", "/T", "/PID", &tts_pid.to_string()]).output();
+                for atomic_pid in [&ACTIVE_PIPECAT_WORKER_PID, &ACTIVE_PLAYWRIGHT_PID, &ACTIVE_TTS_WORKER_PID, &ACTIVE_AI_ROUTER_PID] {
+                    let pid = atomic_pid.load(Ordering::SeqCst);
+                    if pid > 0 {
+                        let mut k = silent_command("taskkill");
+                        let _ = k.args(["/F", "/T", "/PID", &pid.to_string()]).output();
+                    }
                 }
             }
         })
@@ -7388,15 +8119,20 @@ pub fn run() {
                 }
             });
 
-            // Spawn continuous background voice speech worker
-            let speech_app_handle = app.handle().clone();
+            // Spawn Pipecat unified voice pipeline (Silero VAD + openWakeWord + ECAPA-TDNN + STT)
+            let voice_app_handle = app.handle().clone();
             std::thread::spawn(move || {
-                start_speech_listener_worker(speech_app_handle);
+                start_pipecat_voice_worker(voice_app_handle);
             });
 
             // Spawn studio neural voice synthesis service
             std::thread::spawn(|| {
                 start_neural_tts_worker();
+            });
+
+            // Spawn consolidated Python AI Router service
+            std::thread::spawn(|| {
+                start_ai_router_worker();
             });
 
             // Initialize Windows DPAPI Key Vault and sync existing credentials
@@ -7444,7 +8180,11 @@ pub fn run() {
             speculative_draft_discard,
             execute_task_pipeline,
             sync_memory_cloud,
-            scan_skills_registry
+            scan_skills_registry,
+            permissions::get_permission_policies,
+            permissions::set_permission_policy,
+            permissions::resolve_permission_request,
+            enroll_speaker_voiceprint
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -7469,9 +8209,24 @@ mod tests {
     }
 
     #[test]
+    fn test_permission_manager_policies() {
+        let (risk_blocked, _) = permissions::classify_action("run_cmd", "format C:");
+        assert_eq!(risk_blocked, permissions::RiskLevel::Blocked);
+
+        let (risk_high, _) = permissions::classify_action("close_app", "notepad");
+        assert_eq!(risk_high, permissions::RiskLevel::High);
+
+        let (risk_safe, _) = permissions::classify_action("volume_up", "");
+        assert_eq!(risk_safe, permissions::RiskLevel::Safe);
+
+        assert!(permissions::check_sync_policy("run_cmd", "format C:").is_err());
+        assert!(permissions::check_sync_policy("volume_up", "").is_ok());
+    }
+
+    #[test]
     fn test_execute_open_and_close_notepad() {
         // Ensure no notepad is running initially
-        let _ = execute_system_action("close_app", "notepad");
+        let _ = execute_system_action_unchecked("close_app", "notepad");
         std::thread::sleep(std::time::Duration::from_millis(500));
 
         // 1. Dynamic open notepad
@@ -7491,8 +8246,11 @@ mod tests {
         println!("Is notepad process running in Windows: {}", has_notepad);
         assert!(has_notepad, "Notepad process was not found in Windows processes!");
 
-        // 2. Dynamic close notepad
-        let close_res = execute_system_action("close_app", "notepad");
+        // 2. Verify Permission Manager blocks unapproved close_app, then close via authorized executor
+        let gated_res = execute_system_action("close_app", "notepad");
+        assert!(gated_res.is_err(), "Expected Permission Manager to require confirmation for close_app");
+
+        let close_res = execute_system_action_unchecked("close_app", "notepad");
         assert!(close_res.is_ok(), "Failed to close notepad: {:?}", close_res);
         std::thread::sleep(std::time::Duration::from_millis(800));
 

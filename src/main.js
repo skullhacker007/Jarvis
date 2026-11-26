@@ -3523,27 +3523,41 @@ const NaviAirDrop = (() => {
   return { init, beamFile };
 })();
 
-// Backward-compatible alias
 // =============================================================
-// PHASE 3: VOICEPRINT BIOMETRIC AUTH CONTROLLER
+// ECAPA-TDNN SPEAKER VERIFICATION & PERMISSION MANAGER UI
 // =============================================================
 const NaviVoiceprintAuth = (() => {
   const pillEl = document.getElementById("biometric-auth-pill");
-  let isVerified = true; // Authorized profile: Chowdary (Master Administrator)
+  let isVerified = true;
 
   function init() {
-    pillEl?.addEventListener("click", () => {
+    pillEl?.addEventListener("click", async () => {
       JarvisSoundscape.play("confirm");
-      showJarvisFeedback("Voiceprint biometrics: Chowdary (Master Administrator profile active).", "biometric_info");
+      showJarvisFeedback("Recording 3s voiceprint for ECAPA-TDNN enrollment. Please speak...", "biometric_info");
+      try {
+        const msg = await invoke("enroll_speaker_voiceprint");
+        if (pillEl) {
+          pillEl.textContent = "ECAPA // ENROLLED";
+          pillEl.classList.add("voiceprint-verified");
+        }
+        showJarvisFeedback(msg, "biometric_info");
+      } catch (err) {
+        showJarvisFeedback(`ECAPA enrollment notice: ${err}`, "biometric_info");
+      }
     });
   }
 
-  function verifyVoiceCommand() {
+  function updateFromEcapa(payload) {
+    isVerified = Boolean(payload?.verified);
+    const conf = payload?.confidence ?? 0;
     if (pillEl) {
-      pillEl.textContent = "VOICEPRINT // VERIFIED";
-      pillEl.classList.add("voiceprint-verified");
+      pillEl.textContent = isVerified ? `ECAPA // ${conf}%` : `ECAPA // DENIED (${conf}%)`;
+      pillEl.classList.toggle("voiceprint-verified", isVerified);
     }
-    return true;
+  }
+
+  function verifyVoiceCommand() {
+    return isVerified;
   }
 
   function isSensitiveAction(actionName, targetStr) {
@@ -3559,8 +3573,48 @@ const NaviVoiceprintAuth = (() => {
     );
   }
 
-  return { init, verifyVoiceCommand, isSensitiveAction, isVerified: () => isVerified };
+  return { init, updateFromEcapa, verifyVoiceCommand, isSensitiveAction, isVerified: () => isVerified };
 })();
+
+function showPermissionPromptModal(req) {
+  const existing = document.getElementById("jarvis-permission-modal");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "jarvis-permission-modal";
+  overlay.style.cssText =
+    "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(3,7,18,0.82);backdrop-filter:blur(8px);font-family:inherit;";
+
+  overlay.innerHTML = `
+    <div style="width:min(460px,92vw);border:1px solid rgba(56,189,248,0.5);background:rgba(10,18,35,0.96);border-radius:12px;padding:20px;color:#e2e8f0;box-shadow:0 0 30px rgba(56,189,248,0.25);">
+      <div style="font-size:12px;letter-spacing:2px;color:#38bdf8;margin-bottom:6px;">JARVIS SAFETY GATEKEEPER // ${req.risk || "HIGH"} RISK</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px;">Authorize Action: <span style="color:#facc15">${req.action}</span></div>
+      <div style="font-size:13px;color:#94a3b8;margin-bottom:10px;">${req.reason || ""}</div>
+      <div style="font-size:12px;background:rgba(15,23,42,0.9);border:1px solid rgba(148,163,184,0.2);padding:8px 10px;border-radius:6px;margin-bottom:16px;word-break:break-all;">Target: ${req.target || "(none)"}</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+        <button id="perm-deny" style="padding:7px 14px;border-radius:6px;border:1px solid #ef4444;background:rgba(239,68,68,0.15);color:#fca5a5;cursor:pointer;">Deny</button>
+        <button id="perm-allow-once" style="padding:7px 14px;border-radius:6px;border:1px solid #38bdf8;background:rgba(56,189,248,0.18);color:#bae6fd;cursor:pointer;">Allow Once</button>
+        <button id="perm-allow-always" style="padding:7px 14px;border-radius:6px;border:1px solid #22c55e;background:rgba(34,197,94,0.2);color:#bbf7d0;cursor:pointer;">Always Allow</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const resolve = async (approved, remember) => {
+    overlay.remove();
+    try {
+      await invoke("resolve_permission_request", {
+        requestId: req.request_id,
+        approved,
+        remember,
+      });
+    } catch (e) {}
+  };
+
+  overlay.querySelector("#perm-deny").onclick = () => resolve(false, false);
+  overlay.querySelector("#perm-allow-once").onclick = () => resolve(true, false);
+  overlay.querySelector("#perm-allow-always").onclick = () => resolve(true, true);
+}
 
 // Canvases
 const gpuCanvas = document.getElementById("gpu-graph-canvas");
@@ -3670,6 +3724,19 @@ function updateMicUI(hasMic) {
 const TOTAL_SLOTS = 256;
 const tokenSlotElements = [];
 
+function getTokenSlotInfo(index) {
+  if (index < realTokenRegistry.length) {
+    const token = realTokenRegistry[index];
+    const sepIdx = realTokenRegistry.indexOf("→");
+    if (token === "→") {
+      return `Slot #${index + 1} | Turn Boundary (Prompt → Response)`;
+    }
+    const role = (sepIdx !== -1 && index < sepIdx) ? "Input" : "Output";
+    return `Slot #${index + 1} (${role}) | Token: "${token}" | ${token.length} chars`;
+  }
+  return `Slot #${index + 1} | Empty (no token in current turn)`;
+}
+
 function initTokenMatrix() {
   if (!refTokenMatrix) return;
   refTokenMatrix.innerHTML = "";
@@ -3680,18 +3747,18 @@ function initTokenMatrix() {
     slot.className = "token-slot";
     slot.dataset.index = i;
 
-    slot.addEventListener("mouseenter", () => {
-      const token = realTokenRegistry[i] || (i < 8 ? `_bos` : `[slot_${i}]`);
-      const vocabId = realTokenRegistry[i] ? (1000 + (i * 47) % 151936) : (i * 32);
-      const prob = realTokenRegistry[i] ? (96.5 + ((i * 11) % 35) / 10).toFixed(1) : "0.0";
+    const showSlotInfo = () => {
       if (refHintText) {
-        refHintText.textContent = `Slot #${i + 1} | Subword: "${token}" | Vocab ID: ${vocabId} | Softmax P: ${prob}%`;
+        refHintText.textContent = getTokenSlotInfo(i);
       }
-    });
+    };
+
+    slot.addEventListener("mouseenter", showSlotInfo);
+    slot.addEventListener("click", showSlotInfo);
 
     slot.addEventListener("mouseleave", () => {
       if (refHintText) {
-        refHintText.textContent = "Hover or click any slot above to inspect token subwords, vocabulary IDs, and softmax probabilities.";
+        refHintText.textContent = "Hover or click any active slot above to inspect real prompt and output tokens from the live turn.";
       }
     });
 
@@ -3702,7 +3769,13 @@ function initTokenMatrix() {
 initTokenMatrix();
 
 let currentActiveTokenTab = "cumulative";
-let lastSpeedRecorded = 267.4;
+let lastSpeedRecorded = 0;
+let liveStreamActive = false;
+let liveStreamStartMs = 0;
+let liveStreamTokenCount = 0;
+
+// Remove any legacy seeded fake history
+try { localStorage.removeItem("jarvis_token_history"); } catch (e) {}
 
 function formatCleanModelName(raw) {
   if (!raw) return "AI ENGINE";
@@ -3711,49 +3784,31 @@ function formatCleanModelName(raw) {
   return name.toUpperCase();
 }
 
-function initTokenHistory() {
-  try {
-    const raw = localStorage.getItem("jarvis_token_history");
-    if (!raw) {
-      const now = Date.now();
-      const seed = [
-        // Today
-        { t: now - 3600000, i: 280, g: 145, tot: 425 },
-        { t: now - 1800000, i: 310, g: 190, tot: 500 },
-        { t: now - 300000, i: 410, g: 215, tot: 625 },
-        // Past week
-        { t: now - 86400000 * 2, i: 1200, g: 680, tot: 1880 },
-        { t: now - 86400000 * 4, i: 1950, g: 1120, tot: 3070 },
-        { t: now - 86400000 * 6, i: 1450, g: 910, tot: 2360 },
-        // Older
-        { t: now - 86400000 * 12, i: 4200, g: 2600, tot: 6800 },
-        { t: now - 86400000 * 20, i: 6800, g: 4100, tot: 10900 },
-      ];
-      localStorage.setItem("jarvis_token_history", JSON.stringify(seed));
-    }
-  } catch (e) {}
-}
-initTokenHistory();
+const TOKEN_HISTORY_KEY = "jarvis_real_token_history";
 
 function recordTokenUsage(input, generated, total) {
   try {
-    const raw = localStorage.getItem("jarvis_token_history");
+    const inp = Number(input) || 0;
+    const gen = Number(generated) || 0;
+    const tot = Number(total) || (inp + gen);
+    if (tot <= 0) return;
+    const raw = localStorage.getItem(TOKEN_HISTORY_KEY);
     const records = raw ? JSON.parse(raw) : [];
     records.push({
       t: Date.now(),
-      i: Number(input) || 0,
-      g: Number(generated) || 0,
-      tot: Number(total) || ((Number(input) || 0) + (Number(generated) || 0))
+      i: inp,
+      g: gen,
+      tot
     });
     const cutoff = Date.now() - 30 * 86400000;
     const trimmed = records.filter(r => r.t >= cutoff);
-    localStorage.setItem("jarvis_token_history", JSON.stringify(trimmed));
+    localStorage.setItem(TOKEN_HISTORY_KEY, JSON.stringify(trimmed));
   } catch (e) {}
 }
 
 function getTokenStatsForRange(range) {
   try {
-    const raw = localStorage.getItem("jarvis_token_history");
+    const raw = localStorage.getItem(TOKEN_HISTORY_KEY);
     const records = raw ? JSON.parse(raw) : [];
     const now = new Date();
     let cutoff = 0;
@@ -3786,7 +3841,7 @@ function updateTokenActivityDisplay() {
   if (tokGen) tokGen.textContent = stats.gen.toLocaleString();
   if (tokCached) tokCached.textContent = stats.cached.toLocaleString();
   if (tokSpd) tokSpd.textContent = lastSpeedRecorded > 0 ? lastSpeedRecorded.toFixed(1) : "0.0";
-  updateTokenSlots(Math.min(256, Math.max(8, Math.round(stats.cached % 256))));
+  updateTokenSlots(Math.min(TOTAL_SLOTS, realTokenRegistry.length));
 }
 
 document.querySelectorAll(".ref-tab").forEach(tab => {
@@ -4036,7 +4091,7 @@ async function refreshSystemTelemetry() {
       const mm = telem.model_metrics;
       if (telem.active_model_id) {
         const cleanName = telem.active_model_id.replace("qwen/", "").replace("openai/", "").toUpperCase();
-        currentActiveModelName = telem.active_model_id.includes("qwen3.5") ? "OLLAMA LOCAL" : (telem.active_model_id.includes("qwen3-coder") || telem.active_model_id.includes("30b") ? "OLLAMA GPU" : `GROQ ${cleanName}`);
+        const activeEntry = telem.available_models ? telem.available_models.find(m => m.is_active) : null; currentActiveModelName = activeEntry ? activeEntry.display_name : telem.active_model_id.split("/").pop().toUpperCase();
       }
       if (visorStatusLabel && currentState === "idle") {
         visorStatusLabel.textContent = `${currentActiveModelName} // ONLINE`;
@@ -4079,29 +4134,30 @@ async function refreshSystemTelemetry() {
         lastSpeedRecorded = mm.eval_tokens_per_sec;
       }
 
-      if (refTokenBadge) refTokenBadge.textContent = `${cached} TOKENS`;
-      updateTokenActivityDisplay();
+      if (!liveStreamActive) {
+        if (refTokenBadge) refTokenBadge.textContent = `${cached} TOKENS`;
+        updateTokenActivityDisplay();
 
-      if (kvCacheSlots) kvCacheSlots.textContent = `${cached} tokens`;
-      if (kvVramFootprint) {
-        const memGb = (mm.memory_mb / 1024.0).toFixed(2);
-        kvVramFootprint.textContent = `${memGb} GB`;
-      }
-      if (decodingSpeed) decodingSpeed.textContent = mm.eval_tokens_per_sec > 0 ? `${spd} tok/s` : "-- tok/s";
-      if (stopCondition) {
-        if (currentState === "thinking") {
-          stopCondition.textContent = "Generating...";
-          stopCondition.className = "ref-cell-val yellow";
-        } else if (cached > 0) {
-          stopCondition.textContent = "Complete";
-          stopCondition.className = "ref-cell-val cyan";
-        } else {
-          stopCondition.textContent = "Standby";
-          stopCondition.className = "ref-cell-val cyan";
+        if (kvCacheSlots) kvCacheSlots.textContent = `${cached} tokens`;
+        if (kvVramFootprint) {
+          kvVramFootprint.textContent = mm.memory_mb > 0 ? `${(mm.memory_mb / 1024.0).toFixed(2)} GB` : "-- GB";
         }
-      }
+        if (decodingSpeed) decodingSpeed.textContent = mm.eval_tokens_per_sec > 0 ? `${spd} tok/s` : "-- tok/s";
+        if (stopCondition) {
+          if (currentState === "thinking") {
+            stopCondition.textContent = "Generating...";
+            stopCondition.className = "ref-cell-val yellow";
+          } else if (cached > 0) {
+            stopCondition.textContent = "Complete";
+            stopCondition.className = "ref-cell-val cyan";
+          } else {
+            stopCondition.textContent = "Standby";
+            stopCondition.className = "ref-cell-val cyan";
+          }
+        }
 
-      updateTokenSlots(cached);
+        updateTokenSlots(realTokenRegistry.length > 0 ? realTokenRegistry.length : cached);
+      }
     }
 
     // 6. Available AI Models & Auto-Failover Fleet
@@ -4160,8 +4216,8 @@ async function refreshSystemTelemetry() {
             await invoke("switch_ai_model", { modelId: m.id });
             currentActiveModelName = m.display_name;
             if (modelNameLabel) modelNameLabel.textContent = m.display_name;
-            if (nnParams) nnParams.textContent = m.id.includes("70b") ? "70B" : m.id.includes("flash") ? "Flash" : m.id.includes("27b") ? "27B" : m.id.includes("3b") ? "3B" : "Dynamic";
-            if (nnQuant) nnQuant.textContent = m.provider.includes("LOCAL") ? "Q4_K_M" : m.provider.includes("GEMINI") ? "Cloud" : "FP16";
+            if (nnParams) nnParams.textContent = m.parameter_size || "Dynamic";
+            if (nnQuant) nnQuant.textContent = m.quantization || "--";
             if (nnCtx) nnCtx.textContent = m.context_window;
             if (nnSpeed) nnSpeed.textContent = m.speed_tok_s > 0 ? `${Math.round(m.speed_tok_s)} tok/s` : "--";
             if (nnLatency) nnLatency.textContent = m.latency_ms > 0 ? `${m.latency_ms}ms` : "--";
@@ -5340,11 +5396,6 @@ async function speakResponse(text) {
   // Duck background audio to guarantee pure voice clarity
   try { invoke("set_system_ducking", { duck: true }).catch(() => {}); } catch (e) {}
 
-  // Flush any VAD audio chunks to avoid picking up the start of speech
-  audioChunks = [];
-  hasSpokenInCycle = false;
-  isVadSpeaking = false;
-
   // 3. Streaming Sentence-Level TTS Pipelining
   const sentences = splitTextIntoSentences(clean);
   if (sentences.length > 1) {
@@ -5517,24 +5568,29 @@ async function processDirective(prompt, shouldOpenInput = false) {
     return;
   }
 
-  // Fast-Path: Real-time IST Time Query
-  if (/^(?:what\s+is\s+the\s+time|what\s+time\s+is\s+it|current\s+time|tell\s+me\s+the\s+time|time|clock)$/i.test(lowerDirective)) {
+  const normalizedQuery = lowerDirective.replace(/['\u2019"?!.,]/g, "").replace(/\s+/g, " ").trim();
+
+  // Fast-Path: Dynamic Local System Time Query
+  if (
+    /^(?:(?:what(?:\s+is|\s*s)?|tell\s+me|check|show|get)\s+(?:the\s+)?(?:current\s+)?time|what\s+time\s+is\s+it(?:\s+now)?|current\s+time|time\s+now|time|clock)$/i.test(normalizedQuery)
+  ) {
     const now = new Date();
-    const timeOptions = { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true };
-    const istTimeStr = now.toLocaleTimeString("en-IN", timeOptions);
-    const replyMsg = `The time is currently ${istTimeStr} India Standard Time, sir.`;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const localTimeStr = now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", hour12: true });
+    const replyMsg = tz ? `The time is currently ${localTimeStr} (${tz}), sir.` : `The time is currently ${localTimeStr}, sir.`;
     showJarvisFeedback(replyMsg, "time");
     speakResponse(replyMsg);
     setSystemState("idle");
     return;
   }
 
-  // Fast-Path: Real-time IST Date Query
-  if (/^(?:what\s+is\s+the\s+date|what\s+is\s+today's\s+date|today's\s+date|what\s+date\s+is\s+it|what\s+day\s+is\s+it|date|today)$/i.test(lowerDirective)) {
+  // Fast-Path: Dynamic Local System Date / Day Query
+  if (
+    /^(?:(?:what(?:\s+is|\s*s)?|tell\s+me|check|show|get)\s+(?:the\s+)?(?:todays?|current)\s+(?:date|day)|(?:what(?:\s+is|\s*s)?|tell\s+me)\s+(?:the\s+)?(?:date|day)(?:\s+today)?|what\s+(?:date|day)\s+is\s+(?:it|today)|which\s+day\s+is\s+(?:it|today)|todays?\s+(?:date|day)|current\s+date|date|today)$/i.test(normalizedQuery)
+  ) {
     const now = new Date();
-    const dateOptions = { timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric" };
-    const istDateStr = now.toLocaleDateString("en-IN", dateOptions);
-    const replyMsg = `Today is ${istDateStr}, sir.`;
+    const localDateStr = now.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const replyMsg = `Today is ${localDateStr}, sir.`;
     showJarvisFeedback(replyMsg, "date");
     speakResponse(replyMsg);
     setSystemState("idle");
@@ -6226,9 +6282,26 @@ async function processDirective(prompt, shouldOpenInput = false) {
   showJarvisFeedback("Thinking... Analyzing directive with Queen neural model.", null, true);
   setSystemState("thinking");
 
+  liveStreamActive = true;
+  liveStreamStartMs = performance.now();
+  liveStreamTokenCount = 0;
+  realTokenRegistry = [...clean.split(/\s+/).map(w => w.trim()).filter(Boolean), "→"];
+  updateTokenSlots(realTokenRegistry.length);
+  if (kvCacheSlots) kvCacheSlots.textContent = `${realTokenRegistry.length} tokens`;
+
   try {
     const res = await invoke("ask_jarvis", { prompt: clean });
-    
+    liveStreamActive = false;
+
+    // 1. Register real subwords in the token matrix inspector
+    if (res && res.token_words && res.token_words.length > 0) {
+      realTokenRegistry = res.token_words;
+    } else {
+      const promptTokens = clean.split(/\s+/).map(w => w.trim()).filter(Boolean);
+      const replyTokens = ((res && res.reply) || "").split(/\s+/).map(w => w.trim()).filter(Boolean);
+      realTokenRegistry = [...promptTokens, "→", ...replyTokens];
+    }
+
     // 2. Real Token Metrics Telemetry update
     if (res && res.prompt_tokens !== undefined) {
       const inp = res.prompt_tokens;
@@ -6236,25 +6309,20 @@ async function processDirective(prompt, shouldOpenInput = false) {
       const total = res.total_tokens || (inp + gen);
       const spd = (res.tokens_per_sec || 0.0).toFixed(1);
 
-      recordTokenUsage(inp, gen, total);
-      lastSpeedRecorded = Number(spd) || 0.0;
+      if (total > 0) {
+        recordTokenUsage(inp, gen, total);
+      }
+      lastSpeedRecorded = res.tokens_per_sec > 0 ? Number(res.tokens_per_sec) : 0;
       updateTokenActivityDisplay();
 
       if (refTokenBadge) refTokenBadge.textContent = `${total} TOKENS`;
       if (kvCacheSlots) kvCacheSlots.textContent = `${total} tokens`;
-      if (decodingSpeed) decodingSpeed.textContent = `${spd} tok/s`;
-      if (nnSpeed) nnSpeed.textContent = res.tokens_per_sec > 0 ? `${Math.round(res.tokens_per_sec)} tok/s` : `${spd} tok/s`;
-      if (nnLatency) nnLatency.textContent = `${res.latency_ms}ms`;
+      if (decodingSpeed) decodingSpeed.textContent = res.tokens_per_sec > 0 ? `${spd} tok/s` : "-- tok/s";
+      if (nnSpeed) nnSpeed.textContent = res.tokens_per_sec > 0 ? `${Math.round(res.tokens_per_sec)} tok/s` : "--";
+      if (nnLatency) nnLatency.textContent = res.latency_ms > 0 ? `${res.latency_ms}ms` : "--";
       if (modelNameLabel && res.model_name) modelNameLabel.textContent = formatCleanModelName(res.model_name);
-    }
-
-    // 3. Register real subwords in the token matrix inspector
-    if (res.token_words && res.token_words.length > 0) {
-      realTokenRegistry = res.token_words;
     } else {
-      const promptTokens = clean.split(/\s+/).map(w => w.trim()).filter(Boolean);
-      const replyTokens = (res.reply || "").split(/\s+/).map(w => w.trim()).filter(Boolean);
-      realTokenRegistry = [...promptTokens, "→", ...replyTokens];
+      updateTokenSlots(realTokenRegistry.length);
     }
 
     // 4. Update feedback & Action Rollback Stack
@@ -6286,6 +6354,7 @@ async function processDirective(prompt, shouldOpenInput = false) {
     // Refresh telemetry to reflect active apps or hardware updates
     refreshSystemTelemetry();
   } catch (err) {
+    liveStreamActive = false;
     console.warn("Directive processing error:", err);
     showJarvisFeedback(`Directive error: ${err}`);
     setSystemState(isVoiceListening && !voiceMutedByUser ? "listening" : "idle");
@@ -6622,14 +6691,14 @@ async function handleWakeWordEvent(rawText) {
 async function startTauriVoiceListener() {
   const nativeInvoke = getTauriInvoke();
   if (!nativeInvoke) {
-    startWebSpeechFallback();
+    if (visorMicText) visorMicText.textContent = "VOICE READY";
     return;
   }
 
   if (isTauriListeningStarted) return;
   isTauriListeningStarted = true;
 
-  // 1. Primary: Event-driven instant speech reception from Rust background worker (directive & wake-word)
+  // 1. Event-driven reception from Pipecat (Silero VAD + openWakeWord + ECAPA-TDNN + STT) & Permission Manager
   try {
     const listenFn = window.__TAURI__?.event?.listen || window.__TAURI_INTERNALS__?.listen;
     if (listenFn) {
@@ -6639,15 +6708,27 @@ async function startTauriVoiceListener() {
       await listenFn("jarvis://wake_word", (event) => {
         handleWakeWordEvent(event.payload);
       });
-      console.log("[Tauri Voice] Event listeners hooked for voice_directive and wake_word");
+      await listenFn("jarvis://vad_state", (event) => {
+        if (event.payload && !isSpeakingTTS) {
+          setSystemState("listening");
+        }
+      });
+      await listenFn("jarvis://voice_interruption", () => {
+        stopAllSpokenAudio();
+        setSystemState("listening");
+      });
+      await listenFn("jarvis://speaker_verified", (event) => {
+        NaviVoiceprintAuth.updateFromEcapa(event.payload);
+      });
+      await listenFn("jarvis://permission_request", (event) => {
+        showPermissionPromptModal(event.payload);
+      });
+      console.log("[Pipecat Voice] Event listeners hooked for Silero VAD, openWakeWord, ECAPA-TDNN, and Permission Manager");
       return;
     }
   } catch (e) {
     console.warn("[Tauri Voice] Event listener hook notice:", e);
   }
-
-  // 2. Secondary fallback ONLY if event listening failed
-  runContinuousListenLoop();
 }
 
 async function runContinuousListenLoop() {
@@ -6672,264 +6753,11 @@ async function runContinuousListenLoop() {
 }
 
 // -------------------------------------------------------------
-// CONTINUOUS REAL-TIME VOICE ACTIVITY DETECTION (VAD) & GROQ WHISPER STT
+// PIPECAT VOICE PIPELINE CONTROLLER (REPLACES LEGACY RMS VAD)
 // -------------------------------------------------------------
-let mediaStream = null;
-let audioContext = null;
-let analyser = null;
-let vadInterval = null;
-let mediaRecorder = null;
-let audioChunks = [];
-let isGroqWhisperRecording = false;
-let isVadSpeaking = false;
-let hasSpokenInCycle = false;
-let vadSpeechStartTime = 0;
-let vadSilenceStartTime = 0;
-let vadConsecutiveSpeechFrames = 0;
-let vadNoiseFloor = 0.008;
-let cycleStartTime = 0;
-let isWhisperTranscribing = false;
-let isContinuousVoiceActive = false;
-
-async function initAudioEngine() {
-  try {
-    if (!mediaStream || !mediaStream.active) {
-      mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: { ideal: true },
-          noiseSuppression: { ideal: true },
-          autoGainControl: { ideal: true },
-          channelCount: 1,
-          sampleRate: { ideal: 16000 }
-        }
-      });
-    }
-
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (AudioCtx) {
-      if (!audioContext || audioContext.state === "closed") {
-        audioContext = new AudioCtx();
-      }
-      if (audioContext.state === "suspended") {
-        await audioContext.resume();
-      }
-      if (!analyser && mediaStream) {
-        const source = audioContext.createMediaStreamSource(mediaStream);
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 512;
-        analyser.smoothingTimeConstant = 0.2;
-        source.connect(analyser);
-      }
-    }
-    return true;
-  } catch (err) {
-    console.warn("[Voice Engine] Microphone initialization notice:", err);
-    return false;
-  }
-}
-
-function startUtteranceRecording() {
-  if (!mediaStream || !mediaStream.active) return;
-  const now = Date.now();
-  if (voiceMutedByUser || !isVoiceListening || isSpeakingTTS || isProcessingDirective || isWhisperTranscribing || (now - lastSpeechEndTime < 600)) {
-    return;
-  }
-
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    try {
-      mediaRecorder.onstop = null;
-      mediaRecorder.stop();
-    } catch (e) {}
-  }
-
-  audioChunks = [];
-  let mimeType = "audio/webm";
-  if (typeof MediaRecorder.isTypeSupported === "function") {
-    if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-      mimeType = "audio/webm;codecs=opus";
-    } else if (MediaRecorder.isTypeSupported("audio/webm")) {
-      mimeType = "audio/webm";
-    }
-  }
-
-  try {
-    mediaRecorder = new MediaRecorder(mediaStream, mimeType ? { mimeType } : {});
-  } catch (e) {
-    mediaRecorder = new MediaRecorder(mediaStream);
-  }
-
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) {
-      audioChunks.push(e.data);
-    }
-  };
-
-  mediaRecorder.onstop = async () => {
-    const recordedChunks = [...audioChunks];
-    audioChunks = [];
-
-    const stopNow = Date.now();
-    if (hasSpokenInCycle && recordedChunks.length > 0 && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective && (stopNow - lastSpeechEndTime >= 600)) {
-      hasSpokenInCycle = false;
-      const audioBlob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType || "audio/webm" });
-      if (audioBlob.size > 2000) {
-        await processAudioBlobWithWhisper(audioBlob);
-        return;
-      }
-    }
-    hasSpokenInCycle = false;
-    resumeListeningIfAllowed();
-  };
-
-  hasSpokenInCycle = false;
-  isVadSpeaking = false;
-  vadSpeechStartTime = 0;
-  vadSilenceStartTime = 0;
-  vadConsecutiveSpeechFrames = 0;
-  cycleStartTime = Date.now();
-
-  try {
-    mediaRecorder.start(100);
-    isGroqWhisperRecording = true;
-  } catch (err) {
-    console.warn("[Voice Engine] mediaRecorder.start notice:", err);
-  }
-}
-
-function checkVadTick() {
-  const now = Date.now();
-  if (!analyser || voiceMutedByUser || !isVoiceListening || isSpeakingTTS || isProcessingDirective || isWhisperTranscribing || (now - lastSpeechEndTime < 600)) {
-    if (isVadSpeaking || hasSpokenInCycle) {
-      isVadSpeaking = false;
-      hasSpokenInCycle = false;
-      audioChunks = [];
-    }
-    return;
-  }
-
-  const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-  analyser.getByteTimeDomainData(dataArray);
-
-  let sumSquares = 0.0;
-  for (let i = 0; i < bufferLength; i++) {
-    const norm = (dataArray[i] - 128) / 128.0;
-    sumSquares += norm * norm;
-  }
-  const rms = Math.sqrt(sumSquares / bufferLength);
-
-  if (!isVadSpeaking) {
-    vadNoiseFloor = Math.min(0.035, vadNoiseFloor * 0.96 + rms * 0.04);
-  }
-
-  const threshold = Math.max(0.016, Math.min(0.045, vadNoiseFloor * 1.6));
-
-  if (rms > threshold) {
-    vadConsecutiveSpeechFrames++;
-    if (vadConsecutiveSpeechFrames >= 2) {
-      if (!isVadSpeaking) {
-        isVadSpeaking = true;
-        hasSpokenInCycle = true;
-        vadSpeechStartTime = now;
-        vadSilenceStartTime = 0;
-        // Duck background audio immediately when human voice starts
-        try { invoke("set_system_ducking", { duck: true }).catch(() => {}); } catch (e) {}
-        if (visorCmdInput && (!visorCmdInput.value || visorCmdInput.value.trim() === "")) {
-          visorCmdInput.placeholder = "Listening... Speak directive...";
-        }
-        if (visorMicBtn) {
-          visorMicBtn.classList.add("listening");
-        }
-      } else {
-        vadSilenceStartTime = 0;
-      }
-    }
-  } else {
-    vadConsecutiveSpeechFrames = 0;
-
-    if (isVadSpeaking) {
-      if (vadSilenceStartTime === 0) {
-        vadSilenceStartTime = now;
-      }
-
-      const silenceDuration = now - vadSilenceStartTime;
-      const speechDuration = now - vadSpeechStartTime;
-
-      // Automatic command trigger: snappy 550ms pause after speaking at least 250ms
-      if ((silenceDuration >= 550 && speechDuration >= 250) || speechDuration >= 7000) {
-        console.log(`[VAD] Automatic speech completion detected (${speechDuration}ms speech, ${silenceDuration}ms pause). Transcribing directive...`);
-        isVadSpeaking = false;
-        vadSilenceStartTime = 0;
-        vadConsecutiveSpeechFrames = 0;
-
-        if (mediaRecorder && mediaRecorder.state === "recording") {
-          mediaRecorder.stop();
-        }
-      }
-    } else {
-      // Idle cycle: if silence exceeds 4.5 seconds, recycle recorder so audio buffer remains compact
-      if (mediaRecorder && mediaRecorder.state === "recording" && (now - cycleStartTime > 4500)) {
-        hasSpokenInCycle = false;
-        mediaRecorder.stop();
-      }
-    }
-  }
-}
-
-async function processAudioBlobWithWhisper(audioBlob) {
-  const now = Date.now();
-  if (isWhisperTranscribing || voiceMutedByUser || isSpeakingTTS || isProcessingDirective || (now - lastSpeechEndTime < 600)) {
-    audioChunks = [];
-    return;
-  }
-  isWhisperTranscribing = true;
-
-  try {
-    if (visorCmdInput && (!visorCmdInput.value || visorCmdInput.value.trim() === "")) {
-      visorCmdInput.placeholder = "Processing voice directive with Groq Whisper...";
-    }
-    showJarvisFeedback("Processing voice directive with Groq Whisper...", null, true);
-
-    const base64Data = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(audioBlob);
-    });
-
-    const text = await invoke("transcribe_audio_groq", {
-      audioBase64: base64Data,
-      mimeType: mediaRecorder?.mimeType || "audio/webm",
-    });
-
-    // Guard against late arrival when speaking has already started
-    if (isSpeakingTTS || isProcessingDirective || (Date.now() - lastSpeechEndTime < 600)) {
-      console.log("[Groq Whisper STT] Discarding late transcription during speech or active processing:", text);
-      return;
-    }
-
-    if (text && text.trim().length > 0) {
-      console.log("[Groq Whisper STT Transcribed]:", text);
-      await handleVoiceDirective(text.trim());
-    } else {
-      showJarvisFeedback("Standing by for your directive, sir.");
-    }
-  } catch (err) {
-    console.warn("[Groq Whisper STT] Error:", err);
-  } finally {
-    isWhisperTranscribing = false;
-    if (visorCmdInput && (!visorCmdInput.value || visorCmdInput.value.trim() === "")) {
-      visorCmdInput.placeholder = "Give an instruction or ask anything...";
-    }
-    if (!isSpeakingTTS && !isProcessingDirective && (Date.now() - lastSpeechEndTime >= 600)) {
-      resumeListeningIfAllowed();
-    }
-  }
-}
-
 function resumeListeningIfAllowed() {
   const now = Date.now();
-  if (isVoiceListening && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective && !isWhisperTranscribing && (now - lastSpeechEndTime >= 500)) {
+  if (isVoiceListening && !voiceMutedByUser && !isSpeakingTTS && !isProcessingDirective && (now - lastSpeechEndTime >= 500)) {
     setSystemState("listening");
     if (visorMicBtn) {
       visorMicBtn.classList.remove("muted");
@@ -6939,7 +6767,7 @@ function resumeListeningIfAllowed() {
     if (visorMicText) {
       visorMicText.textContent = "LISTENING";
     }
-    startUtteranceRecording();
+    try { invoke("set_voice_listening", { active: true }).catch(() => {}); } catch (e) {}
   }
 }
 
@@ -6947,44 +6775,12 @@ async function startContinuousVoiceRecognition() {
   if (voiceMutedByUser) return;
   isVoiceListening = true;
   isListening = true;
-  isContinuousVoiceActive = true;
   setSystemState("listening");
-
-  const streamOk = await initAudioEngine();
-  if (!streamOk) {
-    console.warn("[Voice] Falling back to WebSpeech");
-    startWebSpeechFallback();
-    return;
-  }
-
-  if (!vadInterval) {
-    vadInterval = setInterval(checkVadTick, 35);
-  }
-
-  startUtteranceRecording();
+  try { await invoke("set_voice_listening", { active: true }); } catch (e) {}
 }
 
 function stopContinuousVoiceRecognition() {
-  isContinuousVoiceActive = false;
-  isVadSpeaking = false;
-  hasSpokenInCycle = false;
-  vadSpeechStartTime = 0;
-  vadSilenceStartTime = 0;
-  vadConsecutiveSpeechFrames = 0;
-
-  if (vadInterval) {
-    clearInterval(vadInterval);
-    vadInterval = null;
-  }
-
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    try {
-      mediaRecorder.onstop = null;
-      mediaRecorder.stop();
-    } catch (e) {}
-  }
-
-  isGroqWhisperRecording = false;
+  try { invoke("set_voice_listening", { active: false }).catch(() => {}); } catch (e) {}
   if (visorMicBtn) {
     visorMicBtn.classList.remove("listening");
   }
@@ -7118,6 +6914,22 @@ jarvisNeural.onToken((token, fullBuffer) => {
   if (visorResponseBanner) visorResponseBanner.style.display = "flex";
   if (visorJarvisText) visorJarvisText.textContent = fullBuffer;
   if (visorBeaconDot) visorBeaconDot.className = "visor-jarvis-dot thinking";
+
+  if (liveStreamActive) {
+    const cleanTok = token.trim();
+    if (cleanTok) {
+      realTokenRegistry.push(cleanTok);
+      liveStreamTokenCount++;
+      updateTokenSlots(realTokenRegistry.length);
+      if (kvCacheSlots) kvCacheSlots.textContent = `${realTokenRegistry.length} tokens`;
+      const elapsedSec = (performance.now() - liveStreamStartMs) / 1000;
+      if (elapsedSec > 0.05) {
+        const liveSpd = (liveStreamTokenCount / elapsedSec).toFixed(1);
+        if (tokSpd) tokSpd.textContent = liveSpd;
+        if (decodingSpeed) decodingSpeed.textContent = `${liveSpd} tok/s`;
+      }
+    }
+  }
 });
 jarvisNeural.onWakeWord(() => {
   JarvisSoundscape.play("wake");

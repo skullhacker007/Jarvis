@@ -1,12 +1,30 @@
-# Core LiveKit Voice Pipeline
-livekit-agents>=0.8.0
-livekit-plugins-deepgram>=0.6.0
-livekit-plugins-cartesia>=0.6.0
+# Unified Pipecat Voice Pipeline (Silero VAD + openWakeWord + ECAPA-TDNN + AEC3 + RNNoise + STT/TTS)
+pipecat-ai>=1.17.0
+silero-vad>=6.0
+openwakeword>=0.6.0
+speechbrain>=1.0.0
+pyrnnoise>=0.4.6
+pyaec>=1.0.1
+torchaudio>=2.0.0
+onnxruntime>=1.20.0
+sounddevice>=0.5.0
+soundfile>=0.13.0
+numpy>=1.26.0
+aiohttp>=3.10.0
+httpx>=0.27.0
+faster-whisper>=1.0.0
+
+# Neural TTS (Kokoro-82M + Edge-TTS + Piper fallback)
+kokoro-onnx>=0.4.7
+edge-tts>=6.1.0
+piper-tts>=1.2.0
+
+# Browser Automation
+playwright>=1.60.0
 
 # LLM Providers
 openai>=1.0.0
 google-genai>=0.1.1
-google-generativeai>=0.8.0
 ollama>=0.3.0
 
 # Memory, Database & RAG
@@ -21,7 +39,3 @@ tavily-python>=0.4.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 psutil>=5.9.0
-
-# Offline TTS Fallback
-piper-tts>=1.2.0
-faster-whisper>=1.0.0

@@ -187,9 +187,56 @@ async def handle_health(request):
         "voices": kokoro_engine.get_voices() if (kokoro_available and kokoro_engine is not None) else list(EDGE_VOICE_MAP.keys())
     }, headers={"Access-Control-Allow-Origin": "*"})
 
+async def handle_speech_stream(request):
+    """Streaming TTS endpoint yielding audio chunks in real time."""
+    try:
+        data = await request.json()
+        text = str(data.get("input", data.get("text", ""))).strip()
+        if not text:
+            return web.Response(status=400, text="Missing input text")
+        voice_req = str(data.get("voice", "am_adam")).lower()
+        target_kokoro_voice = KOKORO_VOICE_MAP.get(voice_req, DEFAULT_KOKORO_VOICE)
+        target_edge_voice = EDGE_VOICE_MAP.get(voice_req, DEFAULT_EDGE_VOICE)
+
+        resp = web.StreamResponse(
+            status=200,
+            headers={
+                "Content-Type": "audio/mpeg" if not kokoro_available else "audio/wav",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
+        await resp.prepare(request)
+
+        if kokoro_available and kokoro_engine is not None and not _is_telugu(text):
+            if hasattr(kokoro_engine, "create_stream"):
+                async for samples, sample_rate in kokoro_engine.create_stream(
+                    text, voice=target_kokoro_voice, speed=1.0, lang="en-us"
+                ):
+                    buf = io.BytesIO()
+                    sf.write(buf, samples, sample_rate, format="WAV", subtype="PCM_16")
+                    await resp.write(buf.getvalue())
+            else:
+                samples, sample_rate = kokoro_engine.create(text, voice=target_kokoro_voice, speed=1.0, lang="en-us")
+                buf = io.BytesIO()
+                sf.write(buf, samples, sample_rate, format="WAV", subtype="PCM_16")
+                await resp.write(buf.getvalue())
+        else:
+            communicate = edge_tts.Communicate(text, target_edge_voice)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    await resp.write(chunk["data"])
+
+        await resp.write_eof()
+        return resp
+    except Exception as e:
+        return web.Response(status=500, text=str(e), headers={"Access-Control-Allow-Origin": "*"})
+
+
 app = web.Application()
 app.router.add_post("/v1/audio/speech", handle_speech)
+app.router.add_post("/tts/stream", handle_speech_stream)
 app.router.add_options("/v1/audio/speech", handle_options)
+app.router.add_options("/tts/stream", handle_options)
 app.router.add_get("/health", handle_health)
 app.router.add_get("/", handle_health)
 

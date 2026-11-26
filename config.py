@@ -62,7 +62,12 @@ class Config:
     LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "")
     LIVEKIT_TOKEN = os.getenv("LIVEKIT_TOKEN", os.getenv("LiveKit_API_KEY", ""))
 
-    # Core LLM - NVIDIA NIM API (Primary)
+    # Core LLM - Groq LPU (Primary)
+    AI_PROVIDER = os.getenv("AI_PROVIDER", "groq")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+
+    # Optional NVIDIA NIM API
     NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
     NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
     NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
@@ -70,9 +75,6 @@ class Config:
     # Secondary Cloud LLM Backup (Gemini Flash)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-
-    # Groq LPU
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
     # Deepgram & Cartesia
     DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
