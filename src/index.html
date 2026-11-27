@@ -42,8 +42,35 @@
         </button>
       </div>
 
-      <!-- AGENT MODE EMPTY STAGE (Components will be added here) -->
-      <div class="agent-mode-stage" id="agent-mode-stage" aria-hidden="true"></div>
+      <!-- AGENT MODE STAGE: JARVIS VOICE ASSISTANT RING + SWARM ORBITAL UI -->
+      <div class="agent-mode-stage" id="agent-mode-stage" aria-hidden="true">
+        <!-- Radial Swarm Topology Container (8 Departments, 32 AI Agents, 100 Skills, 20 Integrations, 10 MCP Servers, 50 MCP Tools, 174 Resources) -->
+        <div class="agent-swarm-hud" id="agent-swarm-hud"></div>
+
+        <div class="agent-voice-core" id="agent-voice-core" data-state="idle">
+          <!-- Ambient outer radial glow -->
+          <div class="agent-ambient-halo"></div>
+
+          <!-- Real-time multi-harmonic radial wave canvas driven by Web Audio API -->
+          <canvas class="agent-wave-canvas" id="agent-wave-canvas"></canvas>
+
+          <!-- CSS-animated concentric wave ripples -->
+          <div class="agent-css-waves" aria-hidden="true">
+            <span class="agent-css-wave wave-1"></span>
+            <span class="agent-css-wave wave-2"></span>
+            <span class="agent-css-wave wave-3"></span>
+            <span class="agent-css-wave wave-4"></span>
+          </div>
+
+          <!-- Central glowing circular ring (pure CSS) -->
+          <div class="agent-core-ring" id="agent-core-ring">
+            <div class="agent-core-ring-outer-glow"></div>
+            <div class="agent-core-ring-arc arc-primary"></div>
+            <div class="agent-core-ring-arc arc-secondary"></div>
+            <div class="agent-core-ring-inner"></div>
+          </div>
+        </div>
+      </div>
 
       <!-- Master 16:9 Stage Container for Iron Man & Arc Reactor HUD -->
       <div class="ironman-stage-container" id="ironman-stage-container">

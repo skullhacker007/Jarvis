@@ -8,6 +8,8 @@ import { JarvisDialer } from "./modules/dialer.js";
 import { fetchSystemTelemetry, fetchPhoneTelemetry, formatBytesToGb, formatNetworkRate } from "./modules/telemetry.js";
 import { JarvisNeuralClient } from "./modules/ai.js";
 import { JarvisTaskPlanner } from "./modules/planner.js";
+import { AgentVoiceRing } from "./modules/agentRing.js";
+import { AgentSwarmUI } from "./modules/agentSwarm.js";
 
 function getTauriInvoke() {
   if (typeof window !== "undefined") {
@@ -3944,22 +3946,25 @@ function updateArcReactorAudio() {
     const microMod = 0.88 + 0.12 * Math.sin(t * 3.1);
     currentAudioAmp = Math.min(1.0, speechVocalAmp * microMod);
 
-  } else if (currentState === "listening" && analyser) {
-    // Real microphone live vocal amplitude
-    analyser.getByteTimeDomainData(audioTimeData);
-    let sumSquares = 0.0;
-    for (let i = 0; i < audioTimeData.length; i++) {
-      const norm = (audioTimeData[i] - 128) / 128.0;
-      sumSquares += norm * norm;
+  } else if (currentState === "listening") {
+    const micAnalyser = AgentVoiceRing.getMicAnalyser();
+    if (micAnalyser) {
+      // Real microphone live vocal amplitude
+      micAnalyser.getByteTimeDomainData(audioTimeData);
+      let sumSquares = 0.0;
+      for (let i = 0; i < audioTimeData.length; i++) {
+        const norm = (audioTimeData[i] - 128) / 128.0;
+        sumSquares += norm * norm;
+      }
+      const rms = Math.sqrt(sumSquares / audioTimeData.length);
+      const targetAmp = Math.min(1.0, Math.pow(rms * 4.5, 0.85));
+      if (targetAmp > liveMicAmp) {
+        liveMicAmp = liveMicAmp * 0.28 + targetAmp * 0.72; // instant attack
+      } else {
+        liveMicAmp = liveMicAmp * 0.88 + targetAmp * 0.12; // smooth decay
+      }
+      currentAudioAmp = Math.max(0.0, Math.min(1.0, liveMicAmp));
     }
-    const rms = Math.sqrt(sumSquares / audioTimeData.length);
-    const targetAmp = Math.min(1.0, Math.pow(rms * 4.5, 0.85));
-    if (targetAmp > liveMicAmp) {
-      liveMicAmp = liveMicAmp * 0.28 + targetAmp * 0.72; // instant attack
-    } else {
-      liveMicAmp = liveMicAmp * 0.88 + targetAmp * 0.12; // smooth decay
-    }
-    currentAudioAmp = Math.max(0.0, Math.min(1.0, liveMicAmp));
 
   } else {
     // Idle / thinking state: decay smoothly to 0
@@ -5243,6 +5248,8 @@ function setSystemState(state) {
     }
   }
 
+  AgentVoiceRing.setState(state);
+
   // Dynamic Island State Synchronization
   const islandDot = document.getElementById("island-reactor-dot");
   const islandStatus = document.getElementById("island-status-text");
@@ -5383,7 +5390,7 @@ function playAudioBufferNode(audioBuffer, turnId) {
 
     const source = actx.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(actx.destination);
+    AgentVoiceRing.connectOutputSource(source, actx);
     currentActiveAudioSource = source;
 
     isSpeakingTTS = true;
@@ -7697,6 +7704,7 @@ function setJarvisMode(mode, silentSound = false) {
   currentJarvisMode = nextMode;
 
   document.body.classList.toggle("agent-mode-active", nextMode === "agent");
+  AgentVoiceRing.setModeActive(nextMode === "agent");
 
   const sysBtn = document.getElementById("mode-btn-system");
   const agentBtn = document.getElementById("mode-btn-agent");
@@ -7721,5 +7729,11 @@ document.getElementById("mode-btn-system")?.addEventListener("click", () => {
 document.getElementById("mode-btn-agent")?.addEventListener("click", () => {
   setJarvisMode("agent");
 });
+
+AgentVoiceRing.init();
+AgentVoiceRing.setState(typeof currentState !== "undefined" ? currentState : "idle");
+window.AgentVoiceRing = AgentVoiceRing;
+AgentSwarmUI.init();
+window.AgentSwarmUI = AgentSwarmUI;
 
 console.log("JARVIS Real Dynamic System Initialized.");
