@@ -30,6 +30,21 @@
   </head>
   <body>
     <div class="full-screen-stage">
+      <!-- TOP-CENTER MODE SWITCHER: SYSTEM MODE (BLUE) vs AGENT MODE (RED) -->
+      <div class="jarvis-mode-switcher" id="jarvis-mode-switcher" role="group" aria-label="Jarvis Mode Switcher">
+        <button type="button" class="mode-switch-btn mode-system active" id="mode-btn-system" data-mode="system" title="System Mode (Blue Dashboard)">
+          <span class="mode-indicator-dot"></span>
+          <span class="mode-label">SYSTEM</span>
+        </button>
+        <button type="button" class="mode-switch-btn mode-agent" id="mode-btn-agent" data-mode="agent" title="Agent Mode (Red Workspace)">
+          <span class="mode-indicator-dot"></span>
+          <span class="mode-label">AGENT</span>
+        </button>
+      </div>
+
+      <!-- AGENT MODE EMPTY STAGE (Components will be added here) -->
+      <div class="agent-mode-stage" id="agent-mode-stage" aria-hidden="true"></div>
+
       <!-- Master 16:9 Stage Container for Iron Man & Arc Reactor HUD -->
       <div class="ironman-stage-container" id="ironman-stage-container">
         <!-- Full-fit 4K uncompressed master image -->

@@ -7675,6 +7675,32 @@ fn dispatch_parsed_action(action: &str, target: &str, reply: String) -> (Option<
         return (None, reply, None);
     }
 
+    if matches!(
+        lower_act.as_str(),
+        "switch_mode" | "set_mode" | "change_mode" | "ui_mode" | "mode"
+    ) {
+        let lower_target = target.trim().to_lowercase();
+        if lower_target.contains("agent") || lower_target.contains("red") {
+            return (
+                Some("🔴 Agent Mode".into()),
+                reply,
+                Some("switch_mode:agent".into()),
+            );
+        } else if lower_target.contains("system")
+            || lower_target.contains("blue")
+            || lower_target.contains("dashboard")
+            || lower_target.contains("default")
+            || lower_target.contains("normal")
+        {
+            return (
+                Some("🔵 System Mode".into()),
+                reply,
+                Some("switch_mode:system".into()),
+            );
+        }
+        return (None, reply, None);
+    }
+
     let allow_empty_target = matches!(
         lower_act.as_str(),
         "list_processes" | "processes"
@@ -7875,9 +7901,11 @@ Available actions:
 - Files & Folders: "create_file" ("path|content"), "read_file" ("path"), "modify_file" ("path|content" or JSON {{"path","old","new"}}), "delete_file" ("path"), "move_file" ("src|dst"), "copy_file" ("src|dst"), "create_folder" ("path"), "delete_folder" ("path"), "list_dir" ("path"), "file_info" ("path"), "file_search" ("query"), "open_file" ("path")
 - Services & Resources: "list_services", "service_status", "start_service", "stop_service", "restart_service", "system_info", "disk_info", "network_info", "battery_info", "registry_read", "registry_write", "env_get", "env_set"
 - Browser & System: "open_url", "browser_navigate", "new_tab", "close_tab", "system_ctrl" (target: "lock_pc"|"sleep_pc"|"hibernate"|"restart_pc"|"shutdown_pc"|"minimize_all"|"volume_mute"|"volume_up"|"volume_down"|"screenshot"), "volume_set" ("0-100"), "brightness_set" ("0-100"), "none"
+- UI Mode: "switch_mode" (target: "system" | "agent") — switch JARVIS between System Mode (Blue dashboard) and Agent Mode (Red workspace)
 
 Rules:
 - If the user asks a question, converses, or greets you, provide a charming, intelligent, and natural conversational response (1-3 sentences) with action="none" and target="".
+- If the user asks to switch, enter, open, or return to System Mode or Agent Mode (or blue/red mode) using any natural phrasing, respond with action="switch_mode", target="system" or "agent", and a natural spoken confirmation.
 - If the user commands a Windows operation, choose the most direct action above and confirm with natural elegance.
 - Target mapping: "vs code"/"vscode"->"code", "notepad"->"notepad", "calculator"/"calc"->"calc", "chrome"->"chrome", "terminal"->"wt", "powershell"->"powershell", "command prompt"->"cmd".
 - Do not output markdown code blocks, reasoning traces, or text outside the single JSON object."#,
@@ -10232,6 +10260,31 @@ mod tests {
         assert!(env_res.to_lowercase().contains("windows"));
         let reg_res = execute_system_action("registry_read", "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion|ProductName").unwrap();
         assert!(reg_res.to_lowercase().contains("windows"));
+    }
+
+    #[test]
+    fn test_switch_mode_dispatch() {
+        let (lbl_a, rep_a, out_a) = dispatch_parsed_action("switch_mode", "agent", "Entering Agent Mode, sir.".into());
+        assert_eq!(lbl_a.as_deref(), Some("🔴 Agent Mode"));
+        assert_eq!(rep_a, "Entering Agent Mode, sir.");
+        assert_eq!(out_a.as_deref(), Some("switch_mode:agent"));
+
+        let (lbl_r, _, out_r) = dispatch_parsed_action("set_mode", "red mode", "Switching to red workspace.".into());
+        assert_eq!(lbl_r.as_deref(), Some("🔴 Agent Mode"));
+        assert_eq!(out_r.as_deref(), Some("switch_mode:agent"));
+
+        let (lbl_s, rep_s, out_s) = dispatch_parsed_action("switch_mode", "system", "Returning to System Mode, sir.".into());
+        assert_eq!(lbl_s.as_deref(), Some("🔵 System Mode"));
+        assert_eq!(rep_s, "Returning to System Mode, sir.");
+        assert_eq!(out_s.as_deref(), Some("switch_mode:system"));
+
+        let (lbl_b, _, out_b) = dispatch_parsed_action("mode", "blue dashboard", "Restoring blue dashboard.".into());
+        assert_eq!(lbl_b.as_deref(), Some("🔵 System Mode"));
+        assert_eq!(out_b.as_deref(), Some("switch_mode:system"));
+
+        let (lbl_unk, _, out_unk) = dispatch_parsed_action("switch_mode", "", "Clarify mode.".into());
+        assert!(lbl_unk.is_none());
+        assert!(out_unk.is_none());
     }
 
     #[test]

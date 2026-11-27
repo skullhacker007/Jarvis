@@ -6408,6 +6408,11 @@ async function processDirective(prompt, shouldOpenInput = false) {
     }
 
     // 4. Update feedback & Action Rollback Stack
+    if (res && res.output === "switch_mode:agent") {
+      setJarvisMode("agent", true);
+    } else if (res && res.output === "switch_mode:system") {
+      setJarvisMode("system", true);
+    }
     showJarvisFeedback(res.reply || "Directive executed, sir.", res.action);
     JarvisSoundscape.play("confirm");
 
@@ -7643,5 +7648,40 @@ const NaviPanelCenterDock = (() => {
 
 NaviPanelCenterDock.init();
 window.NaviPanelCenterDock = NaviPanelCenterDock;
+
+// =============================================================
+// SYSTEM MODE (BLUE) vs AGENT MODE (RED) CONTROLLER
+// =============================================================
+let currentJarvisMode = "system";
+
+function setJarvisMode(mode, silentSound = false) {
+  const nextMode = String(mode).toLowerCase() === "agent" ? "agent" : "system";
+  currentJarvisMode = nextMode;
+
+  document.body.classList.toggle("agent-mode-active", nextMode === "agent");
+
+  const sysBtn = document.getElementById("mode-btn-system");
+  const agentBtn = document.getElementById("mode-btn-agent");
+  if (sysBtn) sysBtn.classList.toggle("active", nextMode === "system");
+  if (agentBtn) agentBtn.classList.toggle("active", nextMode === "agent");
+
+  if (!silentSound && typeof JarvisSoundscape !== "undefined") {
+    JarvisSoundscape.play("click");
+  }
+
+  window.dispatchEvent(new CustomEvent("jarvis:mode-changed", { detail: { mode: nextMode } }));
+  return nextMode;
+}
+
+window.setJarvisMode = setJarvisMode;
+window.getJarvisMode = () => currentJarvisMode;
+
+document.getElementById("mode-btn-system")?.addEventListener("click", () => {
+  setJarvisMode("system");
+});
+
+document.getElementById("mode-btn-agent")?.addEventListener("click", () => {
+  setJarvisMode("agent");
+});
 
 console.log("JARVIS Real Dynamic System Initialized.");

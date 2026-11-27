@@ -58,6 +58,114 @@ body {
   overflow: hidden;
 }
 
+/* ========================================================= */
+/* TOP-CENTER MODE SWITCHER: SYSTEM (BLUE) vs AGENT (RED)    */
+/* ========================================================= */
+.jarvis-mode-switcher {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3000;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(3, 7, 18, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.75), 0 0 18px rgba(56, 189, 248, 0.16);
+  transition: border-color 0.28s ease, box-shadow 0.28s ease;
+}
+
+body.agent-mode-active .jarvis-mode-switcher {
+  border-color: rgba(239, 68, 68, 0.45);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8), 0 0 20px rgba(239, 68, 68, 0.22);
+}
+
+.mode-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.78);
+  font-family: "Orbitron", "Rajdhani", sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.mode-switch-btn:hover {
+  color: #e2e8f0;
+}
+
+.mode-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.45);
+  transition: background-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.mode-switch-btn.mode-system.active {
+  color: #7dd3fc;
+  background: rgba(14, 165, 233, 0.18);
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.28);
+}
+
+.mode-switch-btn.mode-system.active .mode-indicator-dot {
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
+.mode-switch-btn.mode-agent.active {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.55);
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.3);
+}
+
+.mode-switch-btn.mode-agent.active .mode-indicator-dot {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+/* ========================================================= */
+/* AGENT MODE (RED): COMPLETELY EMPTY STAGE                  */
+/* ========================================================= */
+.agent-mode-stage {
+  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #000000;
+  z-index: 10;
+}
+
+body.agent-mode-active .agent-mode-stage {
+  display: block;
+}
+
+body.agent-mode-active .ironman-stage-container,
+body.agent-mode-active .left-master-deck,
+body.agent-mode-active .left-system-deck,
+body.agent-mode-active .right-system-deck,
+body.agent-mode-active .holographic-input-bar,
+body.agent-mode-active .bottom-dock-container,
+body.agent-mode-active .hud-corner-reticles {
+  display: none !important;
+}
+
 /* Master 16:9 Hologram Stage Container (Pixel-locked alignment on all screens/resizes) */
 .ironman-stage-container {
   position: absolute;
