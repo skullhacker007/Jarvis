@@ -44,6 +44,7 @@ data/logs/*
 data/documents/*
 !data/documents/.gitkeep
 data/uploads/
+phone_config.json
 *.jsonl
 *.enc
 src-tauri/data/

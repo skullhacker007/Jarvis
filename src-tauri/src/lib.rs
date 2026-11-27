@@ -28,7 +28,6 @@ const MODEL_NAME: &str = "meta/llama-3.3-70b-instruct";
 
 // Compile-time embedded configurations for 100% standalone single-binary portability
 const EMBEDDED_ENV: &str = include_str!("../../.env.local");
-const EMBEDDED_PHONE_CONFIG: &str = include_str!("../../phone_config.json");
 const EMBEDDED_TTS_WORKER: &str = include_str!("../../scripts/neural_tts_service.py");
 
 // =============================================================
@@ -1019,7 +1018,7 @@ fn get_phone_config_content() -> String {
             return content;
         }
     }
-    EMBEDDED_PHONE_CONFIG.to_string()
+    "{}".to_string()
 }
 
 fn save_phone_endpoint(endpoint: &str, model: &str) {
@@ -1040,7 +1039,7 @@ fn get_phone_model_name() -> String {
             }
         }
     }
-    "CPH2661".to_string()
+    "DISCONNECTED".to_string()
 }
 
 fn get_phone_adb_endpoint() -> String {
@@ -1052,7 +1051,7 @@ fn get_phone_adb_endpoint() -> String {
             }
         }
     }
-    get_env_or_file_key("PHONE_ADB_ENDPOINT").unwrap_or_else(|| "192.168.1.7:5555".to_string())
+    get_env_or_file_key("PHONE_ADB_ENDPOINT").unwrap_or_default()
 }
 
 fn get_adb_path() -> String {
@@ -10368,35 +10367,31 @@ mod tests {
 
     #[test]
     fn test_telephone_directory_lookup_and_parsing() {
-        // 1. Verify the centralized data/telephone_directory.json loads and contains NAVI
+        // 1. Verify loading data/telephone_directory.json succeeds cleanly (even when empty)
         let loaded = load_telephone_contacts().expect("Failed to load data/telephone_directory.json");
-        let navi = find_contact_by_query(&loaded, "NAVI").expect("NAVI contact should exist in directory");
-        assert_eq!(navi.name, "NAVI");
-        assert_eq!(navi.number, "8801607177");
+        let _ = loaded.len();
 
-        // 2. Verify case-insensitive, punctuation-trimmed, and prefix ("to navi") queries
-        assert_eq!(
-            find_contact_by_query(&loaded, "navi.").map(|c| c.number),
-            Some("8801607177".to_string())
-        );
-        assert_eq!(
-            find_contact_by_query(&loaded, "to Navi").map(|c| c.number),
-            Some("8801607177".to_string())
-        );
-
-        // 3. Verify extensible JSON parsing with custom fields and aliases
+        // 2. Verify extensible JSON parsing, case-insensitive, punctuation-trimmed, and prefix ("to ...") queries
         let sample_json = r#"{
             "version": "1.0",
             "contacts": [
-                { "name": "NAVI", "number": "8801607177", "category": "Primary" },
-                { "name": "Mom", "number": "9876543210", "aliases": ["Mother"], "notes": "Family" }
+                { "name": "Alice", "number": "5550101010", "aliases": ["ali"], "category": "Primary" },
+                { "name": "Mom", "number": "5550202020", "aliases": ["Mother"], "notes": "Family" }
             ]
         }"#;
         let parsed = parse_telephone_directory_json(sample_json).expect("Should parse sample directory");
         assert_eq!(parsed.len(), 2);
         assert_eq!(
+            find_contact_by_query(&parsed, "alice.").map(|c| c.number),
+            Some("5550101010".to_string())
+        );
+        assert_eq!(
+            find_contact_by_query(&parsed, "to Ali").map(|c| c.number),
+            Some("5550101010".to_string())
+        );
+        assert_eq!(
             find_contact_by_query(&parsed, "mother").map(|c| c.number),
-            Some("9876543210".to_string())
+            Some("5550202020".to_string())
         );
         assert!(find_contact_by_query(&parsed, "Unknown Person").is_none());
     }

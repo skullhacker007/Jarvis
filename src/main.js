@@ -4344,48 +4344,80 @@ function determineWeatherIcon(weatherCode, tempC, isDayVal) {
   }
 }
 
+let currentLocationCity = null;
+
 function updateWeatherDisplay() {
   const tempEl = document.getElementById("weather-temp");
   const iconEl = document.getElementById("weather-icon");
+  const groupEl = document.getElementById("hud-temp-group");
 
-  if (tempEl && typeof currentTempC === "number") {
-    tempEl.textContent = `${Math.round(currentTempC)}°C`;
+  if (tempEl) {
+    tempEl.textContent = typeof currentTempC === "number" ? `${Math.round(currentTempC)}°C` : "--°C";
   }
 
   const { icon, desc } = determineWeatherIcon(currentWeatherCode, currentTempC, currentIsDay);
+  const locPrefix = currentLocationCity ? `${currentLocationCity}: ` : "";
   if (iconEl) {
     iconEl.textContent = icon;
-    iconEl.title = `Weather: ${desc} • ${Math.round(currentTempC)}°C`;
+    iconEl.title = typeof currentTempC === "number"
+      ? `${locPrefix}${desc} • ${Math.round(currentTempC)}°C`
+      : "Weather unavailable offline";
+  }
+  if (groupEl && currentLocationCity) {
+    groupEl.title = `${currentLocationCity} Temperature`;
   }
 }
 
-const TIRUPATI_LAT = 13.6288;
-const TIRUPATI_LON = 79.4192;
+async function resolveDynamicCoordinates() {
+  try {
+    const res = await fetch("https://ipapi.co/json/");
+    if (res.ok) {
+      const geo = await res.json();
+      if (typeof geo?.latitude === "number" && typeof geo?.longitude === "number") {
+        return { lat: geo.latitude, lon: geo.longitude, city: geo.city || geo.region || null };
+      }
+    }
+  } catch (_) {}
+
+  try {
+    const res = await fetch("https://ipwho.is/");
+    if (res.ok) {
+      const geo = await res.json();
+      if (geo?.success !== false && typeof geo?.latitude === "number" && typeof geo?.longitude === "number") {
+        return { lat: geo.latitude, lon: geo.longitude, city: geo.city || geo.region || null };
+      }
+    }
+  } catch (_) {}
+
+  return null;
+}
 
 async function fetchLocalWeather() {
-  const applyWeather = (tempC, weatherCode = 0, isDay = null) => {
+  const applyWeather = (tempC, weatherCode = 0, isDay = null, city = null) => {
     currentTempC = tempC;
     currentWeatherCode = weatherCode;
     currentIsDay = isDay;
+    if (city) currentLocationCity = city;
     updateWeatherDisplay();
   };
 
   try {
-    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${TIRUPATI_LAT}&longitude=${TIRUPATI_LON}&current=temperature_2m,weather_code,is_day`);
+    const coords = await resolveDynamicCoordinates();
+    if (!coords) {
+      updateWeatherDisplay();
+      return;
+    }
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,weather_code,is_day`);
     const data = await res.json();
     if (data?.current) {
-      applyWeather(data.current.temperature_2m, data.current.weather_code, data.current.is_day);
+      applyWeather(data.current.temperature_2m, data.current.weather_code, data.current.is_day, coords.city);
       return;
     }
   } catch (err) {
-    console.warn("Direct Tirupati weather query failed, applying local fallback:", err);
+    console.warn("Dynamic weather query failed:", err);
   }
 
-  // Graceful fallback if offline
-  const hour = new Date().getHours();
-  const isNight = hour < 6 || hour >= 18;
-  const estTemp = hour >= 10 && hour <= 16 ? 28 : (hour >= 17 && hour <= 21 ? 24 : 22);
-  applyWeather(estTemp, 0, isNight ? 0 : 1);
+  updateWeatherDisplay();
 }
 fetchLocalWeather();
 setInterval(fetchLocalWeather, 300000); // 5 min refresh
@@ -5665,11 +5697,17 @@ async function processDirective(prompt, shouldOpenInput = false) {
     }
   }
 
-  // Fast-Path: Live Tirupati 517505 Weather / Temperature Query
-  if (/^(?:what\s+is\s+the\s+weather|weather|current\s+weather|temperature|what\s+is\s+the\s+temperature|how\s+hot\s+is\s+it|how\s+cold\s+is\s+it|tirupati\s+weather|tirupati\s+temperature)$/i.test(lowerDirective)) {
-    const tempRounded = Math.round(currentTempC || 24);
-    const { desc } = determineWeatherIcon(currentWeatherCode, currentTempC, currentIsDay);
-    const replyMsg = `In Tirupati, it is currently ${tempRounded} degrees Celsius with ${desc.toLowerCase()}, sir.`;
+  // Fast-Path: Dynamic Live Weather / Temperature Query
+  if (/^(?:what\s+is\s+the\s+weather|weather|current\s+weather|temperature|what\s+is\s+the\s+temperature|how\s+hot\s+is\s+it|how\s+cold\s+is\s+it)$/i.test(lowerDirective)) {
+    let replyMsg;
+    if (typeof currentTempC === "number") {
+      const tempRounded = Math.round(currentTempC);
+      const { desc } = determineWeatherIcon(currentWeatherCode, currentTempC, currentIsDay);
+      const locText = currentLocationCity ? `In ${currentLocationCity}` : "Locally";
+      replyMsg = `${locText}, it is currently ${tempRounded} degrees Celsius with ${desc.toLowerCase()}, sir.`;
+    } else {
+      replyMsg = "Live weather telemetry is currently unavailable offline, sir.";
+    }
     showJarvisFeedback(replyMsg, "weather");
     speakResponse(replyMsg);
     setSystemState("idle");

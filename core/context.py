@@ -1,19 +1,22 @@
 import datetime
+import os
 import platform
 
 class TemporalContext:
     """
     Dynamically injects real-time temporal and system metrics
-    into NAVI's prompt so it always knows the exact date, time, and system state.
-    Anchored to UTC+05:30 (India Standard Time - IST) and Tirupati 517505.
+    into NAVI's prompt so it always knows the exact date, time, and system state
+    using the host's live local timezone.
     """
 
     @staticmethod
     def get_context_block() -> str:
-        ist_tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-        now_ist = datetime.datetime.now(ist_tz)
-        local_time_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p")
-        day_of_week = now_ist.strftime("%A")
+        now_local = datetime.datetime.now().astimezone()
+        local_time_str = now_local.strftime("%Y-%m-%d %I:%M:%S %p")
+        day_of_week = now_local.strftime("%A")
+        tz_name = now_local.tzname() or "Local"
+        raw_offset = now_local.strftime("%z") or "+0000"
+        utc_offset = f"UTC{raw_offset[:3]}:{raw_offset[3:]}" if len(raw_offset) == 5 else raw_offset
 
         # Optional hardware metrics
         metrics = ""
@@ -27,13 +30,16 @@ class TemporalContext:
         except Exception:
             metrics = ""
 
+        location_env = os.getenv("JARVIS_LOCATION", "").strip()
+        location_line = f"- Location: {location_env}\n" if location_env else ""
+
         return (
             f"[SYSTEM TEMPORAL & HARDWARE CONTEXT]\n"
-            f"- Location Anchor: Tirupati, Andhra Pradesh, India (PIN: 517505)\n"
-            f"- Timezone: UTC+05:30 (India Standard Time - IST)\n"
-            f"- Current Date: {now_ist.strftime('%B %d, %Y')}\n"
+            f"{location_line}"
+            f"- Timezone: {utc_offset} ({tz_name})\n"
+            f"- Current Date: {now_local.strftime('%B %d, %Y')}\n"
             f"- Current Day: {day_of_week}\n"
-            f"- Current IST Time: {local_time_str}\n"
+            f"- Current Local Time: {local_time_str}\n"
             f"- Host OS: {platform.system()} {platform.release()}\n"
             f"{metrics}"
             f"--------------------------------------------------"
