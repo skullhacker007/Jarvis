@@ -64,6 +64,17 @@
 
         <!-- INVISIBLE CENTER DROP ZONE (NO VISIBLE EXTRA UI WHILE DRAGGING) -->
         <div class="center-drop-target" id="center-drop-target"></div>
+
+        <!-- EXPANDED CENTER PANEL DOCK (REPLACES IRON MAN WHEN PANEL/TAB DROPPED) -->
+        <div class="center-panel-dock" id="center-panel-dock">
+          <div class="center-dock-header">
+            <span class="center-dock-title" id="center-dock-title">CENTER VIEW</span>
+            <button type="button" class="center-dock-restore-btn" id="center-dock-restore-btn" title="Restore Iron Man Center View">
+              ✕ RESTORE IRON MAN
+            </button>
+          </div>
+          <div class="center-dock-body" id="center-dock-body"></div>
+        </div>
       </div>
 
       <!-- ========================================================= -->
@@ -157,29 +168,33 @@
         <div class="hud-corner-bracket bottom-left"></div>
         <div class="hud-corner-bracket bottom-right"></div>
 
-        <!-- Sleek Header: Title, Zoom Controls, and Holistic ON/OFF -->
+        <!-- Layer 1: Heading (Title on Left, 1X/2X/RESET + ON/OFF on Right) -->
         <div class="gadget-top gesture-panel-top">
           <div class="gesture-title-group">
             <span class="gesture-blue-beacon" id="holistic-pulse-beacon"></span>
-            <span class="gadget-title gesture-blue-title">HOLISTIC</span>
+            <span class="gadget-title gesture-blue-title" id="holistic-panel-title">SYSTEM</span>
           </div>
           <div class="holistic-controls-group">
-            <!-- Zoom Controls: 1X, 2X, RESET -->
+            <!-- Zoom Controls: 1X, 2X, RESET (Right Side) -->
             <div class="holistic-mode-selector webcam-zoom-selector" id="webcam-zoom-selector">
               <button type="button" class="holistic-mode-pill webcam-zoom-pill active" data-zoom="1" title="1x Standard View">1X</button>
               <button type="button" class="holistic-mode-pill webcam-zoom-pill" data-zoom="2" title="2x Zoom">2X</button>
               <button type="button" class="holistic-mode-pill webcam-zoom-pill webcam-reset-pill" id="webcam-zoom-reset" title="Reset Zoom to 1X">RESET</button>
             </div>
-            <!-- Neural Object Detection Toggle: OBJ -->
-            <button type="button" class="webcam-obj-pill active" id="webcam-obj-toggle-btn" title="Toggle Real-Time Object & Fruit Detection">
-              🎯 OBJ
-            </button>
-            <!-- Toggle Button: ON = Holistic effect, OFF = Normal webcam -->
-            <button type="button" class="holistic-cam-btn enabled" id="holistic-cam-toggle-btn" title="ON = Holistic Effect, OFF = Normal Webcam">
-              <span class="toggle-dot" id="holistic-cam-toggle-dot"></span>
-              <span id="holistic-cam-btn-label">ON</span>
-            </button>
           </div>
+        </div>
+
+        <!-- Layer 2: Tabs Row Below Heading (SYS, OBJ, HOLISTIC) -->
+        <div class="holistic-tabs-row" id="holistic-tabs-row">
+          <button type="button" class="holistic-tab-pill active" id="holistic-sys-tab-btn" title="Live Windows Desktop View & Computer Control (Default)">
+            ⚡ SYS
+          </button>
+          <button type="button" class="holistic-tab-pill" id="webcam-obj-toggle-btn" title="Real-Time Object & Fruit Detection">
+            🎯 OBJ
+          </button>
+          <button type="button" class="holistic-tab-pill" id="holistic-mode-tab-btn" title="Holistic Visual Effects & Gesture Tracking">
+            ✨ HOLISTIC
+          </button>
         </div>
 
         <!-- Real-Time Interactive Canvas Container with Live Camera Stream -->
@@ -189,6 +204,19 @@
             <video id="holistic-webcam-video" class="holistic-webcam-video" autoplay playsinline muted></video>
             <!-- Real-Time MediaPipe Holistic Landmarker & Gesture Canvas -->
             <canvas id="holistic-gesture-canvas" class="gesture-recognize-canvas holistic-recognize-canvas"></canvas>
+            <!-- Original Windows PowerShell Console (Default SYS Tab) -->
+            <div id="holistic-sys-console" class="holistic-sys-console active">
+              <div class="sys-console-bar">
+                <span class="sys-console-status" id="sys-console-status">Administrator: Windows PowerShell</span>
+                <button type="button" class="sys-console-clear" id="sys-console-clear-btn" title="Clear Console">CLEAR</button>
+              </div>
+              <pre id="sys-console-output" class="sys-console-output"></pre>
+              <div class="sys-console-input-row">
+                <span class="sys-ps-prompt" id="sys-ps-prompt">PS&gt;</span>
+                <input type="text" id="sys-ps-input" class="sys-ps-input" placeholder="Enter PowerShell command..." autocomplete="off" />
+                <button type="button" id="sys-ps-run-btn" class="sys-ps-run-btn">RUN</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

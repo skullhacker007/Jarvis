@@ -28,15 +28,6 @@ pub struct PermissionPolicyEntry {
     pub reason: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct PermissionRequestPayload {
-    pub request_id: String,
-    pub action: String,
-    pub target: String,
-    pub risk: String,
-    pub reason: String,
-}
-
 struct PermissionManagerState {
     policies: HashMap<String, PolicyDecision>,
     pending: HashMap<String, (String, oneshot::Sender<bool>)>,

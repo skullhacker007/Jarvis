@@ -1,4 +1,5 @@
 mod permissions;
+mod desktop_intel;
 
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
@@ -9593,7 +9594,20 @@ pub fn run() {
             permissions::resolve_permission_request,
             enroll_speaker_voiceprint,
             get_service_health_status,
-            run_system_diagnostics
+            run_system_diagnostics,
+            desktop_intel::desktop_init_powershell,
+            desktop_intel::desktop_run_powershell,
+            desktop_intel::desktop_list_monitors,
+            desktop_intel::desktop_set_monitor,
+            desktop_intel::start_desktop_mirror,
+            desktop_intel::stop_desktop_mirror,
+            desktop_intel::desktop_get_active_window,
+            desktop_intel::desktop_scan_elements,
+            desktop_intel::desktop_click_at,
+            desktop_intel::desktop_scroll_at,
+            desktop_intel::desktop_type_text,
+            desktop_intel::desktop_navigate_target,
+            desktop_intel::desktop_smart_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
