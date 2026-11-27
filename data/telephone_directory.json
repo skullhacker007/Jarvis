@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "description": "Centralized persistent telephone directory for JARVIS. Add new contacts to the 'contacts' array without modifying system code.",
+  "contacts": [
+    {
+      "name": "NAVI",
+      "number": "8801607177",
+      "aliases": ["navi"],
+      "category": "Primary",
+      "notes": ""
+    }
+  ]
+}

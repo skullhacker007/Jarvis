@@ -3316,6 +3316,204 @@ fn end_phone_call() -> Result<String, String> {
     Ok("Call ended successfully".to_string())
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TelephoneContact {
+    pub name: String,
+    pub number: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aliases: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+fn get_telephone_directory_path() -> std::path::PathBuf {
+    find_file_in_candidates("data/telephone_directory.json")
+        .unwrap_or_else(|| std::path::PathBuf::from("data/telephone_directory.json"))
+}
+
+fn parse_telephone_directory_json(raw: &str) -> Result<Vec<TelephoneContact>, String> {
+    let val: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| format!("Invalid telephone_directory.json: {}", e))?;
+
+    if let Some(arr) = val.get("contacts").and_then(|v| v.as_array()) {
+        return serde_json::from_value::<Vec<TelephoneContact>>(serde_json::Value::Array(arr.clone()))
+            .map_err(|e| format!("Invalid contacts array in telephone_directory.json: {}", e));
+    }
+
+    if let Some(obj) = val.get("contacts").and_then(|v| v.as_object()) {
+        let mut contacts = Vec::new();
+        for (k, v) in obj {
+            if let Some(num) = v.as_str() {
+                contacts.push(TelephoneContact {
+                    name: k.clone(),
+                    number: num.to_string(),
+                    aliases: None,
+                    category: None,
+                    notes: None,
+                    extra: serde_json::Map::new(),
+                });
+            } else if let Ok(mut c) = serde_json::from_value::<TelephoneContact>(v.clone()) {
+                if c.name.trim().is_empty() {
+                    c.name = k.clone();
+                }
+                contacts.push(c);
+            }
+        }
+        return Ok(contacts);
+    }
+
+    if val.is_array() {
+        return serde_json::from_value::<Vec<TelephoneContact>>(val)
+            .map_err(|e| format!("Invalid contacts list in telephone_directory.json: {}", e));
+    }
+
+    Ok(Vec::new())
+}
+
+fn load_telephone_contacts() -> Result<Vec<TelephoneContact>, String> {
+    let path = get_telephone_directory_path();
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    parse_telephone_directory_json(&raw)
+}
+
+fn normalize_contact_query(query: &str) -> String {
+    let trimmed = query
+        .trim()
+        .trim_end_matches(|c: char| matches!(c, '.' | ',' | '!' | '?' | ';'))
+        .trim()
+        .to_lowercase();
+    trimmed
+        .strip_prefix("to ")
+        .unwrap_or(&trimmed)
+        .trim()
+        .to_string()
+}
+
+fn find_contact_by_query(contacts: &[TelephoneContact], query: &str) -> Option<TelephoneContact> {
+    let norm = normalize_contact_query(query);
+    if norm.is_empty() {
+        return None;
+    }
+
+    // 1. Exact case-insensitive match on name or any alias
+    for contact in contacts {
+        if contact.name.trim().to_lowercase() == norm {
+            return Some(contact.clone());
+        }
+        if let Some(aliases) = &contact.aliases {
+            if aliases.iter().any(|a| a.trim().to_lowercase() == norm) {
+                return Some(contact.clone());
+            }
+        }
+    }
+
+    // 2. Partial match fallback (starts_with or contains)
+    for contact in contacts {
+        let lower_name = contact.name.trim().to_lowercase();
+        if lower_name.starts_with(&norm) || lower_name.contains(&norm) {
+            return Some(contact.clone());
+        }
+        if let Some(aliases) = &contact.aliases {
+            if aliases
+                .iter()
+                .any(|a| {
+                    let la = a.trim().to_lowercase();
+                    la.starts_with(&norm) || la.contains(&norm)
+                })
+            {
+                return Some(contact.clone());
+            }
+        }
+    }
+
+    None
+}
+
+#[tauri::command]
+fn get_telephone_directory() -> Result<Vec<TelephoneContact>, String> {
+    load_telephone_contacts()
+}
+
+#[tauri::command]
+fn lookup_telephone_contact(query: String) -> Result<Option<TelephoneContact>, String> {
+    let contacts = load_telephone_contacts()?;
+    Ok(find_contact_by_query(&contacts, &query))
+}
+
+#[tauri::command]
+fn add_telephone_contact(
+    name: String,
+    number: String,
+    category: Option<String>,
+    notes: Option<String>,
+) -> Result<TelephoneContact, String> {
+    let clean_name = name.trim().to_string();
+    let clean_number: String = number
+        .chars()
+        .filter(|c| c.is_ascii_digit() || matches!(*c, '+' | '*' | '#'))
+        .collect();
+
+    if clean_name.is_empty() {
+        return Err("Contact name cannot be empty".to_string());
+    }
+    if clean_number.is_empty() {
+        return Err("Contact phone number cannot be empty".to_string());
+    }
+
+    let path = get_telephone_directory_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let mut contacts = load_telephone_contacts().unwrap_or_default();
+    let new_contact = TelephoneContact {
+        name: clean_name.clone(),
+        number: clean_number,
+        aliases: None,
+        category,
+        notes,
+        extra: serde_json::Map::new(),
+    };
+
+    if let Some(existing) = contacts
+        .iter_mut()
+        .find(|c| c.name.trim().eq_ignore_ascii_case(&clean_name))
+    {
+        existing.number = new_contact.number.clone();
+        if new_contact.category.is_some() {
+            existing.category = new_contact.category.clone();
+        }
+        if new_contact.notes.is_some() {
+            existing.notes = new_contact.notes.clone();
+        }
+    } else {
+        contacts.push(new_contact.clone());
+    }
+
+    let payload = serde_json::json!({
+        "version": "1.0",
+        "description": "Centralized persistent telephone directory for JARVIS. Add new contacts to the 'contacts' array without modifying system code.",
+        "contacts": contacts
+    });
+    let serialized = serde_json::to_string_pretty(&payload)
+        .map_err(|e| format!("Failed to serialize telephone directory: {}", e))?;
+    std::fs::write(&path, serialized)
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+
+    Ok(new_contact)
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PhoneSyncStatus {
     pub is_connected: bool,
@@ -9558,6 +9756,9 @@ pub fn run() {
             get_bluetooth_watch_status,
             dial_phone_call,
             end_phone_call,
+            get_telephone_directory,
+            lookup_telephone_contact,
+            add_telephone_contact,
             start_qr_pair_window,
             generate_pairing_qr,
             check_qr_pairing_status,
@@ -10110,5 +10311,40 @@ mod tests {
         let (ranked, active_id) = build_filtered_models(&discovered, &stats, "");
         assert_ne!(active_id, "allam-2-7b");
         assert_eq!(ranked[0].id, "qwen/qwen3.8-27b");
+    }
+
+    #[test]
+    fn test_telephone_directory_lookup_and_parsing() {
+        // 1. Verify the centralized data/telephone_directory.json loads and contains NAVI
+        let loaded = load_telephone_contacts().expect("Failed to load data/telephone_directory.json");
+        let navi = find_contact_by_query(&loaded, "NAVI").expect("NAVI contact should exist in directory");
+        assert_eq!(navi.name, "NAVI");
+        assert_eq!(navi.number, "8801607177");
+
+        // 2. Verify case-insensitive, punctuation-trimmed, and prefix ("to navi") queries
+        assert_eq!(
+            find_contact_by_query(&loaded, "navi.").map(|c| c.number),
+            Some("8801607177".to_string())
+        );
+        assert_eq!(
+            find_contact_by_query(&loaded, "to Navi").map(|c| c.number),
+            Some("8801607177".to_string())
+        );
+
+        // 3. Verify extensible JSON parsing with custom fields and aliases
+        let sample_json = r#"{
+            "version": "1.0",
+            "contacts": [
+                { "name": "NAVI", "number": "8801607177", "category": "Primary" },
+                { "name": "Mom", "number": "9876543210", "aliases": ["Mother"], "notes": "Family" }
+            ]
+        }"#;
+        let parsed = parse_telephone_directory_json(sample_json).expect("Should parse sample directory");
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(
+            find_contact_by_query(&parsed, "mother").map(|c| c.number),
+            Some("9876543210".to_string())
+        );
+        assert!(find_contact_by_query(&parsed, "Unknown Person").is_none());
     }
 }

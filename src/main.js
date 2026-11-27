@@ -45,6 +45,14 @@ async function invoke(cmd, args = {}) {
     return `Dialing ${args.number}`;
   }
 
+  if (cmd === "lookup_telephone_contact") {
+    return null;
+  }
+
+  if (cmd === "get_telephone_directory") {
+    return [];
+  }
+
   if (cmd === "get_system_telemetry") {
     return {
       gpu_usage: 0,
@@ -5703,34 +5711,73 @@ async function processDirective(prompt, shouldOpenInput = false) {
     return;
   }
 
-  // Fast-Path: Direct Call Contact or Number (e.g., "call mom" or "call 9876543210")
-  const callMatch = clean.match(/^(?:call|dial)\s+(.+)$/i);
+  // Fast-Path: Direct Call Contact or Number (e.g., "call NAVI", "call mom", or "call 8801607177")
+  const callMatch = clean.match(/^(?:please\s+)?(?:call|dial|phone|ring)\s+(.+)$/i);
   if (callMatch) {
-    const target = callMatch[1].trim();
+    const rawTarget = callMatch[1].trim().replace(/[.!?,;]+$/, "").trim();
+    const target = rawTarget.replace(/^to\s+/i, "").trim();
+    let resolvedName = target;
     let numToDial = target.replace(/[\s\-\(\)]/g, "");
 
-    let contactBook = {
-      "mom": "",
-      "dad": "",
-      "home": ""
-    };
-    try {
-      const stored = JSON.parse(localStorage.getItem("jarvis_contacts") || "{}");
-      contactBook = { ...contactBook, ...stored };
-    } catch (e) {}
+    const isDirectNumber = /^[\d\+\*#]{3,}$/.test(numToDial);
 
-    const lowerTarget = target.toLowerCase();
-    if (contactBook[lowerTarget] && contactBook[lowerTarget].length > 0) {
-      numToDial = contactBook[lowerTarget];
+    if (!isDirectNumber) {
+      // 1. Search centralized persistent directory (data/telephone_directory.json)
+      try {
+        const contact = await invoke("lookup_telephone_contact", { query: target });
+        if (contact && contact.number) {
+          resolvedName = contact.name || target;
+          numToDial = String(contact.number).replace(/[\s\-\(\)]/g, "");
+        }
+      } catch (e) {
+        console.warn("[Telephone Directory Lookup Error]", e);
+      }
+
+      // 2. Fallback to legacy localStorage contact book if not found in JSON directory
+      if (!/^[\d\+\*#]{3,}$/.test(numToDial)) {
+        try {
+          const stored = JSON.parse(localStorage.getItem("jarvis_contacts") || "{}");
+          const lowerTarget = target.toLowerCase();
+          if (stored[lowerTarget] && String(stored[lowerTarget]).trim().length > 0) {
+            numToDial = String(stored[lowerTarget]).replace(/[\s\-\(\)]/g, "");
+          }
+        } catch (e) {}
+      }
     }
 
     if (/^[\d\+\*#]+$/.test(numToDial) && numToDial.length >= 3) {
+      openPhoneKeypad();
       currentDialNumber = numToDial;
       updateDialerDisplay();
-      await invoke("dial_phone_call", { number: currentDialNumber });
-      const replyMsg = `Dialing ${target} directly on your phone.`;
-      showJarvisFeedback(replyMsg, "dial_call");
-      speakResponse(replyMsg);
+      if (dialerStatusMsg) {
+        dialerStatusMsg.textContent = `Calling ${resolvedName} (${numToDial}) via ${connectedPhoneName || "phone"}...`;
+      }
+
+      try {
+        await invoke("dial_phone_call", { number: currentDialNumber });
+        const replyMsg = resolvedName !== numToDial
+          ? `Calling ${resolvedName} at ${numToDial}, sir.`
+          : `Dialing ${numToDial} directly on your phone.`;
+        showJarvisFeedback(replyMsg, "dial_call");
+        speakResponse(replyMsg);
+      } catch (err) {
+        console.error("[Call Error]", err);
+        const errMsg = `Dial pad opened for ${resolvedName} (${numToDial}), but phone call failed: ${err}`;
+        if (dialerStatusMsg) {
+          dialerStatusMsg.textContent = `Call failed: ${err}. Please ensure phone is synced.`;
+        }
+        showJarvisFeedback(errMsg, "dial_call");
+        speakResponse(`I opened the dial pad with ${resolvedName}'s number, sir, but the phone uplink is currently unreachable.`);
+      }
+
+      setSystemState("idle");
+      return;
+    }
+
+    if (!/^(?:me|it|off|out|back|in|on|up|for)\b/i.test(target)) {
+      const notFoundMsg = `I couldn't find ${target} in your telephone directory, sir.`;
+      showJarvisFeedback(notFoundMsg, "dial_call");
+      speakResponse(notFoundMsg);
       setSystemState("idle");
       return;
     }
